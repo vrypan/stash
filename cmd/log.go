@@ -2,16 +2,47 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"stash/store"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
+
+var (
+	clrID     = color.New(color.FgYellow, color.Bold).SprintFunc()
+	clrTS     = color.New(color.FgCyan).SprintFunc()
+	clrSize   = color.New(color.FgBlue).SprintFunc()
+	clrHash   = color.New(color.Faint).SprintFunc()
+	clrLabel  = color.New(color.Bold).SprintFunc()
+	clrAttrs  = color.New(color.FgYellow).SprintFunc()
+)
+
+func typeColor(t string) color.Attribute {
+	switch t {
+	case "text":
+		return color.FgGreen
+	case "json":
+		return color.FgCyan
+	case "empty":
+		return color.Faint
+	default: // binary, gzip, zstd, zip, png, jpeg, pdf, gif, …
+		return color.FgRed
+	}
+}
+
+// clrType returns "[typeStr]" with color — for compact format.
+func clrType(t string) string {
+	return color.New(typeColor(t)).Sprint("[" + t + "]")
+}
+
+// clrTypeBare returns typeStr with color, no brackets — for long format.
+func clrTypeBare(t string) string {
+	return color.New(typeColor(t)).Sprint(t)
+}
 
 func newLogCmd() *cobra.Command {
 	var fullFlag bool
@@ -21,6 +52,7 @@ func newLogCmd() *cobra.Command {
 	var reverse bool
 	var long bool
 	var dateMode string
+	var noColor bool
 
 	cmd := &cobra.Command{
 		Use:           "log",
@@ -28,6 +60,9 @@ func newLogCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if noColor {
+				color.NoColor = true
+			}
 			if dateMode != "absolute" && dateMode != "relative" {
 				return fmt.Errorf("--date must be absolute or relative")
 			}
@@ -62,40 +97,80 @@ func newLogCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
 	cmd.Flags().BoolVarP(&long, "long", "l", false, "Verbose block format")
 	cmd.Flags().StringVar(&dateMode, "date", "relative", "Date format: relative or absolute")
+	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable color output")
 	return cmd
 }
 
 func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool, dateMode string) error {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	for _, m := range entries {
+	type row struct {
+		id, ts, size, hash, typeStr, attrsStr, preview string
+		truncated                                       bool
+	}
+	rows := make([]row, len(entries))
+	maxID, maxTS, maxSize, maxHash := 0, 0, 0, 0
+
+	for i, m := range entries {
 		idStr := m.ShortID()
 		if full {
 			idStr = m.DisplayID()
 		}
 		tsStr := formatTS(parseTS(m.TS), now, dateMode)
 		typeStr, preview, _ := store.SmartPreview(m.ID, chars)
+		sizeStr := store.HumanSize(m.Size)
 
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "[%s]", typeStr)
-		if a := fmtAttrs(m.Attrs); a != "" {
-			fmt.Fprintf(&sb, " %s", a)
+		rows[i] = row{
+			id:        idStr,
+			ts:        tsStr,
+			size:      sizeStr,
+			hash:      m.Hash,
+			typeStr:   typeStr,
+			attrsStr:  fmtAttrs(m.Attrs),
+			preview:   preview,
+			truncated: (typeStr == "text" || typeStr == "json") && m.Size > int64(chars),
 		}
-		if typeStr == "text" || typeStr == "json" {
-			if preview != "" {
-				fmt.Fprintf(&sb, " %s", preview)
-				if m.Size > int64(chars) {
-					sb.WriteString("...")
-				}
-			}
+		if len(idStr) > maxID {
+			maxID = len(idStr)
 		}
-
-		if hash {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", idStr, tsStr, store.HumanSize(m.Size), m.Hash, sb.String())
-		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", idStr, tsStr, store.HumanSize(m.Size), sb.String())
+		if len(tsStr) > maxTS {
+			maxTS = len(tsStr)
+		}
+		if len(sizeStr) > maxSize {
+			maxSize = len(sizeStr)
+		}
+		if hash && len(m.Hash) > maxHash {
+			maxHash = len(m.Hash)
 		}
 	}
-	return w.Flush()
+
+	for _, r := range rows {
+		// Pad plain strings first, then colorize — ANSI codes add invisible
+		// bytes that would confuse any width-based padding done afterwards.
+		idCol := clrID(fmt.Sprintf("%-*s", maxID, r.id))
+		tsCol := clrTS(fmt.Sprintf("%-*s", maxTS, r.ts))
+		sizeCol := clrSize(fmt.Sprintf("%-*s", maxSize, r.size))
+
+		var parts []string
+		parts = append(parts, clrType(r.typeStr))
+		if r.attrsStr != "" {
+			parts = append(parts, clrAttrs(r.attrsStr))
+		}
+		if (r.typeStr == "text" || r.typeStr == "json") && r.preview != "" {
+			p := r.preview
+			if r.truncated {
+				p += "..."
+			}
+			parts = append(parts, p)
+		}
+		contentCol := strings.Join(parts, " ")
+
+		if hash {
+			hashCol := clrHash(fmt.Sprintf("%-*s", maxHash, r.hash))
+			fmt.Printf("%s  %s  %s  %s  %s\n", idCol, tsCol, sizeCol, hashCol, contentCol)
+		} else {
+			fmt.Printf("%s  %s  %s  %s\n", idCol, tsCol, sizeCol, contentCol)
+		}
+	}
+	return nil
 }
 
 // fmtAttrs formats a meta map as "[key=val  key=val]", sorted by key.
@@ -123,16 +198,15 @@ func logLong(entries []store.Meta, now time.Time, chars int, dateMode string) er
 		}
 		tsStr := formatTS(parseTS(m.TS), now, dateMode)
 		typeStr, _, _ := store.SmartPreview(m.ID, chars)
-		hashPrefix := m.Hash
 
-		fmt.Printf("entry %s\n", m.DisplayID())
-		fmt.Printf("Short: %s\n", m.ShortID())
-		fmt.Printf("Date:  %s\n", tsStr)
-		fmt.Printf("Size:  %s\n", store.HumanSize(m.Size))
-		fmt.Printf("Type:  %s\n", typeStr)
-		fmt.Printf("Hash:  %s\n", hashPrefix)
+		fmt.Printf("entry %s\n", clrID(m.DisplayID()))
+		fmt.Printf("%s%s\n", clrLabel("Short: "), m.ShortID())
+		fmt.Printf("%s%s\n", clrLabel("Date:  "), tsStr)
+		fmt.Printf("%s%s\n", clrLabel("Size:  "), clrSize(store.HumanSize(m.Size)))
+		fmt.Printf("%s%s\n", clrLabel("Type:  "), clrTypeBare(typeStr))
+		fmt.Printf("%s%s\n", clrLabel("Hash:  "), clrHash(m.Hash))
 		if a := fmtAttrs(m.Attrs); a != "" {
-			fmt.Printf("Meta:  %s\n", a)
+			fmt.Printf("%s%s\n", clrLabel("Meta:  "), clrAttrs(a))
 		}
 
 		lines, _ := store.LongPreview(m.ID, chars, 5)
