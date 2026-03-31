@@ -78,12 +78,16 @@ func newLogCmd() *cobra.Command {
 		Short:         "Show entry history with content preview",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
 			if noColor {
 				color.NoColor = true
 			}
 			if dateMode != "absolute" && dateMode != "relative" {
 				return fmt.Errorf("--date must be absolute or relative")
+			}
+			effectiveDateMode := dateMode
+			if long && !c.Flags().Changed("date") {
+				effectiveDateMode = "absolute"
 			}
 
 			entries, err := store.List()
@@ -103,15 +107,15 @@ func newLogCmd() *cobra.Command {
 			now := time.Now()
 
 			if formatStr != "" {
-				return logTemplate(entries, now, chars, dateMode, formatStr)
+				return logTemplate(entries, now, chars, effectiveDateMode, formatStr)
 			}
 			if jsonFlag {
-				return logJSON(entries, now, chars, dateMode)
+				return logJSON(entries, now, chars, effectiveDateMode)
 			}
 			if long {
-				return logLong(entries, now, chars, dateMode)
+				return logLong(entries, now, chars, effectiveDateMode)
 			}
-			return logCompact(entries, now, chars, fullFlag, hashFlag, dateMode)
+			return logCompact(entries, now, chars, fullFlag, hashFlag, effectiveDateMode)
 		},
 	}
 
@@ -303,10 +307,10 @@ func logLong(entries []store.Meta, now time.Time, chars int, dateMode string) er
 		typeLabel = displayTypeLabel(typeLabel)
 
 		fmt.Printf("entry %s (%s, %s)\n", clrID(item.ID), longTypeLabel(typeLabel), item.SizeHuman)
-		fmt.Printf("%s%s\n", clrLabel("Date:  "), tsStr)
-		fmt.Printf("%s%s\n", clrLabel("Hash:  "), clrHash(item.Hash))
+		fmt.Printf("%s%s\n", clrLabel("Date: "), tsStr)
+		fmt.Printf("%s%s\n", clrLabel("Hash: "), clrHash(item.Hash))
 		if a := fmtAttrs(item.Meta); a != "" {
-			fmt.Printf("%s%s\n", clrLabel("Meta:  "), clrAttrs(a))
+			fmt.Printf("%s%s\n", clrLabel("Meta: "), clrAttrs(a))
 		}
 
 		lines := item.Preview
