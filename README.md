@@ -49,6 +49,7 @@ Retrieve data:
 
 ```bash
 stash peek
+stash peek 2
 stash pop
 stash cat 01kn2ahqhr738w84t3wpc43xd3
 stash cat wpc43xd3
@@ -68,7 +69,7 @@ stash [file]
 stash push [file]
 stash log
 stash metadata <id>
-stash peek
+stash peek [n]
 stash pop
 stash cat <id>
 stash rm <id>
@@ -214,6 +215,12 @@ Show verbose history:
 
 ```bash
 stash log -l
+```
+
+Peek at the second-most-recent entry:
+
+```bash
+stash peek 2
 ```
 
 Query JSON with `jq`:

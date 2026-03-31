@@ -352,6 +352,24 @@ func Newest() (Meta, error) {
 	return entries[0], nil
 }
 
+// NthNewest returns the nth newest entry, where n=1 is the most recent entry.
+func NthNewest(n int) (Meta, error) {
+	if n < 1 {
+		return Meta{}, fmt.Errorf("invalid entry index %d (minimum 1)", n)
+	}
+	entries, err := List()
+	if err != nil {
+		return Meta{}, err
+	}
+	if len(entries) == 0 {
+		return Meta{}, ErrEmpty
+	}
+	if n > len(entries) {
+		return Meta{}, fmt.Errorf("entry index %d out of range (%d entries)", n, len(entries))
+	}
+	return entries[n-1], nil
+}
+
 // Resolve resolves a user-supplied ID to a canonical ULID.
 func Resolve(input string) (string, error) {
 	input = strings.ToUpper(strings.TrimSpace(input))
