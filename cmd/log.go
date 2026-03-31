@@ -137,9 +137,9 @@ func logLong(entries []store.Meta, now time.Time, chars int, dateMode string) er
 			lines = lines[:len(lines)-1]
 		}
 		if len(lines) > 0 {
-			fmt.Printf("\n%s\n", lines[0])
+			fmt.Printf("\n    %s\n", lines[0])
 			for _, line := range lines[1:] {
-				fmt.Printf("%s\n", line)
+				fmt.Printf("    %s\n", line)
 			}
 		}
 	}
