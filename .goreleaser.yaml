@@ -39,8 +39,10 @@ changelog:
       - "^docs:"
       - "^test:"
 
-brews:
+homebrew_casks:
   - ids:
+      - stash
+    binaries:
       - stash
     url:
       template: "https://github.com/vrypan/stash/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
@@ -50,14 +52,11 @@ brews:
     commit_author:
       name: Panayotis Vryonis
       email: 58812+vrypan@users.noreply.github.com
-    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
-    directory: Formula
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: Casks
     homepage: "https://github.com/vrypan/stash"
     description: "A local store for pipeline output and ad hoc file snapshots."
-    license: "MIT"
     skip_upload: auto
-    test: |
-      system "#{bin}/stash", "version"
     repository:
       owner: vrypan
       name: homebrew-tap
