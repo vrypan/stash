@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,12 +14,13 @@ func newPushCmd() *cobra.Command {
 	var metaFlags []string
 
 	cmd := &cobra.Command{
-		Use:           "push",
+		Use:           "push [file]",
 		Short:         "Read stdin and create a new entry (default command)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(c *cobra.Command, _ []string) error {
-			return runPushWithMeta(c, metaFlags)
+		Args:          cobra.MaximumNArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runPushWithMeta(c, args, metaFlags)
 		},
 	}
 
@@ -26,19 +28,11 @@ func newPushCmd() *cobra.Command {
 	return cmd
 }
 
-func runPush(c *cobra.Command, _ []string) error {
-	return runPushWithMeta(c, nil)
+func runPush(c *cobra.Command, args []string) error {
+	return runPushWithMeta(c, args, nil)
 }
 
-func runPushWithMeta(_ *cobra.Command, metaFlags []string) error {
-	stat, err := os.Stdin.Stat()
-	if err != nil {
-		return err
-	}
-	if stat.Mode()&os.ModeCharDevice != 0 {
-		return fmt.Errorf("no stdin provided")
-	}
-
+func runPushWithMeta(_ *cobra.Command, args []string, metaFlags []string) error {
 	var attrs map[string]string
 	if len(metaFlags) > 0 {
 		attrs = make(map[string]string, len(metaFlags))
@@ -51,7 +45,34 @@ func runPushWithMeta(_ *cobra.Command, metaFlags []string) error {
 		}
 	}
 
-	id, err := store.Push(os.Stdin, attrs)
+	var (
+		r   *os.File
+		err error
+	)
+	if len(args) == 1 {
+		r, err = os.Open(args[0])
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+		if attrs == nil {
+			attrs = make(map[string]string, 1)
+		}
+		if _, ok := attrs["filename"]; !ok {
+			attrs["filename"] = filepath.Base(args[0])
+		}
+	} else {
+		stat, err := os.Stdin.Stat()
+		if err != nil {
+			return err
+		}
+		if stat.Mode()&os.ModeCharDevice != 0 {
+			return fmt.Errorf("no stdin provided")
+		}
+		r = os.Stdin
+	}
+
+	id, err := store.Push(r, attrs)
 	if err != nil {
 		return err
 	}

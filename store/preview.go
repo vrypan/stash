@@ -34,7 +34,7 @@ func SmartPreview(id string, chars int) (typeStr, preview string, err error) {
 }
 
 // LongPreview returns up to maxLines of text from an entry for verbose display.
-// For binary/empty entries it returns a single descriptive element.
+// Non-text content returns no preview lines.
 func LongPreview(id string, charsPerLine, maxLines int) ([]string, error) {
 	buf, err := readSample(id, charsPerLine*maxLines)
 	if err != nil {
@@ -42,12 +42,12 @@ func LongPreview(id string, charsPerLine, maxLines int) ([]string, error) {
 	}
 
 	if len(buf) == 0 {
-		return []string{"[empty]"}, nil
+		return nil, nil
 	}
 
 	typeStr := detectContentType(buf)
 	if typeStr != "text" && typeStr != "json" {
-		return []string{fmt.Sprintf("[%s]", typeStr)}, nil
+		return nil, nil
 	}
 
 	raw := string(buf)
@@ -146,18 +146,28 @@ func buildTextPreview(buf []byte, chars int) string {
 	if len(buf) > chars {
 		buf = buf[:chars]
 	}
-	// Use only the first line.
-	if idx := bytes.IndexByte(buf, '\n'); idx >= 0 {
-		buf = buf[:idx]
+	var b strings.Builder
+	lastSpace := true
+	for _, r := range string(buf) {
+		switch {
+		case r == '\n':
+			if b.Len() > 0 && !lastSpace {
+				b.WriteByte(' ')
+			}
+			b.WriteString("⏎")
+			b.WriteByte(' ')
+			lastSpace = true
+		case r == '\t' || r == '\r' || r == ' ':
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
+			}
+		case r < 0x20 || r > 0x7e:
+			// Drop other non-printable and non-ASCII runes from compact preview.
+		default:
+			b.WriteRune(r)
+			lastSpace = false
+		}
 	}
-	s := strings.Map(func(r rune) rune {
-		if r == '\t' || r == '\r' {
-			return ' '
-		}
-		if r < 0x20 || r > 0x7e {
-			return -1
-		}
-		return r
-	}, string(buf))
-	return strings.Join(strings.Fields(s), " ")
+	return strings.TrimSpace(b.String())
 }

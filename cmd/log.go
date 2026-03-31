@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,12 +14,12 @@ import (
 )
 
 var (
-	clrID     = color.New(color.FgYellow, color.Bold).SprintFunc()
-	clrTS     = color.New(color.FgCyan).SprintFunc()
-	clrSize   = color.New(color.FgBlue).SprintFunc()
-	clrHash   = color.New(color.Faint).SprintFunc()
-	clrLabel  = color.New(color.Bold).SprintFunc()
-	clrAttrs  = color.New(color.FgYellow).SprintFunc()
+	clrID    = color.New(color.FgYellow, color.Bold).SprintFunc()
+	clrTS    = color.New(color.FgCyan).SprintFunc()
+	clrSize  = color.New(color.FgBlue).SprintFunc()
+	clrHash  = color.New(color.Faint).SprintFunc()
+	clrLabel = color.New(color.Bold).SprintFunc()
+	clrAttrs = color.New(color.FgYellow).SprintFunc()
 )
 
 func typeColor(t string) color.Attribute {
@@ -44,6 +45,20 @@ func clrTypeBare(t string) string {
 	return color.New(typeColor(t)).Sprint(t)
 }
 
+func displayTypeLabel(t string) string {
+	base, _, _ := strings.Cut(t, ";")
+	return strings.TrimSpace(base)
+}
+
+func longTypeLabel(t string) string {
+	switch {
+	case t == "text", t == "json", t == "application/json", strings.HasPrefix(t, "text/"):
+		return t
+	default:
+		return clrTypeBare(t)
+	}
+}
+
 func newLogCmd() *cobra.Command {
 	var fullFlag bool
 	var chars int
@@ -51,11 +66,13 @@ func newLogCmd() *cobra.Command {
 	var n int
 	var reverse bool
 	var long bool
+	var jsonFlag bool
 	var dateMode string
 	var noColor bool
 
 	cmd := &cobra.Command{
 		Use:           "log",
+		Aliases:       []string{"list"},
 		Short:         "Show entry history with content preview",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -83,6 +100,9 @@ func newLogCmd() *cobra.Command {
 
 			now := time.Now()
 
+			if jsonFlag {
+				return logJSON(entries, now, chars, dateMode)
+			}
 			if long {
 				return logLong(entries, now, chars, dateMode)
 			}
@@ -96,6 +116,7 @@ func newLogCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
 	cmd.Flags().BoolVarP(&long, "long", "l", false, "Verbose block format")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output verbose entry history as JSON")
 	cmd.Flags().StringVar(&dateMode, "date", "relative", "Date format: relative or absolute")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable color output")
 	return cmd
@@ -103,7 +124,7 @@ func newLogCmd() *cobra.Command {
 
 func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool, dateMode string) error {
 	type row struct {
-		id, ts, size, hash, typeStr, attrsStr, preview string
+		id, ts, size, hash, typeStr, typeLabel, preview string
 		truncated                                       bool
 	}
 	rows := make([]row, len(entries))
@@ -116,6 +137,14 @@ func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool,
 		}
 		tsStr := formatTS(parseTS(m.TS), now, dateMode)
 		typeStr, preview, _ := store.SmartPreview(m.ID, chars)
+		typeLabel := m.MIME
+		if typeLabel == "" {
+			typeLabel = m.Type
+		}
+		if typeLabel == "" {
+			typeLabel = typeStr
+		}
+		typeLabel = displayTypeLabel(typeLabel)
 		sizeStr := store.HumanSize(m.Size)
 
 		rows[i] = row{
@@ -124,7 +153,7 @@ func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool,
 			size:      sizeStr,
 			hash:      m.Hash,
 			typeStr:   typeStr,
-			attrsStr:  fmtAttrs(m.Attrs),
+			typeLabel: typeLabel,
 			preview:   preview,
 			truncated: (typeStr == "text" || typeStr == "json") && m.Size > int64(chars),
 		}
@@ -150,9 +179,8 @@ func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool,
 		sizeCol := clrSize(fmt.Sprintf("%-*s", maxSize, r.size))
 
 		var parts []string
-		parts = append(parts, clrType(r.typeStr))
-		if r.attrsStr != "" {
-			parts = append(parts, clrAttrs(r.attrsStr))
+		if r.typeStr != "text" && r.typeStr != "json" && r.typeStr != "empty" {
+			parts = append(parts, clrType(r.typeLabel))
 		}
 		if (r.typeStr == "text" || r.typeStr == "json") && r.preview != "" {
 			p := r.preview
@@ -191,26 +219,73 @@ func fmtAttrs(attrs map[string]string) string {
 	return "[" + strings.Join(pairs, "  ") + "]"
 }
 
+type logJSONEntry struct {
+	ID        string            `json:"id"`
+	TS        string            `json:"ts"`
+	Date      string            `json:"date"`
+	Hash      string            `json:"hash"`
+	Size      int64             `json:"size"`
+	SizeHuman string            `json:"size_human"`
+	Type      string            `json:"type,omitempty"`
+	MIME      string            `json:"mime,omitempty"`
+	Meta      map[string]string `json:"meta,omitempty"`
+	Preview   []string          `json:"preview,omitempty"`
+}
+
+func buildLogJSONEntry(m store.Meta, now time.Time, chars int, dateMode string) logJSONEntry {
+	lines, _ := store.LongPreview(m.ID, chars, 5)
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return logJSONEntry{
+		ID:        m.DisplayID(),
+		TS:        m.TS,
+		Date:      formatTS(parseTS(m.TS), now, dateMode),
+		Hash:      m.Hash,
+		Size:      m.Size,
+		SizeHuman: store.HumanSize(m.Size),
+		Type:      m.Type,
+		MIME:      m.MIME,
+		Meta:      m.Attrs,
+		Preview:   lines,
+	}
+}
+
+func logJSON(entries []store.Meta, now time.Time, chars int, dateMode string) error {
+	out := make([]logJSONEntry, len(entries))
+	for i, m := range entries {
+		out[i] = buildLogJSONEntry(m, now, chars, dateMode)
+	}
+	enc := json.NewEncoder(color.Output)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
 func logLong(entries []store.Meta, now time.Time, chars int, dateMode string) error {
 	for i, m := range entries {
 		if i > 0 {
 			fmt.Println()
 		}
-		tsStr := formatTS(parseTS(m.TS), now, dateMode)
-		typeStr, _, _ := store.SmartPreview(m.ID, chars)
+		item := buildLogJSONEntry(m, now, chars, dateMode)
+		tsStr := item.Date
+		typeLabel := item.MIME
+		if typeLabel == "" {
+			typeLabel = item.Type
+		}
+		if typeLabel == "" {
+			detectedType, _, _ := store.SmartPreview(m.ID, chars)
+			typeLabel = detectedType
+		}
+		typeLabel = displayTypeLabel(typeLabel)
 
-		fmt.Printf("entry %s (%s, %s)\n", clrID(m.DisplayID()), clrTypeBare(typeStr), clrSize(store.HumanSize(m.Size)))
+		fmt.Printf("entry %s (%s, %s)\n", clrID(item.ID), longTypeLabel(typeLabel), item.SizeHuman)
 		fmt.Printf("%s%s\n", clrLabel("Date:  "), tsStr)
-		fmt.Printf("%s%s\n", clrLabel("Hash:  "), clrHash(m.Hash))
-		if a := fmtAttrs(m.Attrs); a != "" {
+		fmt.Printf("%s%s\n", clrLabel("Hash:  "), clrHash(item.Hash))
+		if a := fmtAttrs(item.Meta); a != "" {
 			fmt.Printf("%s%s\n", clrLabel("Meta:  "), clrAttrs(a))
 		}
 
-		lines, _ := store.LongPreview(m.ID, chars, 5)
-		// Drop trailing blank lines.
-		for len(lines) > 0 && lines[len(lines)-1] == "" {
-			lines = lines[:len(lines)-1]
-		}
+		lines := item.Preview
 		if len(lines) > 0 {
 			fmt.Printf("\n    %s\n", lines[0])
 			for _, line := range lines[1:] {

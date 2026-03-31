@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,6 +30,8 @@ type Meta struct {
 	TS    string            `json:"ts"`
 	Hash  string            `json:"hash"`
 	Size  int64             `json:"size"`
+	Type  string            `json:"type,omitempty"`
+	MIME  string            `json:"mime,omitempty"`
 	Attrs map[string]string `json:"meta,omitempty"`
 }
 
@@ -131,6 +134,22 @@ func newULID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
 }
 
+type sampleWriter struct {
+	buf []byte
+	max int
+}
+
+func (w *sampleWriter) Write(p []byte) (int, error) {
+	if len(w.buf) < w.max {
+		need := w.max - len(w.buf)
+		if need > len(p) {
+			need = len(p)
+		}
+		w.buf = append(w.buf, p[:need]...)
+	}
+	return len(p), nil
+}
+
 // Push reads r, stores it as a new entry, and returns the canonical ULID.
 // attrs is an optional map of user-supplied key=value metadata.
 func Push(r io.Reader, attrs map[string]string) (string, error) {
@@ -162,10 +181,20 @@ func Push(r io.Reader, attrs map[string]string) (string, error) {
 	}
 
 	h := blake3.New(32, nil)
-	size, err := io.Copy(io.MultiWriter(f, h), r)
+	sample := &sampleWriter{max: 512}
+	size, err := io.Copy(io.MultiWriter(f, h, sample), r)
 	f.Close()
 	if err != nil {
 		return "", fmt.Errorf("write data: %w", err)
+	}
+
+	var typeStr, mimeStr string
+	if len(sample.buf) > 0 {
+		typeStr = detectContentType(sample.buf)
+		mimeStr = http.DetectContentType(sample.buf)
+	} else {
+		typeStr = "empty"
+		mimeStr = "application/octet-stream"
 	}
 
 	m := Meta{
@@ -173,6 +202,8 @@ func Push(r io.Reader, attrs map[string]string) (string, error) {
 		TS:    time.Now().UTC().Format(time.RFC3339Nano),
 		Hash:  hex.EncodeToString(h.Sum(nil)),
 		Size:  size,
+		Type:  typeStr,
+		MIME:  mimeStr,
 		Attrs: attrs,
 	}
 	metaData, err := json.MarshalIndent(m, "", "  ")

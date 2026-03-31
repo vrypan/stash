@@ -12,12 +12,13 @@ import (
 var rootMetaFlags []string
 
 var rootCmd = &cobra.Command{
-	Use:          "stash",
-	Short:        "A local store for pipeline output",
-	SilenceUsage: true,
+	Use:           "stash [file]",
+	Short:         "A local store for pipeline output",
+	Args:          cobra.MaximumNArgs(1),
+	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		return runPushWithMeta(c, rootMetaFlags)
+		return runPushWithMeta(c, args, rootMetaFlags)
 	},
 }
 
@@ -25,7 +26,6 @@ func init() {
 	rootCmd.Flags().StringArrayVarP(&rootMetaFlags, "meta", "m", nil, "Metadata key=value (repeatable)")
 	rootCmd.AddCommand(
 		newPushCmd(),
-		newListCmd(),
 		newLogCmd(),
 		newPeekCmd(),
 		newPopCmd(),
