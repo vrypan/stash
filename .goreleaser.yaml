@@ -44,6 +44,12 @@ homebrew_casks:
       - stash
     binaries:
       - stash
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/stash"]
+          end
     url:
       template: "https://github.com/vrypan/stash/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
       headers:
