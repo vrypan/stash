@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"text/template"
 	"time"
 
 	"stash/store"
@@ -67,6 +68,7 @@ func newLogCmd() *cobra.Command {
 	var reverse bool
 	var long bool
 	var jsonFlag bool
+	var formatStr string
 	var dateMode string
 	var noColor bool
 
@@ -100,6 +102,9 @@ func newLogCmd() *cobra.Command {
 
 			now := time.Now()
 
+			if formatStr != "" {
+				return logTemplate(entries, now, chars, dateMode, formatStr)
+			}
 			if jsonFlag {
 				return logJSON(entries, now, chars, dateMode)
 			}
@@ -117,6 +122,7 @@ func newLogCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
 	cmd.Flags().BoolVarP(&long, "long", "l", false, "Verbose block format")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output verbose entry history as JSON")
+	cmd.Flags().StringVar(&formatStr, "format", "", "Go template for custom log output")
 	cmd.Flags().StringVar(&dateMode, "date", "relative", "Date format: relative or absolute")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable color output")
 	return cmd
@@ -221,6 +227,7 @@ func fmtAttrs(attrs map[string]string) string {
 
 type logJSONEntry struct {
 	ID        string            `json:"id"`
+	ShortID   string            `json:"short_id"`
 	TS        string            `json:"ts"`
 	Date      string            `json:"date"`
 	Hash      string            `json:"hash"`
@@ -239,6 +246,7 @@ func buildLogJSONEntry(m store.Meta, now time.Time, chars int, dateMode string) 
 	}
 	return logJSONEntry{
 		ID:        m.DisplayID(),
+		ShortID:   m.ShortID(),
 		TS:        m.TS,
 		Date:      formatTS(parseTS(m.TS), now, dateMode),
 		Hash:      m.Hash,
@@ -259,6 +267,22 @@ func logJSON(entries []store.Meta, now time.Time, chars int, dateMode string) er
 	enc := json.NewEncoder(color.Output)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+func logTemplate(entries []store.Meta, now time.Time, chars int, dateMode, formatStr string) error {
+	tmpl, err := template.New("log").Parse(formatStr)
+	if err != nil {
+		return fmt.Errorf("invalid --format template: %w", err)
+	}
+	for _, m := range entries {
+		item := buildLogJSONEntry(m, now, chars, dateMode)
+		item.MIME = displayTypeLabel(item.MIME)
+		if err := tmpl.Execute(color.Output, item); err != nil {
+			return fmt.Errorf("render --format template: %w", err)
+		}
+		fmt.Fprintln(color.Output)
+	}
+	return nil
 }
 
 func logLong(entries []store.Meta, now time.Time, chars int, dateMode string) error {
