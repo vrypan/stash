@@ -9,13 +9,19 @@ lets you retrieve entries by recency or ID later. Everything is flat files and d
 
 > Since you're going to ask: `~{@` is an ASCII art acorn.
 
-## Build
+## Install
 
-```bash
-make build
+### From Source
+
+Clone the repo, and run `make build`. Copy the generated binary `stash` to a location in your $PATH.
+
+### Homebrew
+
+```
+brew install vrypan/tap/stash
 ```
 
-## Stash Location
+## Stash repository location
 
 By default, `stash` stores data under `~/.stash`.
 
