@@ -67,6 +67,7 @@ stash clear
 stash [file]
 stash push [file]
 stash log
+stash metadata <id>
 stash peek
 stash pop
 stash cat <id>
@@ -76,6 +77,28 @@ stash version
 ```
 
 `stash list` is an alias for `stash log`.
+
+## Metadata Commands
+
+Show user metadata for an entry:
+
+```bash
+stash meta wpc43xd3
+stash metadata 01kn2ahqhr738w84t3wpc43xd3
+```
+
+Output is printed as sorted `key=value` lines, similar to
+`git config --list`.
+
+Update user metadata:
+
+```bash
+stash metadata wpc43xd3 set job=nightly owner=ci
+stash metadata wpc43xd3 unset owner
+```
+
+These commands update only the user `meta` object in `meta.json`. They do not
+modify core fields such as `id`, `ts`, `hash`, `size`, `type`, or `mime`.
 
 ## Log Output
 
@@ -197,6 +220,12 @@ Query JSON with `jq`:
 
 ```bash
 stash log --json | jq '.[].meta.filename'
+```
+
+Show entry metadata:
+
+```bash
+stash meta wpc43xd3
 ```
 
 Print a custom table:

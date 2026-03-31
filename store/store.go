@@ -264,6 +264,82 @@ func List() ([]Meta, error) {
 	return metas, nil
 }
 
+func metaPath(id string) (string, error) {
+	ed, err := entriesDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(ed, id, "meta.json"), nil
+}
+
+// GetMeta loads meta.json for a resolved canonical entry ID.
+func GetMeta(id string) (Meta, error) {
+	path, err := metaPath(id)
+	if err != nil {
+		return Meta{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Meta{}, &ErrNotFound{Input: id}
+		}
+		return Meta{}, err
+	}
+	var m Meta
+	if err := json.Unmarshal(data, &m); err != nil {
+		return Meta{}, err
+	}
+	return m, nil
+}
+
+func writeMeta(id string, m Meta) error {
+	path, err := metaPath(id)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+// SetAttrs updates only the user metadata map for a resolved canonical entry ID.
+func SetAttrs(id string, attrs map[string]string) error {
+	m, err := GetMeta(id)
+	if err != nil {
+		return err
+	}
+	if len(attrs) == 0 {
+		return nil
+	}
+	if m.Attrs == nil {
+		m.Attrs = make(map[string]string, len(attrs))
+	}
+	for k, v := range attrs {
+		m.Attrs[k] = v
+	}
+	return writeMeta(id, m)
+}
+
+// UnsetAttrs removes keys from the user metadata map for a resolved canonical entry ID.
+func UnsetAttrs(id string, keys []string) error {
+	m, err := GetMeta(id)
+	if err != nil {
+		return err
+	}
+	if len(keys) == 0 || len(m.Attrs) == 0 {
+		return nil
+	}
+	for _, k := range keys {
+		delete(m.Attrs, k)
+	}
+	if len(m.Attrs) == 0 {
+		m.Attrs = nil
+	}
+	return writeMeta(id, m)
+}
+
 // Newest returns the most recent entry or ErrEmpty.
 func Newest() (Meta, error) {
 	entries, err := List()
