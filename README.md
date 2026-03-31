@@ -1,11 +1,13 @@
 <img width="1280" height="640" alt="social-banner" src="https://github.com/user-attachments/assets/c98cfa58-2976-4b8d-9e5b-d9e5314348e6" />
 
-# stash
+# ~{@ stash
 
 `stash` is a small local store for pipeline output and ad hoc file snapshots.
 
 It stores each entry as raw bytes under `~/.stash`, assigns it a stable ULID, and
-lets you retrieve entries by recency or ID later.
+lets you retrieve entries by recency or ID later. Everything is flat files and directories.
+
+> Since you're going to ask: `~{@` is an ASCII art acorn.
 
 ## Build
 
