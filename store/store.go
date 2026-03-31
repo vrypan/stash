@@ -25,17 +25,23 @@ var entropy = ulid.Monotonic(crand.Reader, 0)
 
 // Meta holds per-entry metadata stored in meta.json.
 type Meta struct {
-	ID   string `json:"id"`
-	TS   string `json:"ts"`
-	Hash string `json:"hash"`
-	Size int64  `json:"size"`
+	ID    string            `json:"id"`
+	TS    string            `json:"ts"`
+	Hash  string            `json:"hash"`
+	Size  int64             `json:"size"`
+	Attrs map[string]string `json:"meta,omitempty"`
 }
 
 func (m Meta) ShortID() string {
-	if len(m.ID) >= shortIDLen {
-		return m.ID[len(m.ID)-shortIDLen:]
+	id := m.ID
+	if len(id) >= shortIDLen {
+		id = id[len(id)-shortIDLen:]
 	}
-	return m.ID
+	return strings.ToLower(id)
+}
+
+func (m Meta) DisplayID() string {
+	return strings.ToLower(m.ID)
 }
 
 // Sentinel errors.
@@ -54,9 +60,9 @@ type ErrAmbiguous struct {
 
 func (e *ErrAmbiguous) Error() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "ambiguous id %q\nmatches:\n", e.Input)
+	fmt.Fprintf(&sb, "ambiguous id %q\nmatches:\n", strings.ToLower(e.Input))
 	for _, m := range e.Matches {
-		fmt.Fprintf(&sb, "  %s\n", m)
+		fmt.Fprintf(&sb, "  %s\n", strings.ToLower(m))
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }
@@ -126,7 +132,8 @@ func newULID() string {
 }
 
 // Push reads r, stores it as a new entry, and returns the canonical ULID.
-func Push(r io.Reader) (string, error) {
+// attrs is an optional map of user-supplied key=value metadata.
+func Push(r io.Reader, attrs map[string]string) (string, error) {
 	if err := Init(); err != nil {
 		return "", err
 	}
@@ -162,10 +169,11 @@ func Push(r io.Reader) (string, error) {
 	}
 
 	m := Meta{
-		ID:   id,
-		TS:   time.Now().UTC().Format(time.RFC3339Nano),
-		Hash: hex.EncodeToString(h.Sum(nil)),
-		Size: size,
+		ID:    id,
+		TS:    time.Now().UTC().Format(time.RFC3339Nano),
+		Hash:  hex.EncodeToString(h.Sum(nil)),
+		Size:  size,
+		Attrs: attrs,
 	}
 	metaData, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

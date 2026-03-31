@@ -35,20 +35,10 @@ func newListCmd() *cobra.Command {
 			for _, m := range entries {
 				idStr := m.ShortID()
 				if fullFlag {
-					idStr = m.ID
+					idStr = m.DisplayID()
 				}
 
-				ts, err := time.Parse(time.RFC3339Nano, m.TS)
-				if err != nil {
-					ts, _ = time.Parse(time.RFC3339, m.TS)
-				}
-
-				var tsStr string
-				if dateMode == "absolute" {
-					tsStr = ts.UTC().Format(time.RFC3339)
-				} else {
-					tsStr = relativeTime(now, ts)
-				}
+				tsStr := formatTS(parseTS(m.TS), now, dateMode)
 
 				if previewChars > 0 {
 					preview, err := store.Preview(m.ID, previewChars)
@@ -69,25 +59,4 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().IntVar(&previewChars, "preview-chars", 80, "Number of content characters to preview (0 to disable)")
 	cmd.Flags().StringVar(&dateMode, "date", "relative", "Date format: relative or absolute")
 	return cmd
-}
-
-func relativeTime(now, t time.Time) string {
-	d := now.Sub(t)
-	if d < 0 {
-		d = 0
-	}
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds ago", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	case d < 30*24*time.Hour:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-	case d < 365*24*time.Hour:
-		return fmt.Sprintf("%dmo ago", int(d.Hours()/(24*30)))
-	default:
-		return fmt.Sprintf("%dy ago", int(d.Hours()/(24*365)))
-	}
 }
