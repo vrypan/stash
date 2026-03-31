@@ -39,7 +39,7 @@ changelog:
       - "^docs:"
       - "^test:"
 
-homebrew_formulas:
+brews:
   - ids:
       - stash
     url:
