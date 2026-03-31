@@ -17,7 +17,6 @@ func newLogCmd() *cobra.Command {
 	var fullFlag bool
 	var chars int
 	var hashFlag bool
-	var typeFlag bool
 	var n int
 	var reverse bool
 	var long bool
@@ -52,14 +51,13 @@ func newLogCmd() *cobra.Command {
 			if long {
 				return logLong(entries, now, chars, dateMode)
 			}
-			return logCompact(entries, now, chars, fullFlag, hashFlag, typeFlag, dateMode)
+			return logCompact(entries, now, chars, fullFlag, hashFlag, dateMode)
 		},
 	}
 
 	cmd.Flags().BoolVar(&fullFlag, "full", false, "Show full canonical ULIDs")
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
-	cmd.Flags().BoolVar(&hashFlag, "hash", false, "Include hash prefix")
-	cmd.Flags().BoolVar(&typeFlag, "type", false, "Include detected content type")
+	cmd.Flags().BoolVar(&hashFlag, "hash", false, "Include hash")
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
 	cmd.Flags().BoolVarP(&long, "long", "l", false, "Verbose block format")
@@ -67,7 +65,7 @@ func newLogCmd() *cobra.Command {
 	return cmd
 }
 
-func logCompact(entries []store.Meta, now time.Time, chars int, full, hash, typ bool, dateMode string) error {
+func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool, dateMode string) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, m := range entries {
 		idStr := m.ShortID()
@@ -76,19 +74,25 @@ func logCompact(entries []store.Meta, now time.Time, chars int, full, hash, typ 
 		}
 		tsStr := formatTS(parseTS(m.TS), now, dateMode)
 		typeStr, preview, _ := store.SmartPreview(m.ID, chars)
+
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "[%s]", typeStr)
 		if a := fmtAttrs(m.Attrs); a != "" {
-			preview = preview + "  " + a
+			fmt.Fprintf(&sb, " %s", a)
+		}
+		if typeStr == "text" || typeStr == "json" {
+			if preview != "" {
+				fmt.Fprintf(&sb, " %s", preview)
+				if m.Size > int64(chars) {
+					sb.WriteString("...")
+				}
+			}
 		}
 
-		switch {
-		case hash && typ:
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", idStr, store.HumanSize(m.Size), tsStr, typeStr, m.Hash, preview)
-		case hash:
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", idStr, store.HumanSize(m.Size), tsStr, m.Hash, preview)
-		case typ:
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", idStr, store.HumanSize(m.Size), tsStr, typeStr, preview)
-		default:
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", idStr, store.HumanSize(m.Size), tsStr, preview)
+		if hash {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", idStr, tsStr, store.HumanSize(m.Size), m.Hash, sb.String())
+		} else {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", idStr, tsStr, store.HumanSize(m.Size), sb.String())
 		}
 	}
 	return w.Flush()
