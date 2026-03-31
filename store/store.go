@@ -298,6 +298,34 @@ func Resolve(input string) (string, error) {
 	return "", &ErrNotFound{Input: input}
 }
 
+// Preview reads up to n bytes from the entry and returns them as a string,
+// replacing non-printable bytes with '.'.
+func Preview(id string, n int) (string, error) {
+	ed, err := entriesDir()
+	if err != nil {
+		return "", err
+	}
+	f, err := os.Open(filepath.Join(ed, id, "data"))
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	buf := make([]byte, n)
+	nr, err := io.ReadFull(f, buf)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return "", err
+	}
+	buf = buf[:nr]
+
+	for i, b := range buf {
+		if b < 0x20 || b > 0x7e {
+			buf[i] = '.'
+		}
+	}
+	return string(buf), nil
+}
+
 // Cat writes the entry's raw data to w.
 func Cat(id string, w io.Writer) error {
 	ed, err := entriesDir()
