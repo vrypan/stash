@@ -11,8 +11,6 @@ lets you retrieve entries by recency or ID later.
 make build
 ```
 
-This produces `./stash`.
-
 ## Stash Location
 
 By default, `stash` stores data under `~/.stash`.
@@ -20,9 +18,9 @@ By default, `stash` stores data under `~/.stash`.
 You can override the stash root with `STASH_DIR`:
 
 ```bash
-STASH_DIR=/tmp/job-a ./stash log
-STASH_DIR=/tmp/job-a ./stash Makefile
-STASH_DIR=/tmp/job-b ./stash log
+STASH_DIR=/tmp/job-a stash log
+STASH_DIR=/tmp/job-a stash Makefile
+STASH_DIR=/tmp/job-b stash log
 ```
 
 This is useful when you want separate independent stashes for different jobs,
@@ -33,15 +31,15 @@ projects, or CI runs.
 Stash stdin:
 
 ```bash
-git diff | ./stash
-printf 'hello\n' | ./stash
+git diff | stash
+printf 'hello\n' | stash
 ```
 
 Stash a file directly:
 
 ```bash
-./stash Makefile
-./stash push path/to/file.txt
+stash Makefile
+stash push path/to/file.txt
 ```
 
 When stashing a file path, `stash` stores the basename in entry metadata as
@@ -50,17 +48,17 @@ When stashing a file path, `stash` stores the basename in entry metadata as
 Retrieve data:
 
 ```bash
-./stash peek
-./stash pop
-./stash cat 01kn2ahqhr738w84t3wpc43xd3
-./stash cat wpc43xd3
+stash peek
+stash pop
+stash cat 01kn2ahqhr738w84t3wpc43xd3
+stash cat wpc43xd3
 ```
 
 Remove data:
 
 ```bash
-./stash rm wpc43xd3
-./stash clear
+stash rm wpc43xd3
+stash clear
 ```
 
 ## Commands
@@ -84,17 +82,17 @@ stash version
 Default log output is compact and optimized for scanning:
 
 ```bash
-./stash log
-./stash log -n 10
-./stash log --reverse
-./stash log --full
+stash log
+stash log -n 10
+stash log --reverse
+stash log --full
 ```
 
 Long output shows one block per entry:
 
 ```bash
-./stash log -l
-./stash log -l --date absolute
+stash log -l
+stash log -l --date absolute
 ```
 
 Notes:
@@ -108,8 +106,8 @@ Notes:
 JSON output mirrors the long view:
 
 ```bash
-./stash log --json
-./stash log --json -n 1
+stash log --json
+stash log --json -n 1
 ```
 
 Each JSON entry includes:
@@ -130,9 +128,9 @@ Each JSON entry includes:
 `stash log --format` renders each entry through a Go template:
 
 ```bash
-./stash log --format '{{.ShortID}} {{.Date}} {{.SizeHuman}} {{.MIME}}'
-./stash log --format '{{.ShortID}} {{index .Meta "filename"}}'
-./stash log --format '{{.ID}} {{.Hash}}'
+stash log --format '{{.ShortID}} {{.Date}} {{.SizeHuman}} {{.MIME}}'
+stash log --format '{{.ShortID}} {{index .Meta "filename"}}'
+stash log --format '{{.ID}} {{.Hash}}'
 ```
 
 Available template fields:
@@ -186,23 +184,23 @@ Data is stored exactly as received.
 Preview recent text entries:
 
 ```bash
-./stash log
+stash log
 ```
 
 Show verbose history:
 
 ```bash
-./stash log -l
+stash log -l
 ```
 
 Query JSON with `jq`:
 
 ```bash
-./stash log --json | jq '.[].meta.filename'
+stash log --json | jq '.[].meta.filename'
 ```
 
 Print a custom table:
 
 ```bash
-./stash log --format '{{printf "%-10s %-8s %s" .ShortID .SizeHuman (index .Meta "filename")}}'
+stash log --format '{{printf "%-10s %-8s %s" .ShortID .SizeHuman (index .Meta "filename")}}'
 ```
