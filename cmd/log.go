@@ -199,11 +199,8 @@ func logLong(entries []store.Meta, now time.Time, chars int, dateMode string) er
 		tsStr := formatTS(parseTS(m.TS), now, dateMode)
 		typeStr, _, _ := store.SmartPreview(m.ID, chars)
 
-		fmt.Printf("entry %s\n", clrID(m.DisplayID()))
-		fmt.Printf("%s%s\n", clrLabel("Short: "), m.ShortID())
+		fmt.Printf("entry %s (%s, %s)\n", clrID(m.DisplayID()), clrTypeBare(typeStr), clrSize(store.HumanSize(m.Size)))
 		fmt.Printf("%s%s\n", clrLabel("Date:  "), tsStr)
-		fmt.Printf("%s%s\n", clrLabel("Size:  "), clrSize(store.HumanSize(m.Size)))
-		fmt.Printf("%s%s\n", clrLabel("Type:  "), clrTypeBare(typeStr))
 		fmt.Printf("%s%s\n", clrLabel("Hash:  "), clrHash(m.Hash))
 		if a := fmtAttrs(m.Attrs); a != "" {
 			fmt.Printf("%s%s\n", clrLabel("Meta:  "), clrAttrs(a))
