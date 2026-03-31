@@ -1,0 +1,64 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: stash
+    binary: stash
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X stash/cmd.Version={{.Version}}
+
+archives:
+  - id: stash
+    ids:
+      - stash
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+homebrew_casks:
+  - ids:
+      - stash
+    binaries:
+      - stash
+    url:
+      template: "https://github.com/vrypan/stash/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+      headers:
+        - "Accept: application/octet-stream"
+        - 'Authorization: bearer #{ENV["HOMEBREW_GITHUB_API_TOKEN"]}'
+    commit_author:
+      name: Panayotis Vryonis
+      email: 58812+vrypan@users.noreply.github.com
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: Casks
+    homepage: "https://github.com/vrypan/stash"
+    description: "A local store for pipeline output and ad hoc file snapshots."
+    skip_upload: auto
+    repository:
+      owner: vrypan
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
