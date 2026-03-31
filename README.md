@@ -13,6 +13,21 @@ make build
 
 This produces `./stash`.
 
+## Stash Location
+
+By default, `stash` stores data under `~/.stash`.
+
+You can override the stash root with `STASH_DIR`:
+
+```bash
+STASH_DIR=/tmp/job-a ./stash log
+STASH_DIR=/tmp/job-a ./stash Makefile
+STASH_DIR=/tmp/job-b ./stash log
+```
+
+This is useful when you want separate independent stashes for different jobs,
+projects, or CI runs.
+
 ## Basic Usage
 
 Stash stdin:
@@ -161,6 +176,8 @@ Entries live under:
   entries/<ULID>/data
   entries/<ULID>/meta.json
 ```
+
+When `STASH_DIR` is set, that directory becomes the stash root instead.
 
 Data is stored exactly as received.
 

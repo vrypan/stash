@@ -73,6 +73,9 @@ func (e *ErrAmbiguous) Error() string {
 // Path helpers.
 
 func BaseDir() (string, error) {
+	if dir := strings.TrimSpace(os.Getenv("STASH_DIR")); dir != "" {
+		return dir, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
