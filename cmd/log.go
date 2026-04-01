@@ -166,17 +166,17 @@ func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
 	return true
 }
 
-func collectEntries(inputs []string, reverse bool, n int) ([]store.Meta, error) {
+func collectEntries(inputs []string, reverse bool, n int) ([]store.Summary, error) {
 	filters, err := parseMetaFilters(inputs)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]store.Meta, 0)
-	if err := store.StreamSummaries(func(m store.Meta) (bool, error) {
-		if !matchesMetaFilters(m.Attrs, filters) {
+	out := make([]store.Summary, 0)
+	if err := store.StreamSummaries(func(s store.Summary) (bool, error) {
+		if !matchesMetaFilters(s.Attrs, filters) {
 			return true, nil
 		}
-		out = append(out, m)
+		out = append(out, s)
 		if !reverse && n > 0 && len(out) >= n {
 			return false, nil
 		}
@@ -195,7 +195,7 @@ func collectEntries(inputs []string, reverse bool, n int) ([]store.Meta, error) 
 	return out, nil
 }
 
-func autoPreviewChars(entries []store.Meta, now time.Time, idMode string, dateMode string) int {
+func autoPreviewChars(entries []store.Summary, now time.Time, idMode string, dateMode string) int {
 	width, ok := terminalWidth()
 	if !ok {
 		return 80
@@ -314,44 +314,44 @@ type logJSONEntry struct {
 	Preview   []string          `json:"preview,omitempty"`
 }
 
-func buildLogJSONEntry(m store.Meta, idx int, now time.Time, chars int, dateMode string) logJSONEntry {
-	lines, _ := store.LongPreview(m.ID, chars, 5)
-	for len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
+func buildLogJSONEntry(s store.Summary, idx int, now time.Time, chars int, dateMode string) logJSONEntry {
+	var lines []string
+	if p := strings.TrimSpace(s.Preview); p != "" {
+		lines = []string{p}
 	}
 	return logJSONEntry{
-		ID:        m.DisplayID(),
-		ShortID:   m.ShortID(),
+		ID:        s.DisplayID(),
+		ShortID:   s.ShortID(),
 		StackRef:  fmt.Sprintf("%d", idx+1),
-		TS:        m.TS,
-		Date:      formatTS(parseTS(m.TS), now, dateMode),
-		Hash:      m.Hash,
-		Size:      m.Size,
-		SizeHuman: store.HumanSize(m.Size),
-		Type:      m.Type,
-		MIME:      m.MIME,
-		Meta:      m.Attrs,
+		TS:        s.TS,
+		Date:      formatTS(parseTS(s.TS), now, dateMode),
+		Hash:      s.Hash,
+		Size:      s.Size,
+		SizeHuman: store.HumanSize(s.Size),
+		Type:      s.Type,
+		MIME:      s.MIME,
+		Meta:      s.Attrs,
 		Preview:   lines,
 	}
 }
 
-func logJSON(entries []store.Meta, now time.Time, chars int, dateMode string) error {
+func logJSON(entries []store.Summary, now time.Time, chars int, dateMode string) error {
 	out := make([]logJSONEntry, len(entries))
-	for i, m := range entries {
-		out[i] = buildLogJSONEntry(m, i, now, chars, dateMode)
+	for i, s := range entries {
+		out[i] = buildLogJSONEntry(s, i, now, chars, dateMode)
 	}
 	enc := json.NewEncoder(color.Output)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }
 
-func logTemplate(entries []store.Meta, now time.Time, chars int, dateMode, formatStr string) error {
+func logTemplate(entries []store.Summary, now time.Time, chars int, dateMode, formatStr string) error {
 	tmpl, err := template.New("log").Parse(formatStr)
 	if err != nil {
 		return fmt.Errorf("invalid --format template: %w", err)
 	}
-	for i, m := range entries {
-		item := buildLogJSONEntry(m, i, now, chars, dateMode)
+	for i, s := range entries {
+		item := buildLogJSONEntry(s, i, now, chars, dateMode)
 		item.MIME = displayTypeLabel(item.MIME)
 		if err := tmpl.Execute(color.Output, item); err != nil {
 			return fmt.Errorf("render --format template: %w", err)
@@ -361,20 +361,16 @@ func logTemplate(entries []store.Meta, now time.Time, chars int, dateMode, forma
 	return nil
 }
 
-func logLong(entries []store.Meta, now time.Time, chars int, dateMode, idMode string) error {
-	for i, m := range entries {
+func logLong(entries []store.Summary, now time.Time, chars int, dateMode, idMode string) error {
+	for i, s := range entries {
 		if i > 0 {
 			fmt.Println()
 		}
-		item := buildLogJSONEntry(m, i, now, chars, dateMode)
+		item := buildLogJSONEntry(s, i, now, chars, dateMode)
 		tsStr := item.Date
 		typeLabel := item.MIME
 		if typeLabel == "" {
 			typeLabel = item.Type
-		}
-		if typeLabel == "" {
-			detectedType, _, _ := store.SmartPreview(m.ID, chars)
-			typeLabel = detectedType
 		}
 		typeLabel = displayTypeLabel(typeLabel)
 

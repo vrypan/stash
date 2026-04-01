@@ -143,3 +143,45 @@ func BenchmarkUpdateIndex1000(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkStreamSummariesFirst20_1000(b *testing.B) {
+	setupBenchmarkStash(b, 1000, 256)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		count := 0
+		if err := StreamSummaries(func(s Summary) (bool, error) {
+			if s.ID == "" {
+				b.Fatal("empty id")
+			}
+			count++
+			return count < 20, nil
+		}); err != nil {
+			b.Fatal(err)
+		}
+		if count != 20 {
+			b.Fatalf("count = %d, want 20", count)
+		}
+	}
+}
+
+func BenchmarkStreamSummariesFirst20WithPreview_1000(b *testing.B) {
+	setupBenchmarkStash(b, 1000, 256)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		count := 0
+		if err := StreamSummaries(func(s Summary) (bool, error) {
+			if s.Preview == "" {
+				b.Fatal("empty preview")
+			}
+			count++
+			return count < 20, nil
+		}); err != nil {
+			b.Fatal(err)
+		}
+		if count != 20 {
+			b.Fatalf("count = %d, want 20", count)
+		}
+	}
+}

@@ -79,7 +79,7 @@ func lsDate(t, now time.Time) string {
 	return t.Local().Format("Jan _2  2006")
 }
 
-func lsID(m store.Meta, idx int, idMode string) string {
+func lsID(m store.Summary, idx int, idMode string) string {
 	switch idMode {
 	case "full":
 		return m.DisplayID()
@@ -90,7 +90,7 @@ func lsID(m store.Meta, idx int, idMode string) string {
 	}
 }
 
-func lsName(m store.Meta) string {
+func lsName(m store.Summary) string {
 	if name := strings.TrimSpace(m.Attrs["filename"]); name != "" {
 		return name
 	}
@@ -128,7 +128,7 @@ type lsRow struct {
 	id, name, matched, size, date, mime, preview string
 }
 
-func buildLSRows(entries []store.Meta, now time.Time, dateMode, idMode string, preview bool, chars int, filters []metaFilter) []lsRow {
+func buildLSRows(entries []store.Summary, now time.Time, dateMode, idMode string, preview bool, chars int, filters []metaFilter) []lsRow {
 	rows := make([]lsRow, len(entries))
 	for i, m := range entries {
 		r := lsRow{
@@ -142,13 +142,10 @@ func buildLSRows(entries []store.Meta, now time.Time, dateMode, idMode string, p
 		if r.mime == "" {
 			r.mime = m.Type
 		}
-		if preview {
-			typeStr, p, _ := store.SmartPreview(m.ID, chars)
-			if typeStr == "text" || typeStr == "json" {
-				if m.Size > int64(chars) {
-					p += "..."
-				}
-				r.preview = p
+		if preview && m.Preview != "" {
+			r.preview = m.Preview
+			if m.Size > int64(chars) {
+				r.preview += "..."
 			}
 		}
 		rows[i] = r
@@ -156,7 +153,7 @@ func buildLSRows(entries []store.Meta, now time.Time, dateMode, idMode string, p
 	return rows
 }
 
-func renderLS(entries []store.Meta, now time.Time, dateMode, idMode string, mime, preview bool, chars int, filters []metaFilter, long bool) error {
+func renderLS(entries []store.Summary, now time.Time, dateMode, idMode string, mime, preview bool, chars int, filters []metaFilter, long bool) error {
 	rows := buildLSRows(entries, now, dateMode, idMode, preview, chars, filters)
 	if long && dateMode == "ls" {
 		for i, m := range entries {

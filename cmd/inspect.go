@@ -32,10 +32,11 @@ func newInspectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			s := store.Summary{Meta: m}
 			if formatStr != "" {
-				return logTemplate([]store.Meta{m}, time.Now(), chars, "absolute", formatStr)
+				return logTemplate([]store.Summary{s}, time.Now(), chars, "absolute", formatStr)
 			}
-			return logLong([]store.Meta{m}, time.Now(), chars, "absolute", "full")
+			return logLong([]store.Summary{s}, time.Now(), chars, "absolute", "full")
 		},
 	}
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")

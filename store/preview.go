@@ -10,6 +10,24 @@ import (
 	"unicode"
 )
 
+func isPreviewTextType(typeStr string) bool {
+	return typeStr == "text" || typeStr == "json"
+}
+
+func buildPreviewData(buf []byte, chars int) (typeStr, preview string) {
+	if len(buf) == 0 {
+		return "empty", "[empty]"
+	}
+	typeStr = detectContentType(buf)
+	switch typeStr {
+	case "text", "json":
+		preview = buildTextPreview(buf, chars)
+	default:
+		preview = ""
+	}
+	return typeStr, preview
+}
+
 // SmartPreview reads up to chars bytes from an entry and returns the detected
 // content type and a human-readable preview string.
 func SmartPreview(id string, chars int) (typeStr, preview string, err error) {
@@ -17,17 +35,8 @@ func SmartPreview(id string, chars int) (typeStr, preview string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-
-	if len(buf) == 0 {
-		return "empty", "[empty]", nil
-	}
-
-	typeStr = detectContentType(buf)
-
-	switch typeStr {
-	case "text", "json":
-		preview = buildTextPreview(buf, chars)
-	default:
+	typeStr, preview = buildPreviewData(buf, chars)
+	if preview == "" && typeStr != "empty" {
 		preview = fmt.Sprintf("[%s]", typeStr)
 	}
 	return typeStr, preview, nil

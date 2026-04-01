@@ -22,7 +22,7 @@ import (
 
 const shortIDLen = 8
 const minIDLen = 6
-const indexVersion = 1
+const indexVersion = 2
 
 // entropy is a monotonic ULID entropy source backed by crypto/rand.
 var entropy = ulid.Monotonic(crand.Reader, 0)
@@ -36,6 +36,11 @@ type Meta struct {
 	Type  string            `json:"type,omitempty"`
 	MIME  string            `json:"mime,omitempty"`
 	Attrs map[string]string `json:"meta,omitempty"`
+}
+
+type Summary struct {
+	Meta
+	Preview string `json:"preview,omitempty"`
 }
 
 func (m Meta) ShortID() string {
@@ -176,7 +181,7 @@ type summaryIndexHeader struct {
 	EntriesDirModTime int64 `json:"entries_dir_mod_time"`
 }
 
-type summaryYieldFunc func(Meta) (bool, error)
+type summaryYieldFunc func(Summary) (bool, error)
 
 type sampleWriter struct {
 	buf []byte
@@ -478,7 +483,14 @@ func writeSummaryIndex(ids []string) error {
 			os.Remove(tmpPath)
 			return err
 		}
-		data, err := json.Marshal(m)
+		buf, err := readSample(id, 180)
+		if err != nil && !os.IsNotExist(err) {
+			f.Close()
+			os.Remove(tmpPath)
+			return err
+		}
+		_, preview := buildPreviewData(buf, 180)
+		data, err := json.Marshal(Summary{Meta: m, Preview: preview})
 		if err != nil {
 			f.Close()
 			os.Remove(tmpPath)
@@ -535,15 +547,15 @@ func streamSummaryIndex(yield summaryYieldFunc) error {
 	}
 
 	for {
-		var m Meta
-		err := dec.Decode(&m)
+		var s Summary
+		err := dec.Decode(&s)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return err
 		}
-		cont, err := yield(m)
+		cont, err := yield(s)
 		if err != nil {
 			return err
 		}
@@ -556,7 +568,7 @@ func streamSummaryIndex(yield summaryYieldFunc) error {
 
 // StreamSummaries iterates through the summary index in newest-first order.
 // The callback can return false to stop iteration early.
-func StreamSummaries(yield func(Meta) (bool, error)) error {
+func StreamSummaries(yield func(Summary) (bool, error)) error {
 	err := streamSummaryIndex(yield)
 	if err == nil {
 		return nil
@@ -582,8 +594,8 @@ func UpdateIndex() (int, error) {
 // List returns all entries sorted newest first.
 func List() ([]Meta, error) {
 	metas := make([]Meta, 0)
-	if err := StreamSummaries(func(m Meta) (bool, error) {
-		metas = append(metas, m)
+	if err := StreamSummaries(func(s Summary) (bool, error) {
+		metas = append(metas, s.Meta)
 		return true, nil
 	}); err != nil {
 		return nil, err
