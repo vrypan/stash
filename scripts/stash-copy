@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  stash-copy user@host
+  stash-copy user@host:/remote/stash
+
+Copies stash entries from a remote machine into the local stash repository.
+
+Behavior:
+  - local stash root uses STASH_DIR if set, otherwise ~/.stash
+  - remote stash root uses the explicit path if provided
+  - otherwise remote stash root uses STASH_DIR if set remotely, otherwise ~/.stash
+  - only entries/ are copied
+  - tmp/ and lock are created locally and are not copied from the remote machine
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -ne 1 ]]; then
+  usage >&2
+  exit 1
+fi
+
+if ! command -v rsync >/dev/null 2>&1; then
+  echo "error: rsync is required" >&2
+  exit 1
+fi
+
+if ! command -v ssh >/dev/null 2>&1; then
+  echo "error: ssh is required" >&2
+  exit 1
+fi
+
+src="$1"
+remote_host="$src"
+remote_root=""
+
+if [[ "$src" == *:* ]]; then
+  remote_host="${src%%:*}"
+  remote_root="${src#*:}"
+fi
+
+if [[ -z "$remote_host" ]]; then
+  echo "error: invalid remote spec" >&2
+  exit 1
+fi
+
+local_root="${STASH_DIR:-$HOME/.stash}"
+local_entries="$local_root/entries"
+
+mkdir -p "$local_entries" "$local_root/tmp"
+touch "$local_root/lock"
+
+if [[ -z "$remote_root" ]]; then
+  remote_root="$(
+    ssh "$remote_host" '
+      set -eu
+      if [ -n "${STASH_DIR:-}" ]; then
+        printf "%s\n" "$STASH_DIR"
+      else
+        printf "%s/.stash\n" "$HOME"
+      fi
+    '
+  )"
+fi
+
+if [[ -z "$remote_root" ]]; then
+  echo "error: could not determine remote stash path" >&2
+  exit 1
+fi
+
+echo "Copying entries from $remote_host:$remote_root/entries/ to $local_entries/"
+rsync -a \
+  -e ssh \
+  "$remote_host:$remote_root/entries/" \
+  "$local_entries/"
+
+echo "Done."
