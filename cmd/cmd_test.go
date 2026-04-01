@@ -234,3 +234,30 @@ func TestIndexUpdateCommand(t *testing.T) {
 		t.Fatalf("index update output = %q", stdout)
 	}
 }
+
+func TestTeeCommandWritesStreamToStdoutAndIDToStderr(t *testing.T) {
+	setupTempCmdStash(t)
+
+	cmd := newTeeCmd()
+	stdout, stderr, err := captureIO(t, "alpha\nbeta\n", func() error {
+		cmd.SetArgs([]string{})
+		return cmd.Execute()
+	})
+	if err != nil {
+		t.Fatalf("tee execute: %v", err)
+	}
+	if stdout != "alpha\nbeta\n" {
+		t.Fatalf("tee stdout = %q", stdout)
+	}
+	id := strings.TrimSpace(stderr)
+	if id == "" {
+		t.Fatal("expected id on stderr")
+	}
+	meta, err := store.GetMeta(strings.ToUpper(id))
+	if err != nil {
+		t.Fatalf("GetMeta(%q): %v", id, err)
+	}
+	if meta.Size != int64(len(stdout)) {
+		t.Fatalf("meta.Size = %d, want %d", meta.Size, len(stdout))
+	}
+}

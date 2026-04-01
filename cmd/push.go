@@ -32,22 +32,29 @@ func runPush(c *cobra.Command, args []string) error {
 	return runPushWithMeta(c, args, nil)
 }
 
-func runPushWithMeta(_ *cobra.Command, args []string, metaFlags []string) error {
-	var attrs map[string]string
-	if len(metaFlags) > 0 {
-		attrs = make(map[string]string, len(metaFlags))
-		for _, kv := range metaFlags {
-			k, v, ok := strings.Cut(kv, "=")
-			if !ok {
-				return fmt.Errorf("invalid --meta value %q: expected key=value", kv)
-			}
-			attrs[k] = v
+func parseMetaFlags(metaFlags []string) (map[string]string, error) {
+	if len(metaFlags) == 0 {
+		return nil, nil
+	}
+	attrs := make(map[string]string, len(metaFlags))
+	for _, kv := range metaFlags {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid --meta value %q: expected key=value", kv)
 		}
+		attrs[k] = v
+	}
+	return attrs, nil
+}
+
+func runPushWithMeta(_ *cobra.Command, args []string, metaFlags []string) error {
+	attrs, err := parseMetaFlags(metaFlags)
+	if err != nil {
+		return err
 	}
 
 	var (
-		r   *os.File
-		err error
+		r *os.File
 	)
 	if len(args) == 1 {
 		r, err = os.Open(args[0])

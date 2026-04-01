@@ -26,6 +26,7 @@ func init() {
 	rootCmd.Flags().StringArrayVarP(&rootMetaFlags, "meta", "m", nil, "Metadata key=value (repeatable)")
 	rootCmd.AddCommand(
 		newPushCmd(),
+		newTeeCmd(),
 		newIndexCmd(),
 		newLogCmd(),
 		newInspectCmd(),
@@ -49,6 +50,7 @@ func Execute() {
 func exitCode(err error) int {
 	var nf *store.ErrNotFound
 	var amb *store.ErrAmbiguous
+	var partial *store.ErrPartialSaved
 	switch {
 	case errors.Is(err, store.ErrEmpty):
 		return 1
@@ -56,6 +58,8 @@ func exitCode(err error) int {
 		return 2
 	case errors.As(err, &amb):
 		return 3
+	case errors.As(err, &partial):
+		return 4
 	default:
 		return 1
 	}

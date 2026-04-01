@@ -4,6 +4,7 @@ import (
 	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,24 @@ func createImportedEntry(t *testing.T, root string, ts time.Time, data []byte, a
 		t.Fatalf("write imported meta: %v", err)
 	}
 	return id
+}
+
+type failAfterWriter struct {
+	limit int
+	n     int
+}
+
+func (w *failAfterWriter) Write(p []byte) (int, error) {
+	remaining := w.limit - w.n
+	if remaining <= 0 {
+		return 0, errors.New("forced write failure")
+	}
+	if len(p) > remaining {
+		w.n += remaining
+		return remaining, errors.New("forced write failure")
+	}
+	w.n += len(p)
+	return len(p), nil
 }
 
 func TestIndexRebuildIncludesImportedOlderEntries(t *testing.T) {
@@ -160,5 +179,70 @@ func TestOlderThanIDsAndRemoveUpdateIndex(t *testing.T) {
 	}
 	if len(entries) != 2 || entries[0].ID != id3 || entries[1].ID != id2 {
 		t.Fatalf("List after remove = %#v, want ids [%s %s]", entries, id3, id2)
+	}
+}
+
+func TestTeeSuccess(t *testing.T) {
+	setupTempStash(t)
+
+	var out strings.Builder
+	id, err := Tee(strings.NewReader("alpha\nbeta\n"), &out, map[string]string{"job": "test"}, false)
+	if err != nil {
+		t.Fatalf("Tee: %v", err)
+	}
+	if out.String() != "alpha\nbeta\n" {
+		t.Fatalf("stdout copy = %q", out.String())
+	}
+	meta, err := GetMeta(id)
+	if err != nil {
+		t.Fatalf("GetMeta: %v", err)
+	}
+	if meta.Attrs["job"] != "test" {
+		t.Fatalf("meta job = %q, want test", meta.Attrs["job"])
+	}
+}
+
+func TestTeeInterruptedDiscardedWithoutPartial(t *testing.T) {
+	setupTempStash(t)
+
+	writer := &failAfterWriter{limit: 8}
+	_, err := Tee(strings.NewReader("alpha\nbeta\n"), writer, nil, false)
+	if err == nil {
+		t.Fatal("expected tee error")
+	}
+
+	entries, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no entries, got %d", len(entries))
+	}
+}
+
+func TestTeeInterruptedSavedWithPartial(t *testing.T) {
+	setupTempStash(t)
+
+	writer := &failAfterWriter{limit: 8}
+	id, err := Tee(strings.NewReader("alpha\nbeta\n"), writer, map[string]string{"job": "test"}, true)
+	if err == nil {
+		t.Fatal("expected partial tee error")
+	}
+	var partial *ErrPartialSaved
+	if !errors.As(err, &partial) {
+		t.Fatalf("expected ErrPartialSaved, got %T", err)
+	}
+	if partial.ID != id {
+		t.Fatalf("partial id = %q, want %q", partial.ID, id)
+	}
+	meta, err := GetMeta(id)
+	if err != nil {
+		t.Fatalf("GetMeta: %v", err)
+	}
+	if meta.Attrs["partial"] != "true" {
+		t.Fatalf("partial attr = %q, want true", meta.Attrs["partial"])
+	}
+	if meta.Attrs["job"] != "test" {
+		t.Fatalf("job attr = %q, want test", meta.Attrs["job"])
 	}
 }

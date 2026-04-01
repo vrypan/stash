@@ -78,6 +78,28 @@ func (e *ErrAmbiguous) Error() string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
+type ErrPartialSaved struct {
+	ID    string
+	Cause error
+}
+
+func (e *ErrPartialSaved) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Cause == nil {
+		return fmt.Sprintf("partial entry saved as %q", strings.ToLower(e.ID))
+	}
+	return fmt.Sprintf("partial entry saved as %q: %v", strings.ToLower(e.ID), e.Cause)
+}
+
+func (e *ErrPartialSaved) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
 // Path helpers.
 
 func BaseDir() (string, error) {
@@ -199,28 +221,75 @@ func (w *sampleWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func prepareEntry() (id string, entryTmp string, cleanup func(), err error) {
+	if err := Init(); err != nil {
+		return "", "", nil, err
+	}
+
+	id = newULID()
+	tmpDir, err := tmpStashDir()
+	if err != nil {
+		return "", "", nil, err
+	}
+	entryTmp = filepath.Join(tmpDir, id)
+	if err := os.MkdirAll(entryTmp, 0o700); err != nil {
+		return "", "", nil, err
+	}
+	cleanup = func() { os.RemoveAll(entryTmp) }
+	return id, entryTmp, cleanup, nil
+}
+
+func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sample []byte, hash []byte) error {
+	var typeStr, mimeStr string
+	if len(sample) > 0 {
+		typeStr = detectContentType(sample)
+		mimeStr = http.DetectContentType(sample)
+	} else {
+		typeStr = "empty"
+		mimeStr = "application/octet-stream"
+	}
+
+	m := Meta{
+		ID:    id,
+		TS:    time.Now().UTC().Format(time.RFC3339Nano),
+		Hash:  hex.EncodeToString(hash),
+		Size:  size,
+		Type:  typeStr,
+		MIME:  mimeStr,
+		Attrs: attrs,
+	}
+	metaData, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(entryTmp, "meta.json"), metaData, 0o600); err != nil {
+		return err
+	}
+
+	ed, err := entriesDir()
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(entryTmp, filepath.Join(ed, id)); err != nil {
+		return fmt.Errorf("finalize entry: %w", err)
+	}
+	if err := insertIndexedID(id); err != nil {
+		return err
+	}
+	return invalidateSummaryIndex()
+}
+
 // Push reads r, stores it as a new entry, and returns the canonical ULID.
 // attrs is an optional map of user-supplied key=value metadata.
 func Push(r io.Reader, attrs map[string]string) (string, error) {
-	if err := Init(); err != nil {
-		return "", err
-	}
-
-	id := newULID()
-
-	tmpDir, err := tmpStashDir()
+	id, entryTmp, cleanup, err := prepareEntry()
 	if err != nil {
 		return "", err
 	}
-	entryTmp := filepath.Join(tmpDir, id)
-	if err := os.MkdirAll(entryTmp, 0700); err != nil {
-		return "", err
-	}
-
-	cleanup := true
+	keep := false
 	defer func() {
-		if cleanup {
-			os.RemoveAll(entryTmp)
+		if !keep {
+			cleanup()
 		}
 	}()
 
@@ -236,47 +305,62 @@ func Push(r io.Reader, attrs map[string]string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("write data: %w", err)
 	}
-
-	var typeStr, mimeStr string
-	if len(sample.buf) > 0 {
-		typeStr = detectContentType(sample.buf)
-		mimeStr = http.DetectContentType(sample.buf)
-	} else {
-		typeStr = "empty"
-		mimeStr = "application/octet-stream"
+	if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf, h.Sum(nil)); err != nil {
+		return "", err
 	}
+	keep = true
+	return id, nil
+}
 
-	m := Meta{
-		ID:    id,
-		TS:    time.Now().UTC().Format(time.RFC3339Nano),
-		Hash:  hex.EncodeToString(h.Sum(nil)),
-		Size:  size,
-		Type:  typeStr,
-		MIME:  mimeStr,
-		Attrs: attrs,
-	}
-	metaData, err := json.MarshalIndent(m, "", "  ")
+// Tee streams stdin to w while also storing the received bytes as a new entry.
+// On success it returns the new canonical ID.
+// If partial is false, any stream error discards the temp entry.
+// If partial is true and at least one byte was captured, the partial entry is
+// finalized and ErrPartialSaved is returned.
+func Tee(r io.Reader, w io.Writer, attrs map[string]string, partial bool) (string, error) {
+	id, entryTmp, cleanup, err := prepareEntry()
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(entryTmp, "meta.json"), metaData, 0600); err != nil {
-		return "", err
-	}
+	keep := false
+	defer func() {
+		if !keep {
+			cleanup()
+		}
+	}()
 
-	ed, err := entriesDir()
+	f, err := os.OpenFile(filepath.Join(entryTmp, "data"), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", err
 	}
-	if err := os.Rename(entryTmp, filepath.Join(ed, id)); err != nil {
-		return "", fmt.Errorf("finalize entry: %w", err)
+
+	h := blake3.New(32, nil)
+	sample := &sampleWriter{max: 512}
+	size, copyErr := io.Copy(io.MultiWriter(f, h, sample, w), r)
+	closeErr := f.Close()
+	if copyErr == nil && closeErr != nil {
+		copyErr = closeErr
 	}
-	if err := insertIndexedID(id); err != nil {
+
+	if copyErr != nil {
+		if !partial || size == 0 {
+			return "", fmt.Errorf("stream tee: %w", copyErr)
+		}
+		if attrs == nil {
+			attrs = make(map[string]string, 1)
+		}
+		attrs["partial"] = "true"
+		if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf, h.Sum(nil)); err != nil {
+			return "", err
+		}
+		keep = true
+		return id, &ErrPartialSaved{ID: id, Cause: copyErr}
+	}
+
+	if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf, h.Sum(nil)); err != nil {
 		return "", err
 	}
-	if err := invalidateSummaryIndex(); err != nil {
-		return "", err
-	}
-	cleanup = false
+	keep = true
 	return id, nil
 }
 

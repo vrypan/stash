@@ -22,6 +22,12 @@ stash cat | jq '.items[]'
 stash cat | wc -c
 ```
 
+Or keep the pipeline flowing while saving the same bytes:
+
+```bash
+curl -s https://api.example.com/data | stash tee | jq .
+```
+
 stash can handle binary output too
 
 ```bash
@@ -140,6 +146,18 @@ stash push path/to/file.txt
 When stashing a file path, `stash` stores the basename in entry metadata as
 `meta.filename`.
 
+Pass data through and stash it at the same time:
+
+```bash
+some-command | stash tee | next-command
+some-command | stash tee -m job=nightly | next-command
+some-command | stash tee --partial | next-command
+```
+
+`stash tee` writes the stashed entry ID to stderr so stdout remains the original
+data stream. With `--partial`, an interrupted stream is saved if any bytes were
+captured, and `stash tee` exits non-zero.
+
 Retrieve data:
 
 ```bash
@@ -201,6 +219,7 @@ works naturally with `stash ls`.
 ```text
 stash [file]
 stash push [file]
+stash tee
 stash log
 stash inspect <id|n|@n>
 stash metadata <id>
