@@ -160,6 +160,10 @@ stash rm --before @10
 stash rm --before 01kn2ahqhr738w84t3wpc43xd3 -f
 ```
 
+`stash rm --before <ref>` removes entries older than the referenced entry.
+The referenced entry itself is kept. By default, `stash` asks for
+confirmation; use `-f` to skip the prompt.
+
 ## Treating Stash Like a File System
 
 You can also use `stash` like a small flat file store:
@@ -210,6 +214,21 @@ stash version
 
 `stash list` is an alias for `stash log`.
 `stash peek` is an alias for `stash cat`.
+
+## Index
+
+`stash` keeps internal indexes to speed up stack refs, listing, and history
+commands.
+
+Rebuild them manually with:
+
+```bash
+stash index update
+```
+
+This is mainly useful after external changes to the stash directory, such as
+copying entries from another machine. Normal `stash` commands maintain or
+rebuild indexes automatically when needed.
 
 ## Stack Refs
 

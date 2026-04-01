@@ -24,6 +24,8 @@ stash-copy user@host:/remote/stash
 - local `tmp/` and `lock` are created if needed
 - remote `tmp/` and `lock` are not copied
 - local entries are not deleted if they do not exist on the remote side
+- runs `stash index update` locally after syncing when `stash` is available in
+  `PATH`
 
 ### Requirements
 
