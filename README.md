@@ -197,6 +197,7 @@ works naturally with `stash ls`.
 stash [file]
 stash push [file]
 stash log
+stash inspect <id|n|@n>
 stash metadata <id>
 stash cat [id|n|@n]
 stash peek [id|n|@n]
@@ -398,6 +399,13 @@ Query JSON with `jq`:
 
 ```bash
 stash log --json | jq '.[].meta.filename'
+```
+
+Show full details for one entry:
+
+```bash
+stash inspect @1
+stash inspect @1 --format '{{.Hash}}'
 ```
 
 Show entry metadata:
