@@ -17,17 +17,17 @@ lets you retrieve entries by recency or ID later. Everything is flat files and d
 
 ```bash
 curl -s https://api.example.com/data | stash
-stash peek | jq .
-stash peek | jq '.items[]'
-stash peek | wc -c
+stash cat | jq .
+stash cat | jq '.items[]'
+stash cat | wc -c
 ```
 
 stash can handle binary output too
 
 ```bash
 magick input.png -colorspace Gray png:- | stash
-stash peek | magick png:- -threshold 60% final60.png
-stash peek | magick png:- -threshold 80% final80.png
+stash cat | magick png:- -threshold 60% final60.png
+stash cat | magick png:- -threshold 80% final80.png
 ```
 
 ### Use with diff
@@ -57,7 +57,7 @@ kubectl get pods -A | stash
 # later
 
 stash list
-stash peek | less
+stash cat | less
 stash pop | wc -l
 ```
 ### Save intermediate pipeline stages for debugging
@@ -71,8 +71,8 @@ you can do
 
 ```bash
 cat data.json | jq '.items' | stash
-stash peek | jq 'map(.id)'
-stash peek | jq 'length'
+stash cat | jq 'map(.id)'
+stash cat | jq 'length'
 ```
 
 ### Store outputs from parallel experiments without naming files
@@ -143,8 +143,8 @@ When stashing a file path, `stash` stores the basename in entry metadata as
 Retrieve data:
 
 ```bash
-stash peek
-stash peek 2
+stash cat
+stash cat 2
 stash pop
 stash cat @1
 stash cat @2
@@ -166,15 +166,16 @@ stash [file]
 stash push [file]
 stash log
 stash metadata <id>
-stash peek [n]
+stash cat [id|n|@n]
+stash peek [id|n|@n]
 stash pop
-stash cat <id>
 stash rm <id>
 stash clear
 stash version
 ```
 
 `stash list` is an alias for `stash log`.
+`stash peek` is an alias for `stash cat`.
 
 ## Stack Refs
 
@@ -193,6 +194,19 @@ Meaning:
 - `@3` is the third newest entry
 
 This works anywhere `stash` normally accepts an `<id>`.
+
+`stash cat` also accepts:
+- no argument for the newest entry
+- a plain number like `2` for the second newest entry
+
+Examples:
+
+```bash
+stash cat
+stash cat 2
+stash cat @2
+stash peek @1
+```
 
 ## Metadata Commands
 

@@ -28,7 +28,6 @@ func init() {
 		newPushCmd(),
 		newLogCmd(),
 		newMetadataCmd(),
-		newPeekCmd(),
 		newPopCmd(),
 		newCatCmd(),
 		newRmCmd(),
