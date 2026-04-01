@@ -30,6 +30,23 @@ stash peek | magick png:- -threshold 60% final60.png
 stash peek | magick png:- -threshold 80% final80.png
 ```
 
+### Use with diff
+
+```bash
+find . -type f | sort | stash -m label=before
+# ... later ...
+find . -type f | sort | stash -m label=after
+
+diff -u <(stash cat @2) <(stash cat @1)
+```
+
+And if you want to find the right snapshots first:
+```bash
+stash log --meta label
+stash log --meta label=before
+stash log --meta label=after
+```
+
 ### As a rolling scratch stack during shell work
 
 ```bash
