@@ -264,26 +264,17 @@ modify core fields such as `id`, `ts`, `hash`, `size`, `type`, or `mime`.
 
 ## Log Output
 
-Default log output is compact and optimized for scanning:
+`stash log` shows one detailed block per entry:
 
 ```bash
 stash log
 stash log -n 10
 stash log --reverse
-stash log --id=full
+stash log --id=short
 stash log --id=pos
 ```
 
-Long output shows one block per entry:
-
-```bash
-stash log -l
-stash log -l --date absolute
-stash log -l --id=short
-```
-
-`stash log` defaults to short IDs.
-`stash log -l` defaults to full IDs.
+`stash log` defaults to full IDs and absolute dates.
 Use `--id=short`, `--id=full`, or `--id=pos` to override the display mode.
 
 Filter log output by metadata:
@@ -299,10 +290,9 @@ stash log --meta job --meta owner=ci
 Multiple `--meta` flags are combined with AND.
 
 Notes:
-- Compact output shows text previews for text-like entries.
-- Compact output only shows a type label for non-text entries.
-- Long output shows the base MIME type, size, date, hash, metadata, and a
+- `stash log` shows the base MIME type, size, date, hash, metadata, and a
   preview only for text-like entries.
+- Use `stash ls` for one-line, file-oriented views.
 
 ## Structured Output
 
@@ -392,10 +382,10 @@ Preview recent text entries:
 stash log
 ```
 
-Show verbose history:
+Show detailed history:
 
 ```bash
-stash log -l
+stash log
 ```
 
 Peek at the second-most-recent entry:

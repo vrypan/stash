@@ -65,12 +65,10 @@ func longTypeLabel(t string) string {
 
 func newLogCmd() *cobra.Command {
 	var chars int
-	var hashFlag bool
 	var idMode string
 	var metaFilters []string
 	var n int
 	var reverse bool
-	var long bool
 	var jsonFlag bool
 	var formatStr string
 	var dateMode string
@@ -79,7 +77,7 @@ func newLogCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "log",
 		Aliases:       []string{"list"},
-		Short:         "Show entry history with content preview",
+		Short:         "Show detailed entry history",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(c *cobra.Command, _ []string) error {
@@ -93,13 +91,7 @@ func newLogCmd() *cobra.Command {
 				return fmt.Errorf("--id must be short, full, or pos")
 			}
 			effectiveDateMode := dateMode
-			if long && !c.Flags().Changed("date") {
-				effectiveDateMode = "absolute"
-			}
 			effectiveIDMode := idMode
-			if long && !c.Flags().Changed("id") {
-				effectiveIDMode = "full"
-			}
 			effectiveChars := chars
 
 			entries, err := store.List()
@@ -122,7 +114,12 @@ func newLogCmd() *cobra.Command {
 
 			now := time.Now()
 			if !c.Flags().Changed("chars") && formatStr == "" && !jsonFlag {
-				effectiveChars = autoPreviewChars(entries, now, effectiveIDMode, hashFlag, effectiveDateMode)
+				if width, ok := terminalWidth(); ok {
+					effectiveChars = width - 4
+					if effectiveChars < 20 {
+						effectiveChars = 20
+					}
+				}
 			}
 
 			if formatStr != "" {
@@ -131,23 +128,18 @@ func newLogCmd() *cobra.Command {
 			if jsonFlag {
 				return logJSON(entries, now, effectiveChars, effectiveDateMode)
 			}
-			if long {
-				return logLong(entries, now, effectiveChars, effectiveDateMode, effectiveIDMode)
-			}
-			return logCompact(entries, now, effectiveChars, effectiveIDMode, hashFlag, effectiveDateMode)
+			return logLong(entries, now, effectiveChars, effectiveDateMode, effectiveIDMode)
 		},
 	}
 
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
-	cmd.Flags().BoolVar(&hashFlag, "hash", false, "Include hash")
-	cmd.Flags().StringVar(&idMode, "id", "short", "ID display: short, full, or pos")
+	cmd.Flags().StringVar(&idMode, "id", "full", "ID display: short, full, or pos")
 	cmd.Flags().StringArrayVar(&metaFilters, "meta", nil, "Filter by metadata key or key=value (repeatable)")
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
-	cmd.Flags().BoolVarP(&long, "long", "l", false, "Verbose block format")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output verbose entry history as JSON")
 	cmd.Flags().StringVar(&formatStr, "format", "", "Go template for custom log output")
-	cmd.Flags().StringVar(&dateMode, "date", "relative", "Date format: relative or absolute")
+	cmd.Flags().StringVar(&dateMode, "date", "absolute", "Date format: relative or absolute")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable color output")
 	return cmd
 }
