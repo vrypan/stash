@@ -22,6 +22,17 @@ func formatTS(t time.Time, now time.Time, mode string) string {
 	return relativeTime(now, t)
 }
 
+func formatLSDate(t, now time.Time, mode string) string {
+	switch mode {
+	case "absolute":
+		return formatTS(t, now, "absolute")
+	case "relative":
+		return formatTS(t, now, "relative")
+	default:
+		return lsDate(t, now)
+	}
+}
+
 func relativeTime(now, t time.Time) string {
 	d := now.Sub(t)
 	if d < 0 {

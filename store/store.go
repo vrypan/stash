@@ -21,6 +21,7 @@ import (
 
 const shortIDLen = 8
 const minIDLen = 6
+const indexVersion = 1
 
 // entropy is a monotonic ULID entropy source backed by crypto/rand.
 var entropy = ulid.Monotonic(crand.Reader, 0)
@@ -108,6 +109,22 @@ func LockFilePath() (string, error) {
 	return filepath.Join(b, "lock"), nil
 }
 
+func indexDir() (string, error) {
+	b, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(b, "index"), nil
+}
+
+func entryIndexPath() (string, error) {
+	d, err := indexDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "entries.json"), nil
+}
+
 // Init creates the base directory structure.
 func Init() error {
 	b, err := BaseDir()
@@ -116,6 +133,7 @@ func Init() error {
 	}
 	for _, dir := range []string{
 		filepath.Join(b, "entries"),
+		filepath.Join(b, "index"),
 		filepath.Join(b, "tmp"),
 	} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
@@ -136,6 +154,12 @@ func Init() error {
 
 func newULID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
+}
+
+type entryIndex struct {
+	Version           int      `json:"version"`
+	EntriesDirModTime int64    `json:"entries_dir_mod_time"`
+	IDs               []string `json:"ids"`
 }
 
 type sampleWriter struct {
@@ -225,30 +249,173 @@ func Push(r io.Reader, attrs map[string]string) (string, error) {
 	if err := os.Rename(entryTmp, filepath.Join(ed, id)); err != nil {
 		return "", fmt.Errorf("finalize entry: %w", err)
 	}
+	if err := insertIndexedID(id); err != nil {
+		return "", err
+	}
 	cleanup = false
 	return id, nil
 }
 
-// List returns all entries sorted newest first.
-func List() ([]Meta, error) {
+func listEntryDirIDs() ([]string, int64, error) {
 	ed, err := entriesDir()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	dirEntries, err := os.ReadDir(ed)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, 0, nil
 		}
+		return nil, 0, err
+	}
+	ids := make([]string, 0, len(dirEntries))
+	for _, de := range dirEntries {
+		if de.IsDir() {
+			ids = append(ids, de.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
+	info, err := os.Stat(ed)
+	if err != nil {
+		return nil, 0, err
+	}
+	return ids, info.ModTime().UnixNano(), nil
+}
+
+func readEntryIndex() (entryIndex, error) {
+	path, err := entryIndexPath()
+	if err != nil {
+		return entryIndex{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return entryIndex{}, err
+	}
+	var idx entryIndex
+	if err := json.Unmarshal(data, &idx); err != nil {
+		return entryIndex{}, err
+	}
+	if idx.Version != indexVersion {
+		return entryIndex{}, fmt.Errorf("unsupported index version %d", idx.Version)
+	}
+	return idx, nil
+}
+
+func writeEntryIndex(ids []string) error {
+	if err := Init(); err != nil {
+		return err
+	}
+	ed, err := entriesDir()
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(ed)
+	if err != nil {
+		if os.IsNotExist(err) {
+			info = nil
+		} else {
+			return err
+		}
+	}
+	idx := entryIndex{
+		Version: indexVersion,
+		IDs:     append([]string(nil), ids...),
+	}
+	if info != nil {
+		idx.EntriesDirModTime = info.ModTime().UnixNano()
+	}
+	data, err := json.MarshalIndent(idx, "", "  ")
+	if err != nil {
+		return err
+	}
+	path, err := entryIndexPath()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+func rebuildEntryIndex() ([]string, error) {
+	ids, _, err := listEntryDirIDs()
+	if err != nil {
+		return nil, err
+	}
+	if err := writeEntryIndex(ids); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func loadEntryIDs() ([]string, error) {
+	idx, err := readEntryIndex()
+	if err == nil {
+		ed, dirErr := entriesDir()
+		if dirErr != nil {
+			return nil, dirErr
+		}
+		info, statErr := os.Stat(ed)
+		if statErr == nil && info.ModTime().UnixNano() == idx.EntriesDirModTime {
+			return append([]string(nil), idx.IDs...), nil
+		}
+		if statErr != nil && os.IsNotExist(statErr) && idx.EntriesDirModTime == 0 {
+			return append([]string(nil), idx.IDs...), nil
+		}
+	}
+	return rebuildEntryIndex()
+}
+
+func insertIndexedID(id string) error {
+	ids, err := loadEntryIDs()
+	if err != nil {
+		return err
+	}
+	pos := sort.Search(len(ids), func(i int) bool { return ids[i] <= id })
+	if pos < len(ids) && ids[pos] == id {
+		return writeEntryIndex(ids)
+	}
+	ids = append(ids, "")
+	copy(ids[pos+1:], ids[pos:])
+	ids[pos] = id
+	return writeEntryIndex(ids)
+}
+
+func removeIndexedID(id string) error {
+	ids, err := loadEntryIDs()
+	if err != nil {
+		return err
+	}
+	for i, cur := range ids {
+		if cur == id {
+			ids = append(ids[:i], ids[i+1:]...)
+			break
+		}
+	}
+	return writeEntryIndex(ids)
+}
+
+// UpdateIndex rebuilds the entry ID index from the current entries directory.
+func UpdateIndex() (int, error) {
+	ids, err := rebuildEntryIndex()
+	if err != nil {
+		return 0, err
+	}
+	return len(ids), nil
+}
+
+// List returns all entries sorted newest first.
+func List() ([]Meta, error) {
+	ids, err := loadEntryIDs()
+	if err != nil {
+		return nil, err
+	}
+	ed, err := entriesDir()
+	if err != nil {
 		return nil, err
 	}
 
-	var metas []Meta
-	for _, de := range dirEntries {
-		if !de.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(ed, de.Name(), "meta.json"))
+	metas := make([]Meta, 0, len(ids))
+	for _, id := range ids {
+		data, err := os.ReadFile(filepath.Join(ed, id, "meta.json"))
 		if err != nil {
 			continue // skip incomplete entries
 		}
@@ -259,9 +426,6 @@ func List() ([]Meta, error) {
 		metas = append(metas, m)
 	}
 
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].ID > metas[j].ID
-	})
 	return metas, nil
 }
 
@@ -343,14 +507,14 @@ func UnsetAttrs(id string, keys []string) error {
 
 // Newest returns the most recent entry or ErrEmpty.
 func Newest() (Meta, error) {
-	entries, err := List()
+	ids, err := loadEntryIDs()
 	if err != nil {
 		return Meta{}, err
 	}
-	if len(entries) == 0 {
+	if len(ids) == 0 {
 		return Meta{}, ErrEmpty
 	}
-	return entries[0], nil
+	return GetMeta(ids[0])
 }
 
 // NthNewest returns the nth newest entry, where n=1 is the most recent entry.
@@ -358,17 +522,17 @@ func NthNewest(n int) (Meta, error) {
 	if n < 1 {
 		return Meta{}, fmt.Errorf("invalid entry index %d (minimum 1)", n)
 	}
-	entries, err := List()
+	ids, err := loadEntryIDs()
 	if err != nil {
 		return Meta{}, err
 	}
-	if len(entries) == 0 {
+	if len(ids) == 0 {
 		return Meta{}, ErrEmpty
 	}
-	if n > len(entries) {
-		return Meta{}, fmt.Errorf("entry index %d out of range (%d entries)", n, len(entries))
+	if n > len(ids) {
+		return Meta{}, fmt.Errorf("entry index %d out of range (%d entries)", n, len(ids))
 	}
-	return entries[n-1], nil
+	return GetMeta(ids[n-1])
 }
 
 // Resolve resolves a user-supplied ID to a canonical ULID.
@@ -391,23 +555,12 @@ func Resolve(input string) (string, error) {
 		return "", fmt.Errorf("id too short: %q (minimum %d characters)", input, minIDLen)
 	}
 
-	ed, err := entriesDir()
+	ids, err := loadEntryIDs()
 	if err != nil {
 		return "", err
 	}
-	dirEntries, err := os.ReadDir(ed)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", &ErrNotFound{Input: input}
-		}
-		return "", err
-	}
-
-	var ids []string
-	for _, de := range dirEntries {
-		if de.IsDir() {
-			ids = append(ids, de.Name())
-		}
+	if len(ids) == 0 {
+		return "", &ErrNotFound{Input: input}
 	}
 
 	// 1. Exact canonical match.
@@ -497,45 +650,25 @@ func Remove(id string) error {
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(filepath.Join(ed, id))
+	if err := os.RemoveAll(filepath.Join(ed, id)); err != nil {
+		return err
+	}
+	return removeIndexedID(id)
 }
 
-// OlderThan returns entries older than the referenced canonical entry ID.
-func OlderThan(id string) ([]Meta, error) {
-	entries, err := List()
+// OlderThanIDs returns IDs older than the referenced canonical entry ID.
+func OlderThanIDs(id string) ([]string, error) {
+	ids, err := loadEntryIDs()
 	if err != nil {
 		return nil, err
 	}
-	for i, m := range entries {
-		if m.ID == id {
-			out := append([]Meta(nil), entries[i+1:]...)
+	for i, cur := range ids {
+		if cur == id {
+			out := append([]string(nil), ids[i+1:]...)
 			return out, nil
 		}
 	}
 	return nil, &ErrNotFound{Input: id}
-}
-
-// Clear removes all entry directories.
-func Clear() error {
-	ed, err := entriesDir()
-	if err != nil {
-		return err
-	}
-	dirEntries, err := os.ReadDir(ed)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	for _, de := range dirEntries {
-		if de.IsDir() {
-			if err := os.RemoveAll(filepath.Join(ed, de.Name())); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 // HumanSize formats a byte count for human-readable display.

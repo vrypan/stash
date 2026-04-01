@@ -9,7 +9,7 @@ import (
 	"stash/store"
 )
 
-func resolveCatRef(args []string) (string, error) {
+func resolveEntryRef(args []string) (string, error) {
 	if len(args) == 0 {
 		m, err := store.NthNewest(1)
 		if err != nil {
@@ -39,7 +39,7 @@ func newCatCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			id, err := resolveCatRef(args)
+			id, err := resolveEntryRef(args)
 			if err != nil {
 				return err
 			}

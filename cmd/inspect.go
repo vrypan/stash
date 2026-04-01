@@ -24,7 +24,7 @@ func newInspectCmd() *cobra.Command {
 				color.NoColor = true
 			}
 
-			id, err := resolveCatRef(args)
+			id, err := resolveEntryRef(args)
 			if err != nil {
 				return err
 			}

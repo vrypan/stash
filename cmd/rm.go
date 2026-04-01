@@ -56,15 +56,15 @@ func runRmBefore(ref string, force bool) error {
 		if err != nil {
 			return err
 		}
-		entries, err := store.OlderThan(id)
+		ids, err := store.OlderThanIDs(id)
 		if err != nil {
 			return err
 		}
-		if len(entries) == 0 {
+		if len(ids) == 0 {
 			return nil
 		}
 		if !force {
-			ok, err := confirmRmBefore(ref, entries)
+			ok, err := confirmRmBefore(ref, len(ids))
 			if err != nil {
 				return err
 			}
@@ -72,8 +72,8 @@ func runRmBefore(ref string, force bool) error {
 				return nil
 			}
 		}
-		for _, m := range entries {
-			if err := store.Remove(m.ID); err != nil {
+		for _, id := range ids {
+			if err := store.Remove(id); err != nil {
 				return err
 			}
 		}
@@ -81,9 +81,9 @@ func runRmBefore(ref string, force bool) error {
 	})
 }
 
-func confirmRmBefore(ref string, entries []store.Meta) (bool, error) {
-	fmt.Fprintf(os.Stderr, "Remove %d entr", len(entries))
-	if len(entries) == 1 {
+func confirmRmBefore(ref string, count int) (bool, error) {
+	fmt.Fprintf(os.Stderr, "Remove %d entr", count)
+	if count == 1 {
 		fmt.Fprintf(os.Stderr, "y older than %s? [y/N] ", ref)
 	} else {
 		fmt.Fprintf(os.Stderr, "ies older than %s? [y/N] ", ref)

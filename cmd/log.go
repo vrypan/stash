@@ -39,11 +39,6 @@ func typeColor(t string) color.Attribute {
 	}
 }
 
-// clrType returns "[typeStr]" with color — for compact format.
-func clrType(t string) string {
-	return color.New(typeColor(t)).Sprint("[" + t + "]")
-}
-
 // clrTypeBare returns typeStr with color, no brackets — for long format.
 func clrTypeBare(t string) string {
 	return color.New(typeColor(t)).Sprint(t)
@@ -201,13 +196,13 @@ func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
 	return true
 }
 
-func autoPreviewChars(entries []store.Meta, now time.Time, idMode string, hash bool, dateMode string) int {
+func autoPreviewChars(entries []store.Meta, now time.Time, idMode string, dateMode string) int {
 	width, ok := terminalWidth()
 	if !ok {
 		return 80
 	}
 
-	maxID, maxTS, maxSize, maxHash := 0, 0, 0, 0
+	maxID, maxTS, maxSize := 0, 0, 0
 	for i, m := range entries {
 		idStr := m.ShortID()
 		switch idMode {
@@ -227,15 +222,9 @@ func autoPreviewChars(entries []store.Meta, now time.Time, idMode string, hash b
 		if len(sizeStr) > maxSize {
 			maxSize = len(sizeStr)
 		}
-		if hash && len(m.Hash) > maxHash {
-			maxHash = len(m.Hash)
-		}
 	}
 
 	fixed := maxID + maxTS + maxSize + 6
-	if hash {
-		fixed += maxHash + 2
-	}
 	chars := width - fixed
 	if chars < 20 {
 		return 20
@@ -291,97 +280,6 @@ func trimANSIToWidth(s string, width int) string {
 		b.WriteString("\x1b[0m")
 	}
 	return b.String()
-}
-
-func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, hash bool, dateMode string) error {
-	type row struct {
-		id, ts, size, hash, typeStr, typeLabel, filename, preview string
-		truncated                                                 bool
-	}
-	rows := make([]row, len(entries))
-	maxID, maxTS, maxSize, maxHash := 0, 0, 0, 0
-
-	for i, m := range entries {
-		idStr := m.ShortID()
-		switch idMode {
-		case "full":
-			idStr = m.DisplayID()
-		case "pos":
-			idStr = fmt.Sprintf("%d", i+1)
-		}
-		tsStr := formatTS(parseTS(m.TS), now, dateMode)
-		typeStr, preview, _ := store.SmartPreview(m.ID, chars)
-		typeLabel := m.MIME
-		if typeLabel == "" {
-			typeLabel = m.Type
-		}
-		if typeLabel == "" {
-			typeLabel = typeStr
-		}
-		typeLabel = displayTypeLabel(typeLabel)
-		sizeStr := store.HumanSize(m.Size)
-
-		rows[i] = row{
-			id:        idStr,
-			ts:        tsStr,
-			size:      sizeStr,
-			hash:      m.Hash,
-			typeStr:   typeStr,
-			typeLabel: typeLabel,
-			filename:  m.Attrs["filename"],
-			preview:   preview,
-			truncated: (typeStr == "text" || typeStr == "json") && m.Size > int64(chars),
-		}
-		if len(idStr) > maxID {
-			maxID = len(idStr)
-		}
-		if len(tsStr) > maxTS {
-			maxTS = len(tsStr)
-		}
-		if len(sizeStr) > maxSize {
-			maxSize = len(sizeStr)
-		}
-		if hash && len(m.Hash) > maxHash {
-			maxHash = len(m.Hash)
-		}
-	}
-
-	for _, r := range rows {
-		// Pad plain strings first, then colorize — ANSI codes add invisible
-		// bytes that would confuse any width-based padding done afterwards.
-		idCol := clrID(fmt.Sprintf("%-*s", maxID, r.id))
-		sizeCol := fmt.Sprintf("%*s", maxSize, r.size)
-		tsCol := fmt.Sprintf("%*s", maxTS, r.ts)
-
-		var parts []string
-		if r.filename != "" {
-			parts = append(parts, clrFile(r.filename))
-		}
-		if r.typeStr != "text" && r.typeStr != "json" && r.typeStr != "empty" {
-			parts = append(parts, clrType(r.typeLabel))
-		}
-		if (r.typeStr == "text" || r.typeStr == "json") && r.preview != "" {
-			p := r.preview
-			if r.truncated {
-				p += "..."
-			}
-			parts = append(parts, p)
-		}
-		contentCol := strings.Join(parts, " ")
-
-		var line string
-		if hash {
-			hashCol := clrHash(fmt.Sprintf("%-*s", maxHash, r.hash))
-			line = fmt.Sprintf("%s  %s  %s  %s  %s", idCol, sizeCol, tsCol, hashCol, contentCol)
-		} else {
-			line = fmt.Sprintf("%s  %s  %s  %s", idCol, sizeCol, tsCol, contentCol)
-		}
-		if width, ok := terminalWidth(); ok {
-			line = trimANSIToWidth(line, width)
-		}
-		fmt.Println(line)
-	}
-	return nil
 }
 
 // fmtAttrs formats a meta map as "[key=val  key=val]", sorted by key.

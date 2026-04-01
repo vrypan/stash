@@ -67,12 +67,9 @@ func newLsCmd() *cobra.Command {
 
 			now := time.Now()
 			if preview && !c.Flags().Changed("chars") {
-				effectiveChars = autoPreviewChars(entries, now, effectiveIDMode, false, effectiveDateMode)
+				effectiveChars = autoPreviewChars(entries, now, effectiveIDMode, effectiveDateMode)
 			}
-			if long {
-				return lsLong(entries, now, effectiveDateMode, effectiveIDMode, mime, preview, effectiveChars, filters)
-			}
-			return lsCompact(entries, now, effectiveDateMode, effectiveIDMode, mime, preview, effectiveChars, filters)
+			return renderLS(entries, now, effectiveDateMode, effectiveIDMode, mime, preview, effectiveChars, filters, long)
 		},
 	}
 
@@ -140,20 +137,19 @@ func lsMatchedAttrs(attrs map[string]string, filters []metaFilter) string {
 	return "[" + strings.Join(parts, "  ") + "]"
 }
 
-func lsCompact(entries []store.Meta, now time.Time, dateMode, idMode string, mime, preview bool, chars int, filters []metaFilter) error {
-	type row struct {
-		id, name, matched, size, date, mime, preview string
-	}
-	rows := make([]row, len(entries))
-	maxID, maxName, maxSize, maxDate := 0, 0, 0, 0
+type lsRow struct {
+	id, name, matched, size, date, mime, preview string
+}
 
+func buildLSRows(entries []store.Meta, now time.Time, dateMode, idMode string, preview bool, chars int, filters []metaFilter) []lsRow {
+	rows := make([]lsRow, len(entries))
 	for i, m := range entries {
-		r := row{
+		r := lsRow{
 			id:      lsID(m, i, idMode),
 			name:    lsName(m),
 			matched: lsMatchedAttrs(m.Attrs, filters),
 			size:    store.HumanSize(m.Size),
-			date:    formatTS(parseTS(m.TS), now, dateMode),
+			date:    formatLSDate(parseTS(m.TS), now, dateMode),
 			mime:    displayTypeLabel(m.MIME),
 		}
 		if r.mime == "" {
@@ -169,76 +165,20 @@ func lsCompact(entries []store.Meta, now time.Time, dateMode, idMode string, mim
 			}
 		}
 		rows[i] = r
-		if len(r.id) > maxID {
-			maxID = len(r.id)
-		}
-		if len(r.name) > maxName {
-			maxName = len(r.name)
-		}
-		if len(r.size) > maxSize {
-			maxSize = len(r.size)
-		}
-		if len(r.date) > maxDate {
-			maxDate = len(r.date)
-		}
 	}
-
-	for _, r := range rows {
-		idCol := clrID(fmt.Sprintf("%-*s", maxID, r.id))
-		nameCol := r.name
-		if nameCol != r.id {
-			nameCol = clrFile(fmt.Sprintf("%-*s", maxName, r.name))
-		} else {
-			nameCol = fmt.Sprintf("%-*s", maxName, r.name)
-		}
-		line := fmt.Sprintf("%s  %*s  %*s  %s", idCol, maxSize, r.size, maxDate, r.date, nameCol)
-		if r.matched != "" {
-			line += "  " + clrAttrs(r.matched)
-		}
-		if mime && r.mime != "" {
-			line += "  " + r.mime
-		}
-		if r.preview != "" {
-			line += "  " + r.preview
-		}
-		if width, ok := terminalWidth(); ok {
-			line = trimANSIToWidth(line, width)
-		}
-		fmt.Println(line)
-	}
-	return nil
+	return rows
 }
 
-func lsLong(entries []store.Meta, now time.Time, dateMode, idMode string, mime, preview bool, chars int, filters []metaFilter) error {
-	type row struct {
-		id, name, matched, size, date, mime, preview string
+func renderLS(entries []store.Meta, now time.Time, dateMode, idMode string, mime, preview bool, chars int, filters []metaFilter, long bool) error {
+	rows := buildLSRows(entries, now, dateMode, idMode, preview, chars, filters)
+	if long && dateMode == "ls" {
+		for i, m := range entries {
+			rows[i].date = lsDate(parseTS(m.TS), now)
+		}
 	}
-	rows := make([]row, len(entries))
-	maxID, maxName, maxSize, maxDate := 0, 0, 0, 0
 
-	for i, m := range entries {
-		mime := displayTypeLabel(m.MIME)
-		if mime == "" {
-			mime = m.Type
-		}
-		r := row{
-			id:      lsID(m, i, idMode),
-			name:    lsName(m),
-			matched: lsMatchedAttrs(m.Attrs, filters),
-			size:    store.HumanSize(m.Size),
-			date:    lsDate(parseTS(m.TS), now),
-			mime:    mime,
-		}
-		if preview {
-			typeStr, p, _ := store.SmartPreview(m.ID, chars)
-			if typeStr == "text" || typeStr == "json" {
-				if m.Size > int64(chars) {
-					p += "..."
-				}
-				r.preview = p
-			}
-		}
-		rows[i] = r
+	maxID, maxName, maxSize, maxDate := 0, 0, 0, 0
+	for _, r := range rows {
 		if len(r.id) > maxID {
 			maxID = len(r.id)
 		}

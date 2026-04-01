@@ -26,6 +26,7 @@ func init() {
 	rootCmd.Flags().StringArrayVarP(&rootMetaFlags, "meta", "m", nil, "Metadata key=value (repeatable)")
 	rootCmd.AddCommand(
 		newPushCmd(),
+		newIndexCmd(),
 		newLogCmd(),
 		newInspectCmd(),
 		newLsCmd(),
