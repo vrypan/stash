@@ -500,6 +500,21 @@ func Remove(id string) error {
 	return os.RemoveAll(filepath.Join(ed, id))
 }
 
+// OlderThan returns entries older than the referenced canonical entry ID.
+func OlderThan(id string) ([]Meta, error) {
+	entries, err := List()
+	if err != nil {
+		return nil, err
+	}
+	for i, m := range entries {
+		if m.ID == id {
+			out := append([]Meta(nil), entries[i+1:]...)
+			return out, nil
+		}
+	}
+	return nil, &ErrNotFound{Input: id}
+}
+
 // Clear removes all entry directories.
 func Clear() error {
 	ed, err := entriesDir()

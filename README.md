@@ -156,7 +156,8 @@ Remove data:
 
 ```bash
 stash rm wpc43xd3
-stash clear
+stash rm --before @10
+stash rm --before 01kn2ahqhr738w84t3wpc43xd3 -f
 ```
 
 ## Treating Stash Like a File System
@@ -186,7 +187,7 @@ $ stash ls -l
 In that model:
 - `stash ls` lists entries like files
 - `stash cat` reads an entry by stack ref or ID
-- `stash rm` deletes an entry by stack ref or ID
+- `stash rm` deletes an entry by stack ref or ID, or removes older entries with `--before`
 
 Filenames come from `meta.filename` when available, so stashing files directly
 works naturally with `stash ls`.
@@ -203,7 +204,7 @@ stash cat [id|n|@n]
 stash peek [id|n|@n]
 stash pop
 stash rm <id>
-stash clear
+stash rm --before <id|@n>
 stash version
 ```
 
@@ -389,10 +390,10 @@ Show detailed history:
 stash log
 ```
 
-Peek at the second-most-recent entry:
+Read the second-most-recent entry:
 
 ```bash
-stash peek 2
+stash cat 2
 ```
 
 Query JSON with `jq`:
