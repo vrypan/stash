@@ -1,12 +1,38 @@
 package cmd
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"stash/store"
 )
+
+func getInspectSummary(id string) (store.Summary, error) {
+	var summary store.Summary
+	found := false
+	err := store.StreamSummaries(func(s store.Summary) (bool, error) {
+		if s.ID != id {
+			return true, nil
+		}
+		summary = s
+		found = true
+		return false, nil
+	})
+	if err != nil {
+		return store.Summary{}, err
+	}
+	if found {
+		return summary, nil
+	}
+
+	m, err := store.GetMeta(id)
+	if err != nil {
+		return store.Summary{}, err
+	}
+	return store.Summary{Meta: m}, nil
+}
 
 func newInspectCmd() *cobra.Command {
 	var chars int
@@ -28,11 +54,10 @@ func newInspectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			m, err := store.GetMeta(id)
+			s, err := getInspectSummary(id)
 			if err != nil {
-				return err
+				return fmt.Errorf("inspect %s: %w", id, err)
 			}
-			s := store.Summary{Meta: m}
 			if formatStr != "" {
 				return logTemplate([]store.Summary{s}, time.Now(), chars, "absolute", formatStr)
 			}
