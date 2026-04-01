@@ -43,26 +43,13 @@ func newLsCmd() *cobra.Command {
 			}
 			effectiveChars := chars
 
-			entries, err := store.List()
-			if err != nil {
-				return err
-			}
 			filters, err := parseMetaFilters(metaFilters)
 			if err != nil {
 				return err
 			}
-			entries, err = filterEntriesByMeta(entries, metaFilters)
+			entries, err := collectEntries(metaFilters, reverse, n)
 			if err != nil {
 				return err
-			}
-
-			if reverse {
-				for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-					entries[i], entries[j] = entries[j], entries[i]
-				}
-			}
-			if n > 0 && len(entries) > n {
-				entries = entries[:n]
 			}
 
 			now := time.Now()

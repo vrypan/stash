@@ -89,22 +89,9 @@ func newLogCmd() *cobra.Command {
 			effectiveIDMode := idMode
 			effectiveChars := chars
 
-			entries, err := store.List()
+			entries, err := collectEntries(metaFilters, reverse, n)
 			if err != nil {
 				return err
-			}
-			entries, err = filterEntriesByMeta(entries, metaFilters)
-			if err != nil {
-				return err
-			}
-
-			if reverse {
-				for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-					entries[i], entries[j] = entries[j], entries[i]
-				}
-			}
-			if n > 0 && len(entries) > n {
-				entries = entries[:n]
 			}
 
 			now := time.Now()
@@ -166,23 +153,6 @@ func parseMetaFilters(inputs []string) ([]metaFilter, error) {
 	return filters, nil
 }
 
-func filterEntriesByMeta(entries []store.Meta, inputs []string) ([]store.Meta, error) {
-	if len(inputs) == 0 {
-		return entries, nil
-	}
-	filters, err := parseMetaFilters(inputs)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]store.Meta, 0, len(entries))
-	for _, m := range entries {
-		if matchesMetaFilters(m.Attrs, filters) {
-			out = append(out, m)
-		}
-	}
-	return out, nil
-}
-
 func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
 	for _, f := range filters {
 		v, ok := attrs[f.key]
@@ -194,6 +164,35 @@ func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
 		}
 	}
 	return true
+}
+
+func collectEntries(inputs []string, reverse bool, n int) ([]store.Meta, error) {
+	filters, err := parseMetaFilters(inputs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.Meta, 0)
+	if err := store.StreamSummaries(func(m store.Meta) (bool, error) {
+		if !matchesMetaFilters(m.Attrs, filters) {
+			return true, nil
+		}
+		out = append(out, m)
+		if !reverse && n > 0 && len(out) >= n {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		return nil, err
+	}
+	if reverse {
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+	}
+	if n > 0 && len(out) > n {
+		out = out[:n]
+	}
+	return out, nil
 }
 
 func autoPreviewChars(entries []store.Meta, now time.Time, idMode string, dateMode string) int {

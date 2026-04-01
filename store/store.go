@@ -176,6 +176,8 @@ type summaryIndexHeader struct {
 	EntriesDirModTime int64 `json:"entries_dir_mod_time"`
 }
 
+type summaryYieldFunc func(Meta) (bool, error)
+
 type sampleWriter struct {
 	buf []byte
 	max int
@@ -505,34 +507,33 @@ func writeSummaryIndex(ids []string) error {
 	return os.Rename(tmpPath, path)
 }
 
-func readSummaryIndex() ([]Meta, error) {
+func streamSummaryIndex(yield summaryYieldFunc) error {
 	path, err := summaryIndexPath()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
 
 	dec := json.NewDecoder(f)
 	var header summaryIndexHeader
 	if err := dec.Decode(&header); err != nil {
-		return nil, err
+		return err
 	}
 	if header.Version != indexVersion {
-		return nil, fmt.Errorf("unsupported summary index version %d", header.Version)
+		return fmt.Errorf("unsupported summary index version %d", header.Version)
 	}
 	modTime, err := entriesDirModTime()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if header.EntriesDirModTime != modTime {
-		return nil, fmt.Errorf("stale summary index")
+		return fmt.Errorf("stale summary index")
 	}
 
-	var metas []Meta
 	for {
 		var m Meta
 		err := dec.Decode(&m)
@@ -540,11 +541,30 @@ func readSummaryIndex() ([]Meta, error) {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
-		metas = append(metas, m)
+		cont, err := yield(m)
+		if err != nil {
+			return err
+		}
+		if !cont {
+			break
+		}
 	}
-	return metas, nil
+	return nil
+}
+
+// StreamSummaries iterates through the summary index in newest-first order.
+// The callback can return false to stop iteration early.
+func StreamSummaries(yield func(Meta) (bool, error)) error {
+	err := streamSummaryIndex(yield)
+	if err == nil {
+		return nil
+	}
+	if _, rebuildErr := UpdateIndex(); rebuildErr != nil {
+		return rebuildErr
+	}
+	return streamSummaryIndex(yield)
 }
 
 // UpdateIndex rebuilds the entry ID index from the current entries directory.
@@ -561,14 +581,14 @@ func UpdateIndex() (int, error) {
 
 // List returns all entries sorted newest first.
 func List() ([]Meta, error) {
-	metas, err := readSummaryIndex()
-	if err == nil {
-		return metas, nil
+	metas := make([]Meta, 0)
+	if err := StreamSummaries(func(m Meta) (bool, error) {
+		metas = append(metas, m)
+		return true, nil
+	}); err != nil {
+		return nil, err
 	}
-	if _, rebuildErr := UpdateIndex(); rebuildErr != nil {
-		return nil, rebuildErr
-	}
-	return readSummaryIndex()
+	return metas, nil
 }
 
 func metaPath(id string) (string, error) {
