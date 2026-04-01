@@ -159,6 +159,38 @@ stash rm wpc43xd3
 stash clear
 ```
 
+## Treating Stash Like a File System
+
+You can also use `stash` like a small flat file store:
+
+```bash
+stash ls
+stash ls -l
+stash cat @1
+stash cat yjvyz3sf
+stash rm @2
+```
+
+Example output:
+
+```text
+$ stash ls
+ryacf7sz  384.3K  42m ago  Forest-Green.png
+a3f11qka    493B  1h ago   docker-forgejo.yml
+
+$ stash ls -l
+01kn49syzt9an32shwryacf7sz  384.3K  Apr  1 13:35  Forest-Green.png
+01kn48p426qatbgntqa3f11qka    493B  Apr  1 13:16  docker-forgejo.yml
+```
+
+In that model:
+- `stash ls` lists entries like files
+- `stash cat` reads an entry by stack ref or ID
+- `stash rm` deletes an entry by stack ref or ID
+
+Filenames come from `meta.filename` when available, so stashing files directly
+works naturally with `stash ls`.
+
 ## Commands
 
 ```text
