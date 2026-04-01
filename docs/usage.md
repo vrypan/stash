@@ -129,6 +129,9 @@ stash cat | jq '.items[]'
 stash cat | wc -c
 ```
 
+A full step-by-step example using the USGS earthquake feed is in
+[`docs/examples.md`](/Users/vrypan/Devel/stash/docs/examples.md).
+
 Or keep the pipeline flowing while saving the same bytes:
 
 ```bash

@@ -82,6 +82,7 @@ projects, or CI runs.
 
 - Usage guide: [docs/usage.md](/Users/vrypan/Devel/stash/docs/usage.md)
 - Command/reference guide: [docs/reference.md](/Users/vrypan/Devel/stash/docs/reference.md)
+- Example workflows: [docs/examples.md](/Users/vrypan/Devel/stash/docs/examples.md)
 - Helper scripts: [scripts/README.md](/Users/vrypan/Devel/stash/scripts/README.md)
 
 > [!NOTE]
