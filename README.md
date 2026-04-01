@@ -7,13 +7,81 @@
 It stores each entry as raw bytes under `~/.stash`, assigns it a stable ULID, and
 lets you retrieve entries by recency or ID later. Everything is flat files and directories.
 
-> Since you're going to ask: `~{@` is an ASCII art acorn.
+> [!TIP]
+> stash fits nicely in any workflow that would involve temporary files, or expensive output
+> that needs to be processed in more than one ways.
 
-## Install
+
+
+### Save expensive output and reuse
+
+```bash
+curl -s https://api.example.com/data | stash
+stash peek | jq .
+stash peek | jq '.items[]'
+stash peek | wc -c
+```
+
+stash can handle binary output too
+
+```bash
+magick input.png -colorspace Gray png:- | stash
+stash peek | magick png:- -threshold 60% final60.png
+stash peek | magick png:- -threshold 80% final80.png
+```
+
+### As a rolling scratch stack during shell work
+
+```bash
+git diff | stash
+ps aux | stash
+kubectl get pods -A | stash
+
+# later
+
+stash list
+stash peek | less
+stash pop | wc -l
+```
+### Save intermediate pipeline stages for debugging
+
+Instead of
+```bash
+cat data.json | jq '.items' | tee /tmp/items.json | jq 'map(.id)'
+```
+
+you can do
+
+```bash
+cat data.json | jq '.items' | stash
+stash peek | jq 'map(.id)'
+stash peek | jq 'length'
+```
+
+### Store outputs from parallel experiments without naming files
+
+```bash
+for f in *.json; do
+  jq '.important' "$f" | stash -m q="$f"
+  # -m is used to add custom tags to each entry
+done
+
+stash log
+stash cat <id> | jq .
+```
+
+> [!NOTE]
+> What is `~{@`??? An ASCII art acorn.
+
+## Installation
 
 ### From Source
 
 Clone the repo, and run `make build`. Copy the generated binary `stash` to a location in your $PATH.
+
+## Pre-built binaries
+
+Available under [releases](/releases).
 
 ### Homebrew
 
