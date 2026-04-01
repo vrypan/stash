@@ -207,7 +207,8 @@ Default log output is compact and optimized for scanning:
 stash log
 stash log -n 10
 stash log --reverse
-stash log --full
+stash log --id=full
+stash log --id=pos
 ```
 
 Long output shows one block per entry:
@@ -215,7 +216,12 @@ Long output shows one block per entry:
 ```bash
 stash log -l
 stash log -l --date absolute
+stash log -l --id=short
 ```
+
+`stash log` defaults to short IDs.
+`stash log -l` defaults to full IDs.
+Use `--id=short`, `--id=full`, or `--id=pos` to override the display mode.
 
 Filter log output by metadata:
 
@@ -247,6 +253,7 @@ stash log --json -n 1
 Each JSON entry includes:
 - `id`
 - `short_id`
+- `stack_ref`
 - `ts`
 - `date`
 - `hash`
@@ -270,6 +277,7 @@ stash log --format '{{.ID}} {{.Hash}}'
 Available template fields:
 - `ID`
 - `ShortID`
+- `StackRef`
 - `TS`
 - `Date`
 - `Hash`

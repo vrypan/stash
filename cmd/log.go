@@ -61,9 +61,9 @@ func longTypeLabel(t string) string {
 }
 
 func newLogCmd() *cobra.Command {
-	var fullFlag bool
 	var chars int
 	var hashFlag bool
+	var idMode string
 	var metaFilters []string
 	var n int
 	var reverse bool
@@ -86,9 +86,16 @@ func newLogCmd() *cobra.Command {
 			if dateMode != "absolute" && dateMode != "relative" {
 				return fmt.Errorf("--date must be absolute or relative")
 			}
+			if idMode != "short" && idMode != "full" && idMode != "pos" {
+				return fmt.Errorf("--id must be short, full, or pos")
+			}
 			effectiveDateMode := dateMode
 			if long && !c.Flags().Changed("date") {
 				effectiveDateMode = "absolute"
+			}
+			effectiveIDMode := idMode
+			if long && !c.Flags().Changed("id") {
+				effectiveIDMode = "full"
 			}
 
 			entries, err := store.List()
@@ -118,15 +125,15 @@ func newLogCmd() *cobra.Command {
 				return logJSON(entries, now, chars, effectiveDateMode)
 			}
 			if long {
-				return logLong(entries, now, chars, effectiveDateMode)
+				return logLong(entries, now, chars, effectiveDateMode, effectiveIDMode)
 			}
-			return logCompact(entries, now, chars, fullFlag, hashFlag, effectiveDateMode)
+			return logCompact(entries, now, chars, effectiveIDMode, hashFlag, effectiveDateMode)
 		},
 	}
 
-	cmd.Flags().BoolVar(&fullFlag, "full", false, "Show full canonical ULIDs")
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
 	cmd.Flags().BoolVar(&hashFlag, "hash", false, "Include hash")
+	cmd.Flags().StringVar(&idMode, "id", "short", "ID display: short, full, or pos")
 	cmd.Flags().StringArrayVar(&metaFilters, "meta", nil, "Filter by metadata key or key=value (repeatable)")
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
@@ -195,7 +202,7 @@ func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
 	return true
 }
 
-func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool, dateMode string) error {
+func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, hash bool, dateMode string) error {
 	type row struct {
 		id, ts, size, hash, typeStr, typeLabel, preview string
 		truncated                                       bool
@@ -205,8 +212,11 @@ func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool,
 
 	for i, m := range entries {
 		idStr := m.ShortID()
-		if full {
+		switch idMode {
+		case "full":
 			idStr = m.DisplayID()
+		case "pos":
+			idStr = fmt.Sprintf("%d", i+1)
 		}
 		tsStr := formatTS(parseTS(m.TS), now, dateMode)
 		typeStr, preview, _ := store.SmartPreview(m.ID, chars)
@@ -295,6 +305,7 @@ func fmtAttrs(attrs map[string]string) string {
 type logJSONEntry struct {
 	ID        string            `json:"id"`
 	ShortID   string            `json:"short_id"`
+	StackRef  string            `json:"stack_ref"`
 	TS        string            `json:"ts"`
 	Date      string            `json:"date"`
 	Hash      string            `json:"hash"`
@@ -306,7 +317,7 @@ type logJSONEntry struct {
 	Preview   []string          `json:"preview,omitempty"`
 }
 
-func buildLogJSONEntry(m store.Meta, now time.Time, chars int, dateMode string) logJSONEntry {
+func buildLogJSONEntry(m store.Meta, idx int, now time.Time, chars int, dateMode string) logJSONEntry {
 	lines, _ := store.LongPreview(m.ID, chars, 5)
 	for len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
@@ -314,6 +325,7 @@ func buildLogJSONEntry(m store.Meta, now time.Time, chars int, dateMode string) 
 	return logJSONEntry{
 		ID:        m.DisplayID(),
 		ShortID:   m.ShortID(),
+		StackRef:  fmt.Sprintf("%d", idx+1),
 		TS:        m.TS,
 		Date:      formatTS(parseTS(m.TS), now, dateMode),
 		Hash:      m.Hash,
@@ -329,7 +341,7 @@ func buildLogJSONEntry(m store.Meta, now time.Time, chars int, dateMode string) 
 func logJSON(entries []store.Meta, now time.Time, chars int, dateMode string) error {
 	out := make([]logJSONEntry, len(entries))
 	for i, m := range entries {
-		out[i] = buildLogJSONEntry(m, now, chars, dateMode)
+		out[i] = buildLogJSONEntry(m, i, now, chars, dateMode)
 	}
 	enc := json.NewEncoder(color.Output)
 	enc.SetIndent("", "  ")
@@ -341,8 +353,8 @@ func logTemplate(entries []store.Meta, now time.Time, chars int, dateMode, forma
 	if err != nil {
 		return fmt.Errorf("invalid --format template: %w", err)
 	}
-	for _, m := range entries {
-		item := buildLogJSONEntry(m, now, chars, dateMode)
+	for i, m := range entries {
+		item := buildLogJSONEntry(m, i, now, chars, dateMode)
 		item.MIME = displayTypeLabel(item.MIME)
 		if err := tmpl.Execute(color.Output, item); err != nil {
 			return fmt.Errorf("render --format template: %w", err)
@@ -352,12 +364,12 @@ func logTemplate(entries []store.Meta, now time.Time, chars int, dateMode, forma
 	return nil
 }
 
-func logLong(entries []store.Meta, now time.Time, chars int, dateMode string) error {
+func logLong(entries []store.Meta, now time.Time, chars int, dateMode, idMode string) error {
 	for i, m := range entries {
 		if i > 0 {
 			fmt.Println()
 		}
-		item := buildLogJSONEntry(m, now, chars, dateMode)
+		item := buildLogJSONEntry(m, i, now, chars, dateMode)
 		tsStr := item.Date
 		typeLabel := item.MIME
 		if typeLabel == "" {
@@ -369,7 +381,14 @@ func logLong(entries []store.Meta, now time.Time, chars int, dateMode string) er
 		}
 		typeLabel = displayTypeLabel(typeLabel)
 
-		fmt.Printf("entry %s (%s, %s)\n", clrID(item.ID), longTypeLabel(typeLabel), item.SizeHuman)
+		idLabel := item.ShortID
+		switch idMode {
+		case "full":
+			idLabel = item.ID
+		case "pos":
+			idLabel = item.StackRef
+		}
+		fmt.Printf("entry %s (%s, %s)\n", clrID(idLabel), longTypeLabel(typeLabel), item.SizeHuman)
 		fmt.Printf("%s%s\n", clrLabel("Date: "), tsStr)
 		fmt.Printf("%s%s\n", clrLabel("Hash: "), clrHash(item.Hash))
 		if a := fmtAttrs(item.Meta); a != "" {
