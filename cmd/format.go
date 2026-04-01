@@ -13,7 +13,7 @@ func parseTS(s string) time.Time {
 	return t
 }
 
-const absoluteFormat = "Mon Jan 2 15:04:05 2006 -0700"
+const absoluteFormat = "Mon Jan _2 15:04:05 2006 -0700"
 
 func formatTS(t time.Time, now time.Time, mode string) string {
 	if mode == "absolute" {

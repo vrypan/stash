@@ -358,8 +358,8 @@ func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, h
 		// Pad plain strings first, then colorize — ANSI codes add invisible
 		// bytes that would confuse any width-based padding done afterwards.
 		idCol := clrID(fmt.Sprintf("%-*s", maxID, r.id))
-		tsCol := fmt.Sprintf("%-*s", maxTS, r.ts)
-		sizeCol := fmt.Sprintf("%-*s", maxSize, r.size)
+		sizeCol := fmt.Sprintf("%*s", maxSize, r.size)
+		tsCol := fmt.Sprintf("%*s", maxTS, r.ts)
 
 		var parts []string
 		if r.filename != "" {
@@ -380,9 +380,9 @@ func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, h
 		var line string
 		if hash {
 			hashCol := clrHash(fmt.Sprintf("%-*s", maxHash, r.hash))
-			line = fmt.Sprintf("%s  %s  %s  %s  %s", idCol, tsCol, sizeCol, hashCol, contentCol)
+			line = fmt.Sprintf("%s  %s  %s  %s  %s", idCol, sizeCol, tsCol, hashCol, contentCol)
 		} else {
-			line = fmt.Sprintf("%s  %s  %s  %s", idCol, tsCol, sizeCol, contentCol)
+			line = fmt.Sprintf("%s  %s  %s  %s", idCol, sizeCol, tsCol, contentCol)
 		}
 		if width, ok := terminalWidth(); ok {
 			line = trimANSIToWidth(line, width)

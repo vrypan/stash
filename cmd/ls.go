@@ -191,7 +191,7 @@ func lsCompact(entries []store.Meta, now time.Time, dateMode, idMode string, mim
 		} else {
 			nameCol = fmt.Sprintf("%-*s", maxName, r.name)
 		}
-		line := fmt.Sprintf("%s  %*s  %-*s  %s", idCol, maxSize, r.size, maxDate, r.date, nameCol)
+		line := fmt.Sprintf("%s  %*s  %*s  %s", idCol, maxSize, r.size, maxDate, r.date, nameCol)
 		if r.matched != "" {
 			line += "  " + clrAttrs(r.matched)
 		}
@@ -261,7 +261,7 @@ func lsLong(entries []store.Meta, now time.Time, dateMode, idMode string, mime, 
 		} else {
 			nameCol = fmt.Sprintf("%-*s", maxName, r.name)
 		}
-		line := fmt.Sprintf("%s  %*s  %-*s  %s", idCol, maxSize, r.size, maxDate, r.date, nameCol)
+		line := fmt.Sprintf("%s  %*s  %*s  %s", idCol, maxSize, r.size, maxDate, r.date, nameCol)
 		if r.matched != "" {
 			line += "  " + clrAttrs(r.matched)
 		}
