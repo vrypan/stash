@@ -125,17 +125,81 @@ If you want headers too:
 This gives you a second view, filtered to earthquakes whose `place` mentions
 Alaska, without touching the network again.
 
-### 5. Keep the stream flowing while also saving it
+### 5. After a few minutes, check whether new earthquakes were registered
 
-If you want to inspect the data immediately while stashing it, use `stash tee`:
+Fetch the feed again and stash a new raw snapshot:
 
 ```bash
 curl -s \
   'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson' \
-  | stash tee -m source=usgs-earthquakes -m stage=raw \
-  | jq '.metadata'
+  | stash -m source=usgs-earthquakes -m stage=raw
 ```
 
-`stash tee` writes the original bytes to stdout and also stores them as a new
-stash entry. The new ID is printed to stderr, so it does not interfere with the
-pipeline.
+Transform that new raw snapshot into the same reduced shape and stash it too:
+
+```bash
+stash cat @1 \
+  | jq '
+      {
+        generated: .metadata.generated,
+        count: .metadata.count,
+        earthquakes: [
+          .features[]
+          | {
+              time: .properties.time,
+              magnitude: .properties.mag,
+              place: .properties.place,
+              tsunami: .properties.tsunami,
+              url: .properties.url
+            }
+        ]
+      }
+    ' \
+  | stash -m source=usgs-earthquakes -m stage=reduced
+```
+
+At this point:
+- `@1` is the new reduced snapshot
+- `@2` is the new raw snapshot
+- `@3` is the previous reduced snapshot
+- `@4` is the previous raw snapshot
+
+If you have stashed other data in the meantime, use `stash ls` to find the ids of the entries
+you are interested in, and use them in place of `@1`, `@3`.
+
+```bash
+# example
+stash ls --meta source --meta stage
+
+g5xa4znm  412.0K   6m ago  01kn4z3q4vv5crxjdkg5xa4znm  [usgs-earthquakes  reduced]
+4p0rgpda    1.3M   6m ago  01kn4z358zf1fme79d4p0rgpda  [usgs-earthquakes  raw]
+w6sz0cbw  411.3K  23m ago  01kn4y4m147f06r4few6sz0cbw  [usgs-earthquakes  reduced]
+6ya0x77f    1.3M  23m ago  01kn4y3xjtj40kksg16ya0x77f  [usgs-earthquakes  raw]
+```
+
+Now compare the two reduced snapshots and show only earthquakes that are new in
+the latest fetch:
+
+```bash
+{
+  printf 'mag\ttime_utc\ttsunami\tplace\n'
+  jq -nr \
+    --slurpfile new <(stash cat @1) \
+    --slurpfile old <(stash cat @3) '
+      ($old[0].earthquakes | map(.url) | INDEX(.)) as $seen
+      | $new[0].earthquakes
+      | map(select($seen[.url] | not))
+      | .[]
+      | [
+          (.magnitude | tostring),
+          (.time / 1000 | strftime("%Y-%m-%d %H:%M:%S")),
+          .tsunami,
+          .place
+        ]
+      | @tsv
+    '
+} | column -t -s $'\t'
+```
+
+This works because the reduced snapshots keep the USGS event `url`, which is a
+stable identifier for each earthquake record.
