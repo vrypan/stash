@@ -3,22 +3,26 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"text/template"
 	"time"
+	"unicode/utf8"
 
 	"stash/store"
 
 	"github.com/fatih/color"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 )
 
 var (
 	clrID    = color.New(color.FgYellow, color.Bold).SprintFunc()
 	clrHash  = color.New(color.Faint).SprintFunc()
 	clrLabel = color.New(color.Bold).SprintFunc()
-	clrAttrs = color.New(color.FgYellow).SprintFunc()
+	clrAttrs = color.New(color.FgMagenta).SprintFunc()
 	clrFile  = color.New(color.FgCyan, color.Bold).SprintFunc()
 )
 
@@ -31,7 +35,7 @@ func typeColor(t string) color.Attribute {
 	case "empty":
 		return color.Faint
 	default: // binary, gzip, zstd, zip, png, jpeg, pdf, gif, …
-		return color.FgRed
+		return color.FgCyan
 	}
 }
 
@@ -96,6 +100,7 @@ func newLogCmd() *cobra.Command {
 			if long && !c.Flags().Changed("id") {
 				effectiveIDMode = "full"
 			}
+			effectiveChars := chars
 
 			entries, err := store.List()
 			if err != nil {
@@ -116,17 +121,20 @@ func newLogCmd() *cobra.Command {
 			}
 
 			now := time.Now()
+			if !c.Flags().Changed("chars") && formatStr == "" && !jsonFlag {
+				effectiveChars = autoPreviewChars(entries, now, effectiveIDMode, hashFlag, effectiveDateMode)
+			}
 
 			if formatStr != "" {
-				return logTemplate(entries, now, chars, effectiveDateMode, formatStr)
+				return logTemplate(entries, now, effectiveChars, effectiveDateMode, formatStr)
 			}
 			if jsonFlag {
-				return logJSON(entries, now, chars, effectiveDateMode)
+				return logJSON(entries, now, effectiveChars, effectiveDateMode)
 			}
 			if long {
-				return logLong(entries, now, chars, effectiveDateMode, effectiveIDMode)
+				return logLong(entries, now, effectiveChars, effectiveDateMode, effectiveIDMode)
 			}
-			return logCompact(entries, now, chars, effectiveIDMode, hashFlag, effectiveDateMode)
+			return logCompact(entries, now, effectiveChars, effectiveIDMode, hashFlag, effectiveDateMode)
 		},
 	}
 
@@ -199,6 +207,98 @@ func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
 		}
 	}
 	return true
+}
+
+func autoPreviewChars(entries []store.Meta, now time.Time, idMode string, hash bool, dateMode string) int {
+	width, ok := terminalWidth()
+	if !ok {
+		return 80
+	}
+
+	maxID, maxTS, maxSize, maxHash := 0, 0, 0, 0
+	for i, m := range entries {
+		idStr := m.ShortID()
+		switch idMode {
+		case "full":
+			idStr = m.DisplayID()
+		case "pos":
+			idStr = fmt.Sprintf("%d", i+1)
+		}
+		if len(idStr) > maxID {
+			maxID = len(idStr)
+		}
+		tsStr := formatTS(parseTS(m.TS), now, dateMode)
+		if len(tsStr) > maxTS {
+			maxTS = len(tsStr)
+		}
+		sizeStr := store.HumanSize(m.Size)
+		if len(sizeStr) > maxSize {
+			maxSize = len(sizeStr)
+		}
+		if hash && len(m.Hash) > maxHash {
+			maxHash = len(m.Hash)
+		}
+	}
+
+	fixed := maxID + maxTS + maxSize + 6
+	if hash {
+		fixed += maxHash + 2
+	}
+	chars := width - fixed
+	if chars < 20 {
+		return 20
+	}
+	return chars
+}
+
+func terminalWidth() (int, bool) {
+	fd := os.Stdout.Fd()
+	if !isatty.IsTerminal(fd) {
+		return 0, false
+	}
+	ws, err := unix.IoctlGetWinsize(int(fd), unix.TIOCGWINSZ)
+	if err != nil || ws == nil || ws.Col == 0 {
+		return 0, false
+	}
+	return int(ws.Col), true
+}
+
+func trimANSIToWidth(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	visible := 0
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) {
+				c := s[j]
+				if c >= 0x40 && c <= 0x7e {
+					j++
+					break
+				}
+				j++
+			}
+			b.WriteString(s[i:j])
+			i = j
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			size = 1
+		}
+		if visible >= width {
+			break
+		}
+		b.WriteString(s[i : i+size])
+		visible++
+		i += size
+	}
+	if visible >= width {
+		b.WriteString("\x1b[0m")
+	}
+	return b.String()
 }
 
 func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, hash bool, dateMode string) error {
@@ -277,12 +377,17 @@ func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, h
 		}
 		contentCol := strings.Join(parts, " ")
 
+		var line string
 		if hash {
 			hashCol := clrHash(fmt.Sprintf("%-*s", maxHash, r.hash))
-			fmt.Printf("%s  %s  %s  %s  %s\n", idCol, tsCol, sizeCol, hashCol, contentCol)
+			line = fmt.Sprintf("%s  %s  %s  %s  %s", idCol, tsCol, sizeCol, hashCol, contentCol)
 		} else {
-			fmt.Printf("%s  %s  %s  %s\n", idCol, tsCol, sizeCol, contentCol)
+			line = fmt.Sprintf("%s  %s  %s  %s", idCol, tsCol, sizeCol, contentCol)
 		}
+		if width, ok := terminalWidth(); ok {
+			line = trimANSIToWidth(line, width)
+		}
+		fmt.Println(line)
 	}
 	return nil
 }
