@@ -4,39 +4,31 @@
 
 `stash` is a small local store for pipeline output and ad hoc file snapshots.
 
-It stores each entry as raw bytes under `~/.stash`, assigns it a stable ULID, and
-lets you retrieve entries by recency or ID later. Everything is flat files and directories.
+It stores each entry as raw bytes under `~/.stash`, assigns it a stable ULID,
+and lets you retrieve entries by recency or ID later. Everything is flat files
+and directories.
 
 > [!TIP]
-> stash fits nicely in any workflow that would involve temporary files, or expensive output
-> that needs to be processed in more than one ways.
+> stash fits nicely in any workflow that would involve temporary files, or
+> expensive output that needs to be processed in more than one ways.
 
+## Quick Start
 
-
-### Save expensive output and reuse
+Save output and reuse it:
 
 ```bash
 curl -s https://api.example.com/data | stash
 stash cat | jq .
 stash cat | jq '.items[]'
-stash cat | wc -c
 ```
 
-Or keep the pipeline flowing while saving the same bytes:
+Keep the pipeline flowing while saving the same bytes:
 
 ```bash
 curl -s https://api.example.com/data | stash tee | jq .
 ```
 
-stash can handle binary output too
-
-```bash
-magick input.png -colorspace Gray png:- | stash
-stash cat | magick png:- -threshold 60% final60.png
-stash cat | magick png:- -threshold 80% final80.png
-```
-
-### Use with diff
+Use with diff:
 
 ```bash
 find . -type f | sort | stash -m label=before
@@ -46,61 +38,20 @@ find . -type f | sort | stash -m label=after
 diff -u <(stash cat @2) <(stash cat @1)
 ```
 
-And if you want to find the right snapshots first:
-```bash
-stash log --meta label
-stash log --meta label=before
-stash log --meta label=after
-```
-
-### As a rolling scratch stack during shell work
+File-oriented view:
 
 ```bash
-git diff | stash
-ps aux | stash
-kubectl get pods -A | stash
-
-# later
-
-stash list
-stash cat | less
-stash pop | wc -l
-```
-### Save intermediate pipeline stages for debugging
-
-Instead of
-```bash
-cat data.json | jq '.items' | tee /tmp/items.json | jq 'map(.id)'
-```
-
-you can do
-
-```bash
-cat data.json | jq '.items' | stash
-stash cat | jq 'map(.id)'
-stash cat | jq 'length'
-```
-
-### Store outputs from parallel experiments without naming files
-
-```bash
-for f in *.json; do
-  jq '.important' "$f" | stash -m q="$f"
-  # -m is used to add custom tags to each entry
-done
-
+stash ls
 stash log
-stash cat <id> | jq .
+stash inspect @1
 ```
-
-> [!NOTE]
-> What is `~{@`??? An ASCII art acorn.
 
 ## Installation
 
 ### From Source
 
-Clone the repo, and run `make build`. Copy the generated binary `stash` to a location in your $PATH.
+Clone the repo, and run `make build`. Copy the generated binary `stash` to a
+location in your `PATH`.
 
 ### Pre-built binaries
 
@@ -108,11 +59,11 @@ Available under [releases](/releases).
 
 ### Homebrew
 
-```
+```bash
 brew install vrypan/tap/stash
 ```
 
-## Stash repository location
+## Stash Repository Location
 
 By default, `stash` stores data under `~/.stash`.
 
@@ -127,334 +78,11 @@ STASH_DIR=/tmp/job-b stash log
 This is useful when you want separate independent stashes for different jobs,
 projects, or CI runs.
 
-## Basic Usage
+## Documentation
 
-Stash stdin:
+- Usage guide: [docs/usage.md](/Users/vrypan/Devel/stash/docs/usage.md)
+- Command/reference guide: [docs/reference.md](/Users/vrypan/Devel/stash/docs/reference.md)
+- Helper scripts: [scripts/README.md](/Users/vrypan/Devel/stash/scripts/README.md)
 
-```bash
-git diff | stash
-printf 'hello\n' | stash
-```
-
-Stash a file directly:
-
-```bash
-stash Makefile
-stash push path/to/file.txt
-```
-
-When stashing a file path, `stash` stores the basename in entry metadata as
-`meta.filename`.
-
-Pass data through and stash it at the same time:
-
-```bash
-some-command | stash tee | next-command
-some-command | stash tee -m job=nightly | next-command
-some-command | stash tee --partial | next-command
-```
-
-`stash tee` writes the stashed entry ID to stderr so stdout remains the original
-data stream. With `--partial`, an interrupted stream is saved if any bytes were
-captured, and `stash tee` exits non-zero.
-
-Retrieve data:
-
-```bash
-stash cat
-stash cat 2
-stash pop
-stash cat @1
-stash cat @2
-stash cat 01kn2ahqhr738w84t3wpc43xd3
-stash cat wpc43xd3
-```
-
-Remove data:
-
-```bash
-stash rm wpc43xd3
-stash rm --before @10
-stash rm --before 01kn2ahqhr738w84t3wpc43xd3 -f
-```
-
-`stash rm --before <ref>` removes entries older than the referenced entry.
-The referenced entry itself is kept. By default, `stash` asks for
-confirmation; use `-f` to skip the prompt.
-
-## Treating Stash Like a File System
-
-You can also use `stash` like a small flat file store:
-
-```bash
-stash ls
-stash ls -l
-stash cat @1
-stash cat yjvyz3sf
-stash rm @2
-```
-
-Example output:
-
-```text
-$ stash ls
-ryacf7sz  384.3K  42m ago  Forest-Green.png
-a3f11qka    493B  1h ago   docker-forgejo.yml
-
-$ stash ls -l
-01kn49syzt9an32shwryacf7sz  384.3K  Apr  1 13:35  Forest-Green.png
-01kn48p426qatbgntqa3f11qka    493B  Apr  1 13:16  docker-forgejo.yml
-```
-
-In that model:
-- `stash ls` lists entries like files
-- `stash cat` reads an entry by stack ref or ID
-- `stash rm` deletes an entry by stack ref or ID, or removes older entries with `--before`
-
-Filenames come from `meta.filename` when available, so stashing files directly
-works naturally with `stash ls`.
-
-## Commands
-
-```text
-stash [file]
-stash push [file]
-stash tee
-stash log
-stash inspect <id|n|@n>
-stash metadata <id>
-stash cat [id|n|@n]
-stash peek [id|n|@n]
-stash pop
-stash rm <id>
-stash rm --before <id|@n>
-stash version
-```
-
-`stash list` is an alias for `stash log`.
-`stash peek` is an alias for `stash cat`.
-
-## Index
-
-`stash` keeps internal indexes to speed up stack refs, listing, and history
-commands.
-
-Rebuild them manually with:
-
-```bash
-stash index update
-```
-
-This is mainly useful after external changes to the stash directory, such as
-copying entries from another machine. Normal `stash` commands maintain or
-rebuild indexes automatically when needed.
-
-## Stack Refs
-
-Commands that accept an entry ID also accept stack references:
-
-```bash
-stash cat @1
-stash cat @2
-stash meta @1
-stash rm @3
-```
-
-Meaning:
-- `@1` is the newest entry
-- `@2` is the second newest entry
-- `@3` is the third newest entry
-
-This works anywhere `stash` normally accepts an `<id>`.
-
-`stash cat` also accepts:
-- no argument for the newest entry
-- a plain number like `2` for the second newest entry
-
-Examples:
-
-```bash
-stash cat
-stash cat 2
-stash cat @2
-stash peek @1
-```
-
-## Metadata Commands
-
-Show user metadata for an entry:
-
-```bash
-stash meta wpc43xd3
-stash metadata 01kn2ahqhr738w84t3wpc43xd3
-```
-
-Output is printed as sorted `key=value` lines, similar to
-`git config --list`.
-
-Update user metadata:
-
-```bash
-stash metadata wpc43xd3 set job=nightly owner=ci
-stash metadata wpc43xd3 unset owner
-```
-
-These commands update only the user `meta` object in `meta.json`. They do not
-modify core fields such as `id`, `ts`, `hash`, `size`, `type`, or `mime`.
-
-## Log Output
-
-`stash log` shows one detailed block per entry:
-
-```bash
-stash log
-stash log -n 10
-stash log --reverse
-stash log --id=short
-stash log --id=pos
-```
-
-`stash log` defaults to full IDs and absolute dates.
-Use `--id=short`, `--id=full`, or `--id=pos` to override the display mode.
-
-Filter log output by metadata:
-
-```bash
-stash log --meta job
-stash log --meta job=nightly
-stash log --meta job --meta owner=ci
-```
-
-`--meta key` matches entries that contain the key with any value.
-`--meta key=value` matches entries with an exact value.
-Multiple `--meta` flags are combined with AND.
-
-Notes:
-- `stash log` shows the base MIME type, size, date, hash, metadata, and a
-  preview only for text-like entries.
-- Use `stash ls` for one-line, file-oriented views.
-
-## Structured Output
-
-JSON output mirrors the long view:
-
-```bash
-stash log --json
-stash log --json -n 1
-```
-
-Each JSON entry includes:
-- `id`
-- `short_id`
-- `stack_ref`
-- `ts`
-- `date`
-- `hash`
-- `size`
-- `size_human`
-- `type`
-- `mime`
-- `meta`
-- `preview`
-
-## Custom Formatting
-
-`stash log --format` renders each entry through a Go template:
-
-```bash
-stash log --format '{{.ShortID}} {{.Date}} {{.SizeHuman}} {{.MIME}}'
-stash log --format '{{.ShortID}} {{index .Meta "filename"}}'
-stash log --format '{{.ID}} {{.Hash}}'
-```
-
-Available template fields:
-- `ID`
-- `ShortID`
-- `StackRef`
-- `TS`
-- `Date`
-- `Hash`
-- `Size`
-- `SizeHuman`
-- `Type`
-- `MIME`
-- `Meta`
-- `Preview`
-
-`MIME` is exposed in display form, so parameters such as `; charset=utf-8` are
-stripped.
-
-## Metadata
-
-Each entry stores metadata in `~/.stash/entries/<ULID>/meta.json`.
-
-Current fields include:
-- `id`
-- `ts`
-- `hash`
-- `size`
-- `type`
-- `mime`
-- `meta`
-
-`meta` contains user-supplied `--meta key=value` pairs and `filename` when the
-entry was created from a file path.
-
-## Storage
-
-Entries live under:
-
-```text
-~/.stash/
-  entries/<ULID>/data
-  entries/<ULID>/meta.json
-```
-
-When `STASH_DIR` is set, that directory becomes the stash root instead.
-
-Data is stored exactly as received.
-
-## Examples
-
-Preview recent text entries:
-
-```bash
-stash log
-```
-
-Show detailed history:
-
-```bash
-stash log
-```
-
-Read the second-most-recent entry:
-
-```bash
-stash cat 2
-```
-
-Query JSON with `jq`:
-
-```bash
-stash log --json | jq '.[].meta.filename'
-```
-
-Show full details for one entry:
-
-```bash
-stash inspect @1
-stash inspect @1 --format '{{.Hash}}'
-```
-
-Show entry metadata:
-
-```bash
-stash meta wpc43xd3
-```
-
-Print a custom table:
-
-```bash
-stash log --format '{{printf "%-10s %-8s %s" .ShortID .SizeHuman (index .Meta "filename")}}'
-```
+> [!NOTE]
+> What is `~{@`??? An ASCII art acorn.
