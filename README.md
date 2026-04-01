@@ -80,10 +80,10 @@ projects, or CI runs.
 
 ## Documentation
 
-- Usage guide: [docs/usage.md](/Users/vrypan/Devel/stash/docs/usage.md)
-- Command/reference guide: [docs/reference.md](/Users/vrypan/Devel/stash/docs/reference.md)
-- Example workflows: [docs/examples.md](/Users/vrypan/Devel/stash/docs/examples.md)
-- Helper scripts: [scripts/README.md](/Users/vrypan/Devel/stash/scripts/README.md)
+- Usage guide: [docs/usage.md](docs/usage.md)
+- Command/reference guide: [docs/reference.md](docs/reference.md)
+- Example workflows: [docs/examples.md](docs/examples.md)
+- Helper scripts: [scripts/README.md](scripts/README.md)
 
 > [!NOTE]
 > What is `~{@`??? An ASCII art acorn.
