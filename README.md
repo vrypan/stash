@@ -79,7 +79,7 @@ stash cat <id> | jq .
 
 Clone the repo, and run `make build`. Copy the generated binary `stash` to a location in your $PATH.
 
-## Pre-built binaries
+### Pre-built binaries
 
 Available under [releases](/releases).
 
