@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -372,7 +373,20 @@ func NthNewest(n int) (Meta, error) {
 
 // Resolve resolves a user-supplied ID to a canonical ULID.
 func Resolve(input string) (string, error) {
-	input = strings.ToUpper(strings.TrimSpace(input))
+	rawInput := strings.TrimSpace(input)
+	if strings.HasPrefix(rawInput, "@") {
+		n, err := strconv.Atoi(strings.TrimPrefix(rawInput, "@"))
+		if err != nil || n < 1 {
+			return "", fmt.Errorf("invalid stack ref %q", rawInput)
+		}
+		m, err := NthNewest(n)
+		if err != nil {
+			return "", err
+		}
+		return m.ID, nil
+	}
+
+	input = strings.ToUpper(rawInput)
 	if len(input) < minIDLen {
 		return "", fmt.Errorf("id too short: %q (minimum %d characters)", input, minIDLen)
 	}

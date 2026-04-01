@@ -64,6 +64,7 @@ func newLogCmd() *cobra.Command {
 	var fullFlag bool
 	var chars int
 	var hashFlag bool
+	var metaFilters []string
 	var n int
 	var reverse bool
 	var long bool
@@ -91,6 +92,10 @@ func newLogCmd() *cobra.Command {
 			}
 
 			entries, err := store.List()
+			if err != nil {
+				return err
+			}
+			entries, err = filterEntriesByMeta(entries, metaFilters)
 			if err != nil {
 				return err
 			}
@@ -122,6 +127,7 @@ func newLogCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&fullFlag, "full", false, "Show full canonical ULIDs")
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
 	cmd.Flags().BoolVar(&hashFlag, "hash", false, "Include hash")
+	cmd.Flags().StringArrayVar(&metaFilters, "meta", nil, "Filter by metadata key or key=value (repeatable)")
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
 	cmd.Flags().BoolVarP(&long, "long", "l", false, "Verbose block format")
@@ -130,6 +136,63 @@ func newLogCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dateMode, "date", "relative", "Date format: relative or absolute")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable color output")
 	return cmd
+}
+
+type metaFilter struct {
+	key   string
+	value string
+	exact bool
+}
+
+func parseMetaFilters(inputs []string) ([]metaFilter, error) {
+	filters := make([]metaFilter, 0, len(inputs))
+	for _, input := range inputs {
+		input = strings.TrimSpace(input)
+		if input == "" {
+			return nil, fmt.Errorf("invalid --meta filter %q", input)
+		}
+		key, value, exact := strings.Cut(input, "=")
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("invalid --meta filter %q", input)
+		}
+		filters = append(filters, metaFilter{
+			key:   key,
+			value: value,
+			exact: exact,
+		})
+	}
+	return filters, nil
+}
+
+func filterEntriesByMeta(entries []store.Meta, inputs []string) ([]store.Meta, error) {
+	if len(inputs) == 0 {
+		return entries, nil
+	}
+	filters, err := parseMetaFilters(inputs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.Meta, 0, len(entries))
+	for _, m := range entries {
+		if matchesMetaFilters(m.Attrs, filters) {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
+	for _, f := range filters {
+		v, ok := attrs[f.key]
+		if !ok {
+			return false
+		}
+		if f.exact && v != f.value {
+			return false
+		}
+	}
+	return true
 }
 
 func logCompact(entries []store.Meta, now time.Time, chars int, full, hash bool, dateMode string) error {

@@ -129,6 +129,8 @@ Retrieve data:
 stash peek
 stash peek 2
 stash pop
+stash cat @1
+stash cat @2
 stash cat 01kn2ahqhr738w84t3wpc43xd3
 stash cat wpc43xd3
 ```
@@ -156,6 +158,24 @@ stash version
 ```
 
 `stash list` is an alias for `stash log`.
+
+## Stack Refs
+
+Commands that accept an entry ID also accept stack references:
+
+```bash
+stash cat @1
+stash cat @2
+stash meta @1
+stash rm @3
+```
+
+Meaning:
+- `@1` is the newest entry
+- `@2` is the second newest entry
+- `@3` is the third newest entry
+
+This works anywhere `stash` normally accepts an `<id>`.
 
 ## Metadata Commands
 
@@ -196,6 +216,18 @@ Long output shows one block per entry:
 stash log -l
 stash log -l --date absolute
 ```
+
+Filter log output by metadata:
+
+```bash
+stash log --meta job
+stash log --meta job=nightly
+stash log --meta job --meta owner=ci
+```
+
+`--meta key` matches entries that contain the key with any value.
+`--meta key=value` matches entries with an exact value.
+Multiple `--meta` flags are combined with AND.
 
 Notes:
 - Compact output shows text previews for text-like entries.
