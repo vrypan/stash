@@ -83,6 +83,7 @@ projects, or CI runs.
 - Usage guide: [docs/usage.md](docs/usage.md)
 - Command/reference guide: [docs/reference.md](docs/reference.md)
 - Example workflows: [docs/examples.md](docs/examples.md)
+- Demos: [demos/](demos/)
 - Helper scripts: [scripts/README.md](scripts/README.md)
 
 > [!NOTE]
