@@ -16,11 +16,10 @@ import (
 
 var (
 	clrID    = color.New(color.FgYellow, color.Bold).SprintFunc()
-	clrTS    = color.New(color.FgCyan).SprintFunc()
-	clrSize  = color.New(color.FgBlue).SprintFunc()
 	clrHash  = color.New(color.Faint).SprintFunc()
 	clrLabel = color.New(color.Bold).SprintFunc()
 	clrAttrs = color.New(color.FgYellow).SprintFunc()
+	clrFile  = color.New(color.FgCyan, color.Bold).SprintFunc()
 )
 
 func typeColor(t string) color.Attribute {
@@ -204,8 +203,8 @@ func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
 
 func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, hash bool, dateMode string) error {
 	type row struct {
-		id, ts, size, hash, typeStr, typeLabel, preview string
-		truncated                                       bool
+		id, ts, size, hash, typeStr, typeLabel, filename, preview string
+		truncated                                                 bool
 	}
 	rows := make([]row, len(entries))
 	maxID, maxTS, maxSize, maxHash := 0, 0, 0, 0
@@ -237,6 +236,7 @@ func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, h
 			hash:      m.Hash,
 			typeStr:   typeStr,
 			typeLabel: typeLabel,
+			filename:  m.Attrs["filename"],
 			preview:   preview,
 			truncated: (typeStr == "text" || typeStr == "json") && m.Size > int64(chars),
 		}
@@ -258,10 +258,13 @@ func logCompact(entries []store.Meta, now time.Time, chars int, idMode string, h
 		// Pad plain strings first, then colorize — ANSI codes add invisible
 		// bytes that would confuse any width-based padding done afterwards.
 		idCol := clrID(fmt.Sprintf("%-*s", maxID, r.id))
-		tsCol := clrTS(fmt.Sprintf("%-*s", maxTS, r.ts))
-		sizeCol := clrSize(fmt.Sprintf("%-*s", maxSize, r.size))
+		tsCol := fmt.Sprintf("%-*s", maxTS, r.ts)
+		sizeCol := fmt.Sprintf("%-*s", maxSize, r.size)
 
 		var parts []string
+		if r.filename != "" {
+			parts = append(parts, clrFile(r.filename))
+		}
 		if r.typeStr != "text" && r.typeStr != "json" && r.typeStr != "empty" {
 			parts = append(parts, clrType(r.typeLabel))
 		}
