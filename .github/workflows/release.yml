@@ -38,7 +38,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update Homebrew Formula
-        run: ./.github/scripts/update-homebrew-formula.sh "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-        env:
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+  update-homebrew-formula:
+    needs: goreleaser
+    uses: ./.github/workflows/update-homebrew-formula.yml
+    with:
+      tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    secrets: inherit
