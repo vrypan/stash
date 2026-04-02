@@ -63,19 +63,12 @@ Available under [releases](/releases).
 brew install vrypan/tap/stash
 ```
 
-### Auto-Completion
+### Shell support
 
-If you installed `stash` with Homebrew, shell completions for bash, zsh, and fish
-are installed automatically.
-
-If you installed `stash` manually, you can generate and install completions
-yourself, using `stash completion`.
-
-Manual installation instructions:
-
-- [Bash](docs/bash.md)
-- [Fish](docs/fish.md)
-- [Zsh](docs/zsh.md)
+For auto-completion and other shell-specific features, check:
+- [docs/bash.md](docs/bash.md)
+- [docs/fish.md](docs/fish.md)
+- [docs/zsh.md](docs/zsh.md)
 
 ## Stash Repository Location
 
