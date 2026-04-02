@@ -134,3 +134,31 @@ func TestAttrCommandRejectsWritesToCoreFields(t *testing.T) {
 		t.Fatal("expected error when setting core field")
 	}
 }
+
+func TestAttrCommandPreviewFlagAndPseudoProperty(t *testing.T) {
+	setupTempCmdStash(t)
+	id, err := store.Push(strings.NewReader("alpha\nbeta\n"), nil)
+	if err != nil {
+		t.Fatalf("store.Push: %v", err)
+	}
+
+	cmd := newAttrCmd()
+	cmd.SetArgs([]string{id, "--preview"})
+	stdout, _, err := captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("attr --preview execute: %v", err)
+	}
+	if !strings.Contains(stdout, "preview\talpha") {
+		t.Fatalf("attr --preview output = %q", stdout)
+	}
+
+	cmd = newAttrCmd()
+	cmd.SetArgs([]string{id, "preview"})
+	stdout, _, err = captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("attr preview execute: %v", err)
+	}
+	if !strings.Contains(stdout, "alpha") {
+		t.Fatalf("attr preview output = %q", stdout)
+	}
+}

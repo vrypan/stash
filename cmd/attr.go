@@ -14,6 +14,7 @@ import (
 func newAttrCmd() *cobra.Command {
 	var sep string
 	var jsonOut bool
+	var withPreview bool
 
 	cmd := &cobra.Command{
 		Use:           "attr <id|n|@n> [key | set meta.key=value ... | unset meta.key ...]",
@@ -26,7 +27,7 @@ func newAttrCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			m, err := store.GetMeta(id)
+			m, preview, err := loadAttrData(id)
 			if err != nil {
 				return err
 			}
@@ -40,23 +41,53 @@ func newAttrCmd() *cobra.Command {
 					if len(args) != 2 {
 						return fmt.Errorf("attr get accepts exactly one key")
 					}
-					return printAttrValue(m, args[1], sep, jsonOut)
+					return printAttrValue(m, preview, args[1], sep, jsonOut)
 				}
 			}
 			if jsonOut {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
+				if withPreview && strings.TrimSpace(preview) != "" {
+					return enc.Encode(struct {
+						store.Meta
+						Preview string `json:"preview,omitempty"`
+					}{Meta: m, Preview: preview})
+				}
 				return enc.Encode(m)
 			}
-			return writeAttrLines(m, sep)
+			return writeAttrLines(m, sep, withPreview, preview)
 		},
 	}
 	cmd.Flags().StringVar(&sep, "separator", "\t", "Separator used between key and value")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output attributes as JSON")
+	cmd.Flags().BoolVarP(&withPreview, "preview", "p", false, "Include preview pseudo-property when available")
 	return cmd
 }
 
-func attrValue(m store.Meta, key string) (string, bool) {
+func loadAttrData(id string) (store.Meta, string, error) {
+	var preview string
+	var found bool
+	if err := store.StreamSummaries(func(s store.Summary) (bool, error) {
+		if s.ID != id {
+			return true, nil
+		}
+		preview = s.Preview
+		found = true
+		return false, nil
+	}); err != nil {
+		return store.Meta{}, "", err
+	}
+	m, err := store.GetMeta(id)
+	if err != nil {
+		return store.Meta{}, "", err
+	}
+	if found {
+		return m, preview, nil
+	}
+	return m, "", nil
+}
+
+func attrValue(m store.Meta, preview, key string) (string, bool) {
 	switch key {
 	case "id":
 		return m.DisplayID(), true
@@ -71,6 +102,11 @@ func attrValue(m store.Meta, key string) (string, bool) {
 			return "", false
 		}
 		return m.MIME(), true
+	case "preview":
+		if strings.TrimSpace(preview) == "" {
+			return "", false
+		}
+		return preview, true
 	default:
 		if strings.HasPrefix(key, "meta.") {
 			v, ok := m.Attrs[strings.TrimPrefix(key, "meta.")]
@@ -80,8 +116,8 @@ func attrValue(m store.Meta, key string) (string, bool) {
 	}
 }
 
-func printAttrValue(m store.Meta, key, sep string, jsonOut bool) error {
-	v, ok := attrValue(m, key)
+func printAttrValue(m store.Meta, preview, key, sep string, jsonOut bool) error {
+	v, ok := attrValue(m, preview, key)
 	if !ok {
 		return &store.ErrNotFound{Input: key}
 	}
@@ -126,7 +162,7 @@ func runAttrUnset(id string, args []string) error {
 	return runMetadataUnset(id, keys)
 }
 
-func writeAttrLines(m store.Meta, sep string) error {
+func writeAttrLines(m store.Meta, sep string, withPreview bool, preview string) error {
 	if sep == "" {
 		sep = "\t"
 	}
@@ -145,6 +181,9 @@ func writeAttrLines(m store.Meta, sep string) error {
 		for _, k := range keys {
 			lines = append(lines, [2]string{"meta." + k, m.Attrs[k]})
 		}
+	}
+	if withPreview && strings.TrimSpace(preview) != "" {
+		lines = append(lines, [2]string{"preview", preview})
 	}
 	for _, line := range lines {
 		fmt.Fprintf(os.Stdout, "%s%s%s\n", line[0], sep, line[1])
