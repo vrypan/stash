@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"stash/store"
@@ -15,9 +16,9 @@ func newAttrCmd() *cobra.Command {
 	var jsonOut bool
 
 	cmd := &cobra.Command{
-		Use:           "attr <id|n|@n>",
-		Short:         "Show user metadata for an entry",
-		Args:          cobra.ExactArgs(1),
+		Use:           "attr <id|n|@n> [key | set meta.key=value ... | unset meta.key ...]",
+		Short:         "Show or update entry attributes",
+		Args:          cobra.MinimumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -28,6 +29,19 @@ func newAttrCmd() *cobra.Command {
 			m, err := store.GetMeta(id)
 			if err != nil {
 				return err
+			}
+			if len(args) > 1 {
+				switch args[1] {
+				case "set":
+					return runAttrSet(id, args[2:])
+				case "unset":
+					return runAttrUnset(id, args[2:])
+				default:
+					if len(args) != 2 {
+						return fmt.Errorf("attr get accepts exactly one key")
+					}
+					return printAttrValue(m, args[1], sep, jsonOut)
+				}
 			}
 			if jsonOut {
 				enc := json.NewEncoder(os.Stdout)
@@ -40,6 +54,81 @@ func newAttrCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sep, "separator", "\t", "Separator used between key and value")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output attributes as JSON")
 	return cmd
+}
+
+func attrValue(m store.Meta, key string) (string, bool) {
+	switch key {
+	case "id":
+		return m.DisplayID(), true
+	case "ts":
+		return m.TS, true
+	case "hash":
+		return m.Hash, true
+	case "size":
+		return fmt.Sprintf("%d", m.Size), true
+	case "type":
+		if m.Type == "" {
+			return "", false
+		}
+		return m.Type, true
+	case "mime":
+		if m.MIME == "" {
+			return "", false
+		}
+		return m.MIME, true
+	default:
+		if strings.HasPrefix(key, "meta.") {
+			v, ok := m.Attrs[strings.TrimPrefix(key, "meta.")]
+			return v, ok
+		}
+		return "", false
+	}
+}
+
+func printAttrValue(m store.Meta, key, sep string, jsonOut bool) error {
+	v, ok := attrValue(m, key)
+	if !ok {
+		return &store.ErrNotFound{Input: key}
+	}
+	if jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]string{key: v})
+	}
+	fmt.Fprintln(os.Stdout, v)
+	return nil
+}
+
+func runAttrSet(id string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("attr set requires at least one meta.key=value pair")
+	}
+	metaArgs := make([]string, 0, len(args))
+	for _, kv := range args {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			return fmt.Errorf("invalid attr value %q: expected meta.key=value", kv)
+		}
+		if !strings.HasPrefix(k, "meta.") {
+			return fmt.Errorf("only meta.* keys are writable: %q", k)
+		}
+		metaArgs = append(metaArgs, strings.TrimPrefix(k, "meta.")+"="+v)
+	}
+	return runMetadataSet(id, metaArgs)
+}
+
+func runAttrUnset(id string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("attr unset requires at least one meta.key")
+	}
+	keys := make([]string, 0, len(args))
+	for _, k := range args {
+		if !strings.HasPrefix(k, "meta.") {
+			return fmt.Errorf("only meta.* keys are writable: %q", k)
+		}
+		keys = append(keys, strings.TrimPrefix(k, "meta."))
+	}
+	return runMetadataUnset(id, keys)
 }
 
 func writeAttrLines(m store.Meta, sep string) error {
