@@ -24,6 +24,11 @@ archives:
       - stash
     formats:
       - tar.gz
+    files:
+      - LICENSE
+      - README.md
+      - docs/**
+      - scripts/**
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -38,33 +43,3 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
-
-homebrew_casks:
-  - ids:
-      - stash
-    binaries:
-      - stash
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/stash"]
-          end
-    url:
-      template: "https://github.com/vrypan/stash/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-      headers:
-        - "Accept: application/octet-stream"
-        - 'Authorization: bearer #{ENV["HOMEBREW_GITHUB_API_TOKEN"]}'
-    commit_author:
-      name: Panayotis Vryonis
-      email: 58812+vrypan@users.noreply.github.com
-    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
-    directory: Casks
-    homepage: "https://github.com/vrypan/stash"
-    description: "A local store for pipeline output and ad hoc file snapshots."
-    skip_upload: auto
-    repository:
-      owner: vrypan
-      name: homebrew-tap
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
