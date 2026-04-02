@@ -43,8 +43,8 @@ stash attr wpc43xd3
 stash attr 01kn2ahqhr738w84t3wpc43xd3
 ```
 
-This prints core fields such as `id`, `ts`, `hash`, `size`, `type`, and
-`mime`, plus nested user metadata as flattened `meta.*` keys.
+This prints core fields such as `id`, `ts`, `hash`, and `size`, plus nested
+user metadata as flattened `meta.*` keys.
 
 Read a single field:
 
@@ -61,7 +61,7 @@ stash attr @1 unset meta.stage
 ```
 
 Writable keys are limited to `meta.*`. Core fields such as `id`, `ts`, `hash`,
-`size`, `type`, and `mime` are read-only.
+and `size` are read-only.
 
 Use `--json` to print the full `meta.json` object shape:
 
@@ -91,9 +91,10 @@ Add columns explicitly:
 stash ls --date
 stash ls --size
 stash ls --name
-stash ls --mime
+stash ls --type
+stash ls --subtype
 stash ls --preview
-stash ls --size=bytes --name
+stash ls --size=bytes --name --type --subtype
 ```
 
 `--long` is shorthand for `--date --size --name`:
@@ -107,6 +108,8 @@ Notes:
 - `--size` defaults to `human` if no value is given
 - `--date` accepts `absolute`, `relative`, or `ls`
 - `--size` accepts `human` or `bytes`
+- `--type` shows the MIME major type from `meta.mimetype`
+- `--subtype` shows the MIME subtype from `meta.mimesubtype`
 - `--id=short|full|pos` controls the first column in all modes
 
 ## Log Output
@@ -137,7 +140,7 @@ stash log --meta job --meta owner=ci
 Multiple `--meta` flags are combined with AND.
 
 Notes:
-- `stash log` shows the base MIME type, size, date, hash, metadata, and a
+- `stash log` shows the detected MIME label, size, date, hash, metadata, and a
   preview only for text-like entries.
 - Use `stash ls` for one-line ID views and `stash ls -l` for file-oriented detail.
 
@@ -159,7 +162,6 @@ Each JSON entry includes:
 - `hash`
 - `size`
 - `size_human`
-- `type`
 - `mime`
 - `meta`
 - `preview`
@@ -183,7 +185,6 @@ Available template fields:
 - `Hash`
 - `Size`
 - `SizeHuman`
-- `Type`
 - `MIME`
 - `Meta`
 - `Preview`
@@ -200,12 +201,12 @@ Current fields include:
 - `ts`
 - `hash`
 - `size`
-- `type`
-- `mime`
 - `meta`
 
-`meta` contains user-supplied `--meta key=value` pairs and `filename` when the
-entry was created from a file path.
+`meta` contains user-supplied `--meta key=value` pairs, `filename` when the
+entry was created from a file path, and detected MIME parts under:
+- `mimetype`
+- `mimesubtype`
 
 Entries live under:
 

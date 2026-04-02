@@ -242,7 +242,7 @@ func TestIndexUpdateCommand(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(olderDir, "data"), []byte("old"), 0o600); err != nil {
 		t.Fatalf("write older data: %v", err)
 	}
-	metaJSON := `{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","ts":"2020-01-01T00:00:00Z","hash":"x","size":3,"type":"text","mime":"text/plain; charset=utf-8"}`
+	metaJSON := `{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","ts":"2020-01-01T00:00:00Z","hash":"x","size":3,"meta":{"mimetype":"text","mimesubtype":"plain"}}`
 	if err := os.WriteFile(filepath.Join(olderDir, "meta.json"), []byte(metaJSON), 0o600); err != nil {
 		t.Fatalf("write older meta: %v", err)
 	}

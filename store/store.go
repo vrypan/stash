@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,7 +21,7 @@ import (
 
 const shortIDLen = 8
 const minIDLen = 6
-const indexVersion = 2
+const indexVersion = 3
 
 // entropy is a monotonic ULID entropy source backed by crypto/rand.
 var entropy = ulid.Monotonic(crand.Reader, 0)
@@ -33,8 +32,6 @@ type Meta struct {
 	TS    string            `json:"ts"`
 	Hash  string            `json:"hash"`
 	Size  int64             `json:"size"`
-	Type  string            `json:"type,omitempty"`
-	MIME  string            `json:"mime,omitempty"`
 	Attrs map[string]string `json:"meta,omitempty"`
 }
 
@@ -53,6 +50,35 @@ func (m Meta) ShortID() string {
 
 func (m Meta) DisplayID() string {
 	return strings.ToLower(m.ID)
+}
+
+func (m Meta) MIMEMajor() string {
+	if m.Attrs == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.Attrs["mimetype"])
+}
+
+func (m Meta) MIMESubtype() string {
+	if m.Attrs == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.Attrs["mimesubtype"])
+}
+
+func (m Meta) MIME() string {
+	major := m.MIMEMajor()
+	sub := m.MIMESubtype()
+	switch {
+	case major == "" && sub == "":
+		return ""
+	case major == "":
+		return sub
+	case sub == "":
+		return major
+	default:
+		return major + "/" + sub
+	}
 }
 
 // Sentinel errors.
@@ -210,6 +236,17 @@ type sampleWriter struct {
 	max int
 }
 
+func mapsClone(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 func (w *sampleWriter) Write(p []byte) (int, error) {
 	if len(w.buf) < w.max {
 		need := w.max - len(w.buf)
@@ -240,13 +277,16 @@ func prepareEntry() (id string, entryTmp string, cleanup func(), err error) {
 }
 
 func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sample []byte, hash []byte) error {
-	var typeStr, mimeStr string
-	if len(sample) > 0 {
-		typeStr = detectContentType(sample)
-		mimeStr = http.DetectContentType(sample)
-	} else {
-		typeStr = "empty"
-		mimeStr = "application/octet-stream"
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	attrs = mapsClone(attrs)
+	major, sub := detectMIMEParts(sample)
+	if major != "" {
+		attrs["mimetype"] = major
+	}
+	if sub != "" {
+		attrs["mimesubtype"] = sub
 	}
 
 	m := Meta{
@@ -254,8 +294,6 @@ func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sam
 		TS:    time.Now().UTC().Format(time.RFC3339Nano),
 		Hash:  hex.EncodeToString(hash),
 		Size:  size,
-		Type:  typeStr,
-		MIME:  mimeStr,
 		Attrs: attrs,
 	}
 	metaData, err := json.MarshalIndent(m, "", "  ")

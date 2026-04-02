@@ -308,7 +308,6 @@ type logJSONEntry struct {
 	Hash      string            `json:"hash"`
 	Size      int64             `json:"size"`
 	SizeHuman string            `json:"size_human"`
-	Type      string            `json:"type,omitempty"`
 	MIME      string            `json:"mime,omitempty"`
 	Meta      map[string]string `json:"meta,omitempty"`
 	Preview   []string          `json:"preview,omitempty"`
@@ -328,8 +327,7 @@ func buildLogJSONEntry(s store.Summary, idx int, now time.Time, chars int, dateM
 		Hash:      s.Hash,
 		Size:      s.Size,
 		SizeHuman: store.HumanSize(s.Size),
-		Type:      s.Type,
-		MIME:      s.MIME,
+		MIME:      s.MIME(),
 		Meta:      s.Attrs,
 		Preview:   lines,
 	}
@@ -369,9 +367,6 @@ func logLong(entries []store.Summary, now time.Time, chars int, dateMode, idMode
 		item := buildLogJSONEntry(s, i, now, chars, dateMode)
 		tsStr := item.Date
 		typeLabel := item.MIME
-		if typeLabel == "" {
-			typeLabel = item.Type
-		}
 		typeLabel = displayTypeLabel(typeLabel)
 
 		idLabel := item.ShortID

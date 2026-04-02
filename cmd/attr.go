@@ -66,16 +66,11 @@ func attrValue(m store.Meta, key string) (string, bool) {
 		return m.Hash, true
 	case "size":
 		return fmt.Sprintf("%d", m.Size), true
-	case "type":
-		if m.Type == "" {
-			return "", false
-		}
-		return m.Type, true
 	case "mime":
-		if m.MIME == "" {
+		if m.MIME() == "" {
 			return "", false
 		}
-		return m.MIME, true
+		return m.MIME(), true
 	default:
 		if strings.HasPrefix(key, "meta.") {
 			v, ok := m.Attrs[strings.TrimPrefix(key, "meta.")]
@@ -140,12 +135,6 @@ func writeAttrLines(m store.Meta, sep string) error {
 		{"ts", m.TS},
 		{"hash", m.Hash},
 		{"size", fmt.Sprintf("%d", m.Size)},
-	}
-	if m.Type != "" {
-		lines = append(lines, [2]string{"type", m.Type})
-	}
-	if m.MIME != "" {
-		lines = append(lines, [2]string{"mime", m.MIME})
 	}
 	if len(m.Attrs) > 0 {
 		keys := make([]string, 0, len(m.Attrs))

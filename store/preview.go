@@ -1,45 +1,76 @@
 package store
 
 import (
-	"bytes"
 	"fmt"
 	"io"
+	stdmime "mime"
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
+
+	"github.com/gabriel-vasile/mimetype"
 )
 
-func isPreviewTextType(typeStr string) bool {
-	return typeStr == "text" || typeStr == "json"
+func isPreviewTextType(major, sub string) bool {
+	return major == "text" || (major == "application" && sub == "json")
 }
 
-func buildPreviewData(buf []byte, chars int) (typeStr, preview string) {
-	if len(buf) == 0 {
-		return "empty", "[empty]"
+func mimeLabel(major, sub string) string {
+	switch {
+	case major == "" && sub == "":
+		return ""
+	case major == "":
+		return sub
+	case sub == "":
+		return major
+	default:
+		return major + "/" + sub
 	}
-	typeStr = detectContentType(buf)
-	switch typeStr {
-	case "text", "json":
+}
+
+func detectMIMEParts(buf []byte) (major, sub string) {
+	if len(buf) == 0 {
+		return "application", "octet-stream"
+	}
+	mt := mimetype.Detect(buf)
+	label := mt.String()
+	if base, _, err := stdmime.ParseMediaType(label); err == nil {
+		label = base
+	}
+	major, sub, _ = strings.Cut(strings.TrimSpace(strings.ToLower(label)), "/")
+	if major == "" && sub != "" {
+		major, sub = sub, ""
+	}
+	return major, sub
+}
+
+func buildPreviewData(buf []byte, chars int) (mimeType, preview string) {
+	if len(buf) == 0 {
+		return "application/octet-stream", "[empty]"
+	}
+	major, sub := detectMIMEParts(buf)
+	mimeType = mimeLabel(major, sub)
+	switch {
+	case isPreviewTextType(major, sub):
 		preview = buildTextPreview(buf, chars)
 	default:
 		preview = ""
 	}
-	return typeStr, preview
+	return mimeType, preview
 }
 
 // SmartPreview reads up to chars bytes from an entry and returns the detected
 // content type and a human-readable preview string.
-func SmartPreview(id string, chars int) (typeStr, preview string, err error) {
+func SmartPreview(id string, chars int) (mimeType, preview string, err error) {
 	buf, err := readSample(id, chars)
 	if err != nil {
 		return "", "", err
 	}
-	typeStr, preview = buildPreviewData(buf, chars)
-	if preview == "" && typeStr != "empty" {
-		preview = fmt.Sprintf("[%s]", typeStr)
+	mimeType, preview = buildPreviewData(buf, chars)
+	if preview == "" && mimeType != "application/octet-stream" {
+		preview = fmt.Sprintf("[%s]", mimeType)
 	}
-	return typeStr, preview, nil
+	return mimeType, preview, nil
 }
 
 // LongPreview returns up to maxLines of text from an entry for verbose display.
@@ -54,8 +85,8 @@ func LongPreview(id string, charsPerLine, maxLines int) ([]string, error) {
 		return nil, nil
 	}
 
-	typeStr := detectContentType(buf)
-	if typeStr != "text" && typeStr != "json" {
+	major, sub := detectMIMEParts(buf)
+	if !isPreviewTextType(major, sub) {
 		return nil, nil
 	}
 
@@ -107,48 +138,6 @@ func readSample(id string, n int) ([]byte, error) {
 		return nil, err
 	}
 	return buf[:nr], nil
-}
-
-func detectContentType(buf []byte) string {
-	if len(buf) == 0 {
-		return "empty"
-	}
-
-	// Magic byte signatures.
-	switch {
-	case len(buf) >= 2 && buf[0] == 0x1f && buf[1] == 0x8b:
-		return "gzip"
-	case len(buf) >= 4 && buf[0] == 0x28 && buf[1] == 0xb5 && buf[2] == 0x2f && buf[3] == 0xfd:
-		return "zstd"
-	case len(buf) >= 4 && buf[0] == 'P' && buf[1] == 'K' && buf[2] == 0x03 && buf[3] == 0x04:
-		return "zip"
-	case len(buf) >= 4 && buf[0] == 0x89 && buf[1] == 'P' && buf[2] == 'N' && buf[3] == 'G':
-		return "png"
-	case len(buf) >= 3 && buf[0] == 0xff && buf[1] == 0xd8 && buf[2] == 0xff:
-		return "jpeg"
-	case len(buf) >= 4 && string(buf[:4]) == "%PDF":
-		return "pdf"
-	case len(buf) >= 4 && string(buf[:4]) == "GIF8":
-		return "gif"
-	}
-
-	// JSON: first non-whitespace char is { or [
-	trimmed := bytes.TrimLeftFunc(buf, unicode.IsSpace)
-	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
-		return "json"
-	}
-
-	// Text: ≥80% printable bytes.
-	printable := 0
-	for _, b := range buf {
-		if (b >= 0x20 && b <= 0x7e) || b == '\n' || b == '\r' || b == '\t' {
-			printable++
-		}
-	}
-	if float64(printable)/float64(len(buf)) >= 0.80 {
-		return "text"
-	}
-	return "binary"
 }
 
 func buildTextPreview(buf []byte, chars int) string {

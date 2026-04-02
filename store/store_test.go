@@ -44,12 +44,14 @@ func createImportedEntry(t *testing.T, root string, ts time.Time, data []byte, a
 		TS:    ts.UTC().Format(time.RFC3339Nano),
 		Hash:  hex.EncodeToString(sum[:]),
 		Size:  int64(len(data)),
-		Type:  detectContentType(data),
-		MIME:  "application/octet-stream",
-		Attrs: attrs,
+		Attrs: mapsClone(attrs),
 	}
-	if meta.Type == "text" || meta.Type == "json" {
-		meta.MIME = "text/plain; charset=utf-8"
+	major, sub := detectMIMEParts(data)
+	if major != "" {
+		meta.Attrs["mimetype"] = major
+	}
+	if sub != "" {
+		meta.Attrs["mimesubtype"] = sub
 	}
 
 	entryDir := filepath.Join(root, "entries", id)
