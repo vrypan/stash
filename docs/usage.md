@@ -62,6 +62,7 @@ You can also use `stash` like a small flat file store:
 ```bash
 stash ls
 stash ls -l
+stash ls --date --size --name
 stash cat @1
 stash cat yjvyz3sf
 stash rm @2
@@ -71,21 +72,22 @@ Example output:
 
 ```text
 $ stash ls
-ryacf7sz  384.3K  42m ago  Forest-Green.png
-a3f11qka    493B  1h ago   docker-forgejo.yml
+ryacf7sz
+a3f11qka
 
 $ stash ls -l
-01kn49syzt9an32shwryacf7sz  384.3K  Apr  1 13:35  Forest-Green.png
-01kn48p426qatbgntqa3f11qka    493B  Apr  1 13:16  docker-forgejo.yml
+ryacf7sz  384.3K  Tue Apr  1 13:35:40 2026 +0300  Forest-Green.png
+a3f11qka    493B  Tue Apr  1 13:16:06 2026 +0300  docker-forgejo.yml
 ```
 
 In that model:
-- `stash ls` lists entries like files
+- `stash ls` lists entry IDs only
+- `stash ls -l` expands that into a file-oriented view
 - `stash cat` reads an entry by stack ref or ID
 - `stash rm` deletes an entry by stack ref or ID, or removes older entries with `--before`
 
 Filenames come from `meta.filename` when available, so stashing files directly
-works naturally with `stash ls`.
+works naturally with `stash ls --name` or `stash ls -l`.
 
 ## Stack Refs
 
@@ -94,7 +96,7 @@ Commands that accept an entry ID also accept stack references:
 ```bash
 stash cat @1
 stash cat @2
-stash meta @1
+stash attr @1
 stash rm @3
 ```
 
@@ -115,7 +117,6 @@ Examples:
 stash cat
 stash cat 2
 stash cat @2
-stash peek @1
 ```
 
 ## Example Workflows

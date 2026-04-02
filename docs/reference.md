@@ -8,9 +8,9 @@ stash push [file]
 stash tee
 stash log
 stash inspect <id|n|@n>
-stash metadata <id>
+stash attr <id|n|@n>
 stash cat [id|n|@n]
-stash peek [id|n|@n]
+stash ls
 stash pop
 stash rm <id>
 stash rm --before <id|@n>
@@ -18,7 +18,6 @@ stash version
 ```
 
 `stash list` is an alias for `stash log`.
-`stash peek` is an alias for `stash cat`.
 
 ## Index
 
@@ -35,27 +34,80 @@ This is mainly useful after external changes to the stash directory, such as
 copying entries from another machine. Normal `stash` commands maintain or
 rebuild indexes automatically when needed.
 
-## Metadata Commands
+## Attr
 
-Show user metadata for an entry:
+Show all stored entry fields:
 
 ```bash
-stash meta wpc43xd3
-stash metadata 01kn2ahqhr738w84t3wpc43xd3
+stash attr wpc43xd3
+stash attr 01kn2ahqhr738w84t3wpc43xd3
 ```
 
-Output is printed as sorted `key=value` lines, similar to
-`git config --list`.
+This prints core fields such as `id`, `ts`, `hash`, `size`, `type`, and
+`mime`, plus nested user metadata as flattened `meta.*` keys.
+
+Read a single field:
+
+```bash
+stash attr @1 hash
+stash attr @1 meta.source
+```
 
 Update user metadata:
 
 ```bash
-stash metadata wpc43xd3 set job=nightly owner=ci
-stash metadata wpc43xd3 unset owner
+stash attr @1 set meta.source=usgs meta.stage=raw
+stash attr @1 unset meta.stage
 ```
 
-These commands update only the user `meta` object in `meta.json`. They do not
-modify core fields such as `id`, `ts`, `hash`, `size`, `type`, or `mime`.
+Writable keys are limited to `meta.*`. Core fields such as `id`, `ts`, `hash`,
+`size`, `type`, and `mime` are read-only.
+
+Use `--json` to print the full `meta.json` object shape:
+
+```bash
+stash attr @1 --json
+```
+
+Use `--separator` to change the delimiter in the default text output:
+
+```bash
+stash attr @1 --separator='='
+```
+
+## ls
+
+`stash ls` prints entry identifiers only:
+
+```bash
+stash ls
+stash ls --id=full
+stash ls --id=pos
+```
+
+Add columns explicitly:
+
+```bash
+stash ls --date
+stash ls --size
+stash ls --name
+stash ls --mime
+stash ls --preview
+stash ls --size=bytes --name
+```
+
+`--long` is shorthand for `--date --size --name`:
+
+```bash
+stash ls -l
+```
+
+Notes:
+- `--date` defaults to `absolute` if no value is given
+- `--size` defaults to `human` if no value is given
+- `--date` accepts `absolute`, `relative`, or `ls`
+- `--size` accepts `human` or `bytes`
+- `--id=short|full|pos` controls the first column in all modes
 
 ## Log Output
 
@@ -87,7 +139,7 @@ Multiple `--meta` flags are combined with AND.
 Notes:
 - `stash log` shows the base MIME type, size, date, hash, metadata, and a
   preview only for text-like entries.
-- Use `stash ls` for one-line, file-oriented views.
+- Use `stash ls` for one-line ID views and `stash ls -l` for file-oriented detail.
 
 ## Structured Output
 
