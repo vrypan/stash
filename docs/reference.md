@@ -87,6 +87,7 @@ stash ls --id=pos
 Add columns explicitly:
 
 ```bash
+stash ls -m @
 stash ls --date
 stash ls --size
 stash ls --name
@@ -94,6 +95,7 @@ stash ls --type
 stash ls --subtype
 stash ls --preview
 stash ls --size=bytes --name --type --subtype
+stash ls -m source -m stage
 ```
 
 `--long` is shorthand for `--date --size --name`:
@@ -107,6 +109,10 @@ Notes:
 - `--size` defaults to `human` if no value is given
 - `--date` accepts `absolute`, `relative`, or `ls`
 - `--size` accepts `human` or `bytes`
+- `-m @` or `--meta @` shows metadata where available without filtering
+- `-m tag` filters to entries where `tag` is set
+- multiple `-m/--meta` flags use OR semantics
+- `stash ls` renders one column per requested tag when explicit tags are used
 - `--type` shows the MIME major type from `meta.mimetype`
 - `--subtype` shows the MIME subtype from `meta.mimesubtype`
 - `--id=short|full|pos` controls the first column in all modes
@@ -118,25 +124,26 @@ Notes:
 ```bash
 stash log
 stash log -n 10
-stash log --reverse
+stash log -r
 stash log --id=short
 stash log --id=pos
+stash log -m @
 ```
 
 `stash log` defaults to full IDs and absolute dates.
 Use `--id=short`, `--id=full`, or `--id=pos` to override the display mode.
 
-Filter log output by metadata:
+Show or filter log metadata:
 
 ```bash
-stash log --meta job
-stash log --meta job=nightly
-stash log --meta job --meta owner=ci
+stash log -m @
+stash log -m job
+stash log -m job -m owner
 ```
 
-`--meta key` matches entries that contain the key with any value.
-`--meta key=value` matches entries with an exact value.
-Multiple `--meta` flags are combined with AND.
+`-m @` shows metadata where available without filtering.
+`-m tag` matches entries that contain the tag with any value.
+Multiple `-m/--meta` flags are combined with OR.
 
 Notes:
 - `stash log` shows the detected MIME label, size, date, hash, metadata, and a

@@ -29,7 +29,7 @@ This creates a stash entry containing the full GeoJSON response.
 If you want to confirm that it was saved:
 
 ```bash
-stash ls -l --meta source=usgs-earthquakes
+stash ls -l -m source -m stage
 ```
 
 ### 2. Transform the raw feed and stash the reduced dataset
@@ -169,12 +169,12 @@ you are interested in, and use them in place of `@1`, `@3`.
 
 ```bash
 # example
-stash ls -l --meta source --meta stage
+stash ls -l -m source -m stage
 
-g5xa4znm  412.0K  Tue Apr  1 13:35:40 2026 +0300  01kn4z3q4vv5crxjdkg5xa4znm  [usgs-earthquakes  reduced]
-4p0rgpda    1.3M  Tue Apr  1 13:35:00 2026 +0300  01kn4z358zf1fme79d4p0rgpda  [usgs-earthquakes  raw]
-w6sz0cbw  411.3K  Tue Apr  1 13:12:10 2026 +0300  01kn4y4m147f06r4few6sz0cbw  [usgs-earthquakes  reduced]
-6ya0x77f    1.3M  Tue Apr  1 13:11:21 2026 +0300  01kn4y3xjtj40kksg16ya0x77f  [usgs-earthquakes  raw]
+g5xa4znm  412.0K  Tue Apr  1 13:35:40 2026 +0300  01kn4z3q4vv5crxjdkg5xa4znm  usgs-earthquakes  reduced
+4p0rgpda    1.3M  Tue Apr  1 13:35:00 2026 +0300  01kn4z358zf1fme79d4p0rgpda  usgs-earthquakes  raw
+w6sz0cbw  411.3K  Tue Apr  1 13:12:10 2026 +0300  01kn4y4m147f06r4few6sz0cbw  usgs-earthquakes  reduced
+6ya0x77f    1.3M  Tue Apr  1 13:11:21 2026 +0300  01kn4y3xjtj40kksg16ya0x77f  usgs-earthquakes  raw
 ```
 
 Now compare the two reduced snapshots and show only earthquakes that are new in

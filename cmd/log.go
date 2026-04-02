@@ -89,7 +89,11 @@ func newLogCmd() *cobra.Command {
 			effectiveIDMode := idMode
 			effectiveChars := chars
 
-			entries, err := collectEntries(metaFilters, reverse, n)
+			metaSel, err := parseMetaSelection(metaFilters)
+			if err != nil {
+				return err
+			}
+			entries, err := collectEntries(metaSel, reverse, n)
 			if err != nil {
 				return err
 			}
@@ -110,15 +114,15 @@ func newLogCmd() *cobra.Command {
 			if jsonFlag {
 				return logJSON(entries, now, effectiveChars, effectiveDateMode)
 			}
-			return logLong(entries, now, effectiveChars, effectiveDateMode, effectiveIDMode)
+			return logLong(entries, now, effectiveChars, effectiveDateMode, effectiveIDMode, metaSel)
 		},
 	}
 
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
 	cmd.Flags().StringVar(&idMode, "id", "full", "ID display: short, full, or pos")
-	cmd.Flags().StringArrayVar(&metaFilters, "meta", nil, "Filter by metadata key or key=value (repeatable)")
+	cmd.Flags().StringArrayVarP(&metaFilters, "meta", "m", nil, "Show metadata tags with @, or filter by tag name (repeatable)")
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
-	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
+	cmd.Flags().BoolVarP(&reverse, "reverse", "r", false, "Show oldest first")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output verbose entry history as JSON")
 	cmd.Flags().StringVar(&formatStr, "format", "", "Go template for custom log output")
 	cmd.Flags().StringVar(&dateMode, "date", "absolute", "Date format: relative or absolute")
@@ -126,54 +130,56 @@ func newLogCmd() *cobra.Command {
 	return cmd
 }
 
-type metaFilter struct {
-	key   string
-	value string
-	exact bool
+type metaSelection struct {
+	showAll bool
+	tags    []string
 }
 
-func parseMetaFilters(inputs []string) ([]metaFilter, error) {
-	filters := make([]metaFilter, 0, len(inputs))
+func parseMetaSelection(inputs []string) (metaSelection, error) {
+	sel := metaSelection{}
+	seen := make(map[string]bool)
 	for _, input := range inputs {
 		input = strings.TrimSpace(input)
+		if input == "@" {
+			sel.showAll = true
+			continue
+		}
 		if input == "" {
-			return nil, fmt.Errorf("invalid --meta filter %q", input)
+			return metaSelection{}, fmt.Errorf("--meta requires a tag name or @")
 		}
-		key, value, exact := strings.Cut(input, "=")
-		key = strings.TrimSpace(key)
-		if key == "" {
-			return nil, fmt.Errorf("invalid --meta filter %q", input)
+		if strings.Contains(input, ",") {
+			return metaSelection{}, fmt.Errorf("--meta is repeatable; pass one tag per flag")
 		}
-		filters = append(filters, metaFilter{
-			key:   key,
-			value: value,
-			exact: exact,
-		})
+		if strings.Contains(input, "=") {
+			return metaSelection{}, fmt.Errorf("--meta only accepts tag names or @")
+		}
+		if !seen[input] {
+			sel.tags = append(sel.tags, input)
+			seen[input] = true
+		}
 	}
-	return filters, nil
+	return sel, nil
 }
 
-func matchesMetaFilters(attrs map[string]string, filters []metaFilter) bool {
-	for _, f := range filters {
-		v, ok := attrs[f.key]
-		if !ok {
-			return false
-		}
-		if f.exact && v != f.value {
-			return false
+func matchesMetaSelection(attrs map[string]string, sel metaSelection) bool {
+	if sel.showAll {
+		return true
+	}
+	if len(sel.tags) == 0 {
+		return true
+	}
+	for _, tag := range sel.tags {
+		if _, ok := attrs[tag]; ok {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
-func collectEntries(inputs []string, reverse bool, n int) ([]store.Summary, error) {
-	filters, err := parseMetaFilters(inputs)
-	if err != nil {
-		return nil, err
-	}
+func collectEntries(sel metaSelection, reverse bool, n int) ([]store.Summary, error) {
 	out := make([]store.Summary, 0)
 	if err := store.StreamSummaries(func(s store.Summary) (bool, error) {
-		if !matchesMetaFilters(s.Attrs, filters) {
+		if !matchesMetaSelection(s.Attrs, sel) {
 			return true, nil
 		}
 		out = append(out, s)
@@ -281,22 +287,31 @@ func trimANSIToWidth(s string, width int) string {
 	return b.String()
 }
 
-// fmtAttrs formats a meta map as "[key=val  key=val]", sorted by key.
-// Returns an empty string when attrs is nil or empty.
-func fmtAttrs(attrs map[string]string) string {
+func fmtAttrs(attrs map[string]string, sel metaSelection) string {
 	if len(attrs) == 0 {
 		return ""
 	}
-	keys := make([]string, 0, len(attrs))
-	for k := range attrs {
-		keys = append(keys, k)
+	keys := make([]string, 0)
+	if sel.showAll {
+		for k := range attrs {
+			keys = append(keys, k)
+		}
+	} else if len(sel.tags) > 0 {
+		for _, tag := range sel.tags {
+			if _, ok := attrs[tag]; ok {
+				keys = append(keys, tag)
+			}
+		}
+	}
+	if len(keys) == 0 {
+		return ""
 	}
 	sort.Strings(keys)
 	pairs := make([]string, len(keys))
 	for i, k := range keys {
 		pairs[i] = k + "=" + attrs[k]
 	}
-	return "[" + strings.Join(pairs, "  ") + "]"
+	return strings.Join(pairs, "  ")
 }
 
 type logJSONEntry struct {
@@ -359,7 +374,7 @@ func logTemplate(entries []store.Summary, now time.Time, chars int, dateMode, fo
 	return nil
 }
 
-func logLong(entries []store.Summary, now time.Time, chars int, dateMode, idMode string) error {
+func logLong(entries []store.Summary, now time.Time, chars int, dateMode, idMode string, metaSel metaSelection) error {
 	for i, s := range entries {
 		if i > 0 {
 			fmt.Println()
@@ -379,7 +394,7 @@ func logLong(entries []store.Summary, now time.Time, chars int, dateMode, idMode
 		fmt.Printf("entry %s (%s, %s)\n", clrID(idLabel), longTypeLabel(typeLabel), item.SizeHuman)
 		fmt.Printf("%s%s\n", clrLabel("Date: "), tsStr)
 		fmt.Printf("%s%s\n", clrLabel("Hash: "), clrHash(item.Hash))
-		if a := fmtAttrs(item.Meta); a != "" {
+		if a := fmtAttrs(item.Meta, metaSel); a != "" {
 			fmt.Printf("%s%s\n", clrLabel("Meta: "), clrAttrs(a))
 		}
 

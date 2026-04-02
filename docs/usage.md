@@ -160,9 +160,8 @@ diff -u <(stash cat @2) <(stash cat @1)
 And if you want to find the right snapshots first:
 
 ```bash
-stash log --meta label
-stash log --meta label=before
-stash log --meta label=after
+stash log -m label
+stash ls -m @
 ```
 
 ### As a rolling scratch stack during shell work
