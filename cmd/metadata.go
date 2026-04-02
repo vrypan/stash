@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -40,23 +42,51 @@ func newMetadataCmd() *cobra.Command {
 	}
 }
 
-func printMetadata(id string) error {
+func loadAttrs(id string) (map[string]string, error) {
 	m, err := store.GetMeta(id)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(m.Attrs) == 0 {
+	return m.Attrs, nil
+}
+
+func writeAttrs(w io.Writer, attrs map[string]string, sep string, jsonOut bool) error {
+	if jsonOut {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(attrs)
+	}
+	if sep == "" {
+		sep = "\t"
+	}
+	if len(attrs) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(m.Attrs))
-	for k := range m.Attrs {
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		fmt.Fprintf(os.Stdout, "%s=%s\n", k, m.Attrs[k])
+		fmt.Fprintf(w, "%s%s%s\n", k, sep, attrs[k])
 	}
 	return nil
+}
+
+func printMetadata(id string) error {
+	attrs, err := loadAttrs(id)
+	if err != nil {
+		return err
+	}
+	return writeAttrs(os.Stdout, attrs, "=", false)
+}
+
+func printAttrs(id, sep string, jsonOut bool) error {
+	attrs, err := loadAttrs(id)
+	if err != nil {
+		return err
+	}
+	return writeAttrs(os.Stdout, attrs, sep, jsonOut)
 }
 
 func runMetadataSet(id string, args []string) error {

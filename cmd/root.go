@@ -31,6 +31,7 @@ func init() {
 		newLogCmd(),
 		newInspectCmd(),
 		newLsCmd(),
+		newAttrCmd(),
 		newMetadataCmd(),
 		newPopCmd(),
 		newCatCmd(),
