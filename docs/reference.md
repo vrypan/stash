@@ -7,7 +7,6 @@ stash [file]
 stash push [file]
 stash tee
 stash log
-stash inspect <id|n|@n>
 stash attr <id|n|@n>
 stash cat [id|n|@n]
 stash ls

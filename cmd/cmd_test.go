@@ -155,46 +155,6 @@ func TestLsPlainOutputsOnlyIDs(t *testing.T) {
 	}
 }
 
-func TestInspectFormatOutputsHash(t *testing.T) {
-	setupTempCmdStash(t)
-	id, err := store.Push(strings.NewReader("inspect me"), map[string]string{"filename": "inspect.txt"})
-	if err != nil {
-		t.Fatalf("store.Push: %v", err)
-	}
-	meta, err := store.GetMeta(id)
-	if err != nil {
-		t.Fatalf("GetMeta: %v", err)
-	}
-
-	cmd := newInspectCmd()
-	cmd.SetArgs([]string{id, "--format", "{{.Hash}}", "--no-color"})
-	stdout, _, err := captureIO(t, "", cmd.Execute)
-	if err != nil {
-		t.Fatalf("inspect execute: %v", err)
-	}
-	if strings.TrimSpace(stdout) != meta.Hash {
-		t.Fatalf("inspect hash output = %q, want %q", strings.TrimSpace(stdout), meta.Hash)
-	}
-}
-
-func TestInspectShowsPreviewWhenAvailable(t *testing.T) {
-	setupTempCmdStash(t)
-	id, err := store.Push(strings.NewReader("alpha\nbeta\ngamma\n"), map[string]string{"filename": "inspect.txt"})
-	if err != nil {
-		t.Fatalf("store.Push: %v", err)
-	}
-
-	cmd := newInspectCmd()
-	cmd.SetArgs([]string{id, "--no-color"})
-	stdout, _, err := captureIO(t, "", cmd.Execute)
-	if err != nil {
-		t.Fatalf("inspect execute: %v", err)
-	}
-	if !strings.Contains(stdout, "alpha") {
-		t.Fatalf("inspect output missing preview: %q", stdout)
-	}
-}
-
 func TestRunRmBeforeForce(t *testing.T) {
 	setupTempCmdStash(t)
 	id1, err := store.Push(strings.NewReader("one"), nil)

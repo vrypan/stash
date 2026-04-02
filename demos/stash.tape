@@ -23,11 +23,11 @@ Type "jq -n '{service:env.SVC, ok:true, latency_ms:18}' | stash -m label=raw"
 Enter
 Sleep 3s
 
-Type "stash ls"
+Type "stash ls -l"
 Enter
 Sleep 3s
 
-Type "stash inspect @1"
+Type "stash attr @1"
 Enter
 Sleep 3s
 
@@ -35,7 +35,7 @@ Type "stash cat @1 | jq '{service, latency_ms}' | stash -m label=reduced"
 Enter
 Sleep 3s
 
-Type "stash ls --meta label"
+Type "stash ls -l --meta label"
 Enter
 Sleep 3s
 

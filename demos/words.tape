@@ -31,15 +31,15 @@ Type "# Show the stashed entry"
 Enter
 Sleep 0.8s
 
-Type "stash ls --meta label"
+Type "stash ls -l --meta label"
 Enter
 Sleep 1.2s
 
-Type "# Inspect its metadata and preview"
+Type "# Show the stored attributes"
 Enter
 Sleep 0.8s
 
-Type "stash inspect @1"
+Type "stash attr @1"
 Enter
 Sleep 1.6s
 

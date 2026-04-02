@@ -29,7 +29,6 @@ func init() {
 		newTeeCmd(),
 		newIndexCmd(),
 		newLogCmd(),
-		newInspectCmd(),
 		newLsCmd(),
 		newAttrCmd(),
 		newPopCmd(),

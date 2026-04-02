@@ -43,7 +43,7 @@ File-oriented view:
 ```bash
 stash ls
 stash log
-stash inspect @1
+stash attr @1
 ```
 
 ## Installation
