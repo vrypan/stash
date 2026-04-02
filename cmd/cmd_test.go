@@ -114,42 +114,6 @@ func TestRunPushWithMetaStoresFilename(t *testing.T) {
 	}
 }
 
-func TestMetadataCommandsSetUnsetAndPrint(t *testing.T) {
-	setupTempCmdStash(t)
-	id, err := store.Push(strings.NewReader("hello"), nil)
-	if err != nil {
-		t.Fatalf("store.Push: %v", err)
-	}
-
-	if err := runMetadataSet(id, []string{"job=nightly", "owner=ci"}); err != nil {
-		t.Fatalf("runMetadataSet: %v", err)
-	}
-
-	stdout, _, err := captureIO(t, "", func() error {
-		return printMetadata(id)
-	})
-	if err != nil {
-		t.Fatalf("printMetadata: %v", err)
-	}
-	if stdout != "job=nightly\nowner=ci\n" {
-		t.Fatalf("printMetadata output = %q", stdout)
-	}
-
-	if err := runMetadataUnset(id, []string{"job"}); err != nil {
-		t.Fatalf("runMetadataUnset: %v", err)
-	}
-
-	stdout, _, err = captureIO(t, "", func() error {
-		return printMetadata(id)
-	})
-	if err != nil {
-		t.Fatalf("printMetadata after unset: %v", err)
-	}
-	if stdout != "owner=ci\n" {
-		t.Fatalf("printMetadata after unset = %q", stdout)
-	}
-}
-
 func TestLsPlainOutputsOnlyIDs(t *testing.T) {
 	setupTempCmdStash(t)
 	id1, err := store.Push(strings.NewReader("one"), nil)
