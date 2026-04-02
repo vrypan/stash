@@ -87,7 +87,7 @@ func TestAttrCommandSetAndUnsetMetaKeys(t *testing.T) {
 	}
 
 	cmd := newAttrCmd()
-	cmd.SetArgs([]string{id, "set", "meta.source=demo", "meta.stage=raw"})
+	cmd.SetArgs([]string{id, "set", "source=demo", "stage=raw"})
 	_, _, err = captureIO(t, "", cmd.Execute)
 	if err != nil {
 		t.Fatalf("attr set execute: %v", err)
@@ -102,7 +102,7 @@ func TestAttrCommandSetAndUnsetMetaKeys(t *testing.T) {
 	}
 
 	cmd = newAttrCmd()
-	cmd.SetArgs([]string{id, "unset", "meta.stage"})
+	cmd.SetArgs([]string{id, "unset", "stage"})
 	_, _, err = captureIO(t, "", cmd.Execute)
 	if err != nil {
 		t.Fatalf("attr unset execute: %v", err)
@@ -132,6 +132,66 @@ func TestAttrCommandRejectsWritesToCoreFields(t *testing.T) {
 	_, _, err = captureIO(t, "", cmd.Execute)
 	if err == nil {
 		t.Fatal("expected error when setting core field")
+	}
+}
+
+func TestAttrCommandRejectsDottedWritableKeys(t *testing.T) {
+	setupTempCmdStash(t)
+	id, err := store.Push(strings.NewReader("hello"), nil)
+	if err != nil {
+		t.Fatalf("store.Push: %v", err)
+	}
+
+	cmd := newAttrCmd()
+	cmd.SetArgs([]string{id, "set", "meta.source=demo"})
+	_, _, err = captureIO(t, "", cmd.Execute)
+	if err == nil {
+		t.Fatal("expected error when setting dotted writable key")
+	}
+}
+
+func TestAttrCommandAllowsHyphenInMiddleOfWritableKey(t *testing.T) {
+	setupTempCmdStash(t)
+	id, err := store.Push(strings.NewReader("hello"), nil)
+	if err != nil {
+		t.Fatalf("store.Push: %v", err)
+	}
+
+	cmd := newAttrCmd()
+	cmd.SetArgs([]string{id, "set", "build-id=demo"})
+	_, _, err = captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("attr set build-id execute: %v", err)
+	}
+
+	meta, err := store.GetMeta(id)
+	if err != nil {
+		t.Fatalf("GetMeta: %v", err)
+	}
+	if meta.Attrs["build-id"] != "demo" {
+		t.Fatalf("build-id attr = %#v", meta.Attrs)
+	}
+}
+
+func TestAttrCommandRejectsWritableKeysWithLeadingOrTrailingDash(t *testing.T) {
+	setupTempCmdStash(t)
+	id, err := store.Push(strings.NewReader("hello"), nil)
+	if err != nil {
+		t.Fatalf("store.Push: %v", err)
+	}
+
+	cmd := newAttrCmd()
+	cmd.SetArgs([]string{id, "set", "-bad=demo"})
+	_, _, err = captureIO(t, "", cmd.Execute)
+	if err == nil {
+		t.Fatal("expected error when setting key with leading dash")
+	}
+
+	cmd = newAttrCmd()
+	cmd.SetArgs([]string{id, "set", "bad-=demo"})
+	_, _, err = captureIO(t, "", cmd.Execute)
+	if err == nil {
+		t.Fatal("expected error when setting key with trailing dash")
 	}
 }
 

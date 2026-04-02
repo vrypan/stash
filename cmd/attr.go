@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -11,13 +12,15 @@ import (
 	"stash/store"
 )
 
+var writableAttrKeyRe = regexp.MustCompile(`^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*$`)
+
 func newAttrCmd() *cobra.Command {
 	var sep string
 	var jsonOut bool
 	var withPreview bool
 
 	cmd := &cobra.Command{
-		Use:           "attr <id|n|@n> [key | set meta.key=value ... | unset meta.key ...]",
+		Use:           "attr <id|n|@n> [key | set key=value ... | unset key ...]",
 		Short:         "Show or update entry attributes",
 		Args:          cobra.MinimumNArgs(1),
 		SilenceUsage:  true,
@@ -130,34 +133,51 @@ func printAttrValue(m store.Meta, preview, key, sep string, jsonOut bool) error 
 	return nil
 }
 
+func isWritableAttrKey(key string) bool {
+	switch key {
+	case "id", "ts", "hash", "size", "mime", "preview":
+		return false
+	default:
+		return writableAttrKeyRe.MatchString(key)
+	}
+}
+
 func runAttrSet(id string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("attr set requires at least one meta.key=value pair")
+		return fmt.Errorf("attr set requires at least one key=value pair")
 	}
 	metaArgs := make([]string, 0, len(args))
 	for _, kv := range args {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
-			return fmt.Errorf("invalid attr value %q: expected meta.key=value", kv)
+			return fmt.Errorf("invalid attr value %q: expected key=value", kv)
 		}
-		if !strings.HasPrefix(k, "meta.") {
-			return fmt.Errorf("only meta.* keys are writable: %q", k)
+		k = strings.TrimSpace(k)
+		if k == "" {
+			return fmt.Errorf("invalid attr value %q: expected key=value", kv)
 		}
-		metaArgs = append(metaArgs, strings.TrimPrefix(k, "meta.")+"="+v)
+		if !isWritableAttrKey(k) {
+			return fmt.Errorf("only metadata keys are writable: %q", k)
+		}
+		metaArgs = append(metaArgs, k+"="+v)
 	}
 	return runMetadataSet(id, metaArgs)
 }
 
 func runAttrUnset(id string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("attr unset requires at least one meta.key")
+		return fmt.Errorf("attr unset requires at least one key")
 	}
 	keys := make([]string, 0, len(args))
 	for _, k := range args {
-		if !strings.HasPrefix(k, "meta.") {
-			return fmt.Errorf("only meta.* keys are writable: %q", k)
+		k = strings.TrimSpace(k)
+		if k == "" {
+			return fmt.Errorf("attr unset requires at least one key")
 		}
-		keys = append(keys, strings.TrimPrefix(k, "meta."))
+		if !isWritableAttrKey(k) {
+			return fmt.Errorf("only metadata keys are writable: %q", k)
+		}
+		keys = append(keys, k)
 	}
 	return runMetadataUnset(id, keys)
 }

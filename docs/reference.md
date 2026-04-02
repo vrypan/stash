@@ -55,12 +55,12 @@ stash attr @1 meta.source
 Update user metadata:
 
 ```bash
-stash attr @1 set meta.source=usgs meta.stage=raw
-stash attr @1 unset meta.stage
+stash attr @1 set source=usgs stage=raw
+stash attr @1 unset stage
 ```
 
-Writable keys are limited to `meta.*`. Core fields such as `id`, `ts`, `hash`,
-and `size` are read-only.
+Writable keys are stored under `meta.*`, but `attr set` and `attr unset` accept
+bare keys. Core fields such as `id`, `ts`, `hash`, and `size` are read-only.
 
 Use `--json` to print the full `meta.json` object shape:
 
