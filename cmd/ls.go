@@ -14,32 +14,43 @@ func newLsCmd() *cobra.Command {
 	var chars int
 	var idMode string
 	var metaFilters []string
+	var dateMode string
+	var sizeMode string
+	var name bool
 	var mime bool
 	var n int
 	var preview bool
 	var reverse bool
 	var long bool
-	var dateMode string
 
 	cmd := &cobra.Command{
 		Use:           "ls",
-		Short:         "Show a filename-oriented view of stash entries",
+		Short:         "List stash entries",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(c *cobra.Command, _ []string) error {
-			if dateMode != "absolute" && dateMode != "relative" && dateMode != "ls" {
-				return fmt.Errorf("--date must be ls, absolute, or relative")
+			if dateMode != "" && dateMode != "absolute" && dateMode != "relative" && dateMode != "ls" {
+				return fmt.Errorf("--date must be absolute, relative, or ls")
+			}
+			if sizeMode != "" && sizeMode != "human" && sizeMode != "bytes" {
+				return fmt.Errorf("--size must be human or bytes")
 			}
 			if idMode != "short" && idMode != "full" && idMode != "pos" {
 				return fmt.Errorf("--id must be short, full, or pos")
 			}
 			effectiveDateMode := dateMode
-			if long && !c.Flags().Changed("date") {
-				effectiveDateMode = "ls"
-			}
-			effectiveIDMode := idMode
-			if long && !c.Flags().Changed("id") {
-				effectiveIDMode = "full"
+			effectiveSizeMode := sizeMode
+			effectiveName := name
+			if long {
+				if !c.Flags().Changed("date") {
+					effectiveDateMode = "absolute"
+				}
+				if !c.Flags().Changed("size") {
+					effectiveSizeMode = "human"
+				}
+				if !c.Flags().Changed("name") {
+					effectiveName = true
+				}
 			}
 			effectiveChars := chars
 
@@ -54,21 +65,25 @@ func newLsCmd() *cobra.Command {
 
 			now := time.Now()
 			if preview && !c.Flags().Changed("chars") {
-				effectiveChars = autoPreviewChars(entries, now, effectiveIDMode, effectiveDateMode)
+				effectiveChars = autoLSPreviewChars(entries, now, idMode, effectiveDateMode, effectiveSizeMode, effectiveName, mime)
 			}
-			return renderLS(entries, now, effectiveDateMode, effectiveIDMode, mime, preview, effectiveChars, filters, long)
+			return renderLS(entries, now, idMode, effectiveDateMode, effectiveSizeMode, effectiveName, mime, preview, effectiveChars, filters)
 		},
 	}
 
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
 	cmd.Flags().StringVar(&idMode, "id", "short", "ID display: short, full, or pos")
 	cmd.Flags().StringArrayVar(&metaFilters, "meta", nil, "Filter by metadata key or key=value (repeatable)")
+	cmd.Flags().StringVar(&dateMode, "date", "", "Include date column: absolute, relative, or ls")
+	cmd.Flags().Lookup("date").NoOptDefVal = "absolute"
+	cmd.Flags().StringVar(&sizeMode, "size", "", "Include size column: human or bytes")
+	cmd.Flags().Lookup("size").NoOptDefVal = "human"
+	cmd.Flags().BoolVar(&name, "name", false, "Include filename or full ULID column")
 	cmd.Flags().BoolVar(&mime, "mime", false, "Include MIME/type column")
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
 	cmd.Flags().BoolVarP(&preview, "preview", "p", false, "Append compact preview text")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "Show oldest first")
-	cmd.Flags().BoolVarP(&long, "long", "l", false, "Verbose file-oriented listing")
-	cmd.Flags().StringVar(&dateMode, "date", "relative", "Date format: ls, relative, or absolute")
+	cmd.Flags().BoolVarP(&long, "long", "l", false, "Alias for --date --size --name")
 	return cmd
 }
 
@@ -128,17 +143,85 @@ type lsRow struct {
 	id, name, matched, size, date, mime, preview string
 }
 
-func buildLSRows(entries []store.Summary, now time.Time, dateMode, idMode string, preview bool, chars int, filters []metaFilter) []lsRow {
+func formatLSSize(size int64, mode string) string {
+	if mode == "bytes" {
+		return fmt.Sprintf("%d", size)
+	}
+	return store.HumanSize(size)
+}
+
+func autoLSPreviewChars(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode string, name, mime bool) int {
+	width, ok := terminalWidth()
+	if !ok {
+		return 80
+	}
+	maxID, maxSize, maxDate, maxName, maxMime := 0, 0, 0, 0, 0
+	for i, m := range entries {
+		if id := lsID(m, i, idMode); len(id) > maxID {
+			maxID = len(id)
+		}
+		if sizeMode != "" {
+			if size := formatLSSize(m.Size, sizeMode); len(size) > maxSize {
+				maxSize = len(size)
+			}
+		}
+		if dateMode != "" {
+			if date := formatLSDate(parseTS(m.TS), now, dateMode); len(date) > maxDate {
+				maxDate = len(date)
+			}
+		}
+		if name {
+			if n := lsName(m); len(n) > maxName {
+				maxName = len(n)
+			}
+		}
+		if mime {
+			label := displayTypeLabel(m.MIME)
+			if label == "" {
+				label = m.Type
+			}
+			if len(label) > maxMime {
+				maxMime = len(label)
+			}
+		}
+	}
+	fixed := maxID
+	if sizeMode != "" {
+		fixed += 2 + maxSize
+	}
+	if dateMode != "" {
+		fixed += 2 + maxDate
+	}
+	if name {
+		fixed += 2 + maxName
+	}
+	if mime {
+		fixed += 2 + maxMime
+	}
+	chars := width - fixed - 2
+	if chars < 20 {
+		return 20
+	}
+	return chars
+}
+
+func buildLSRows(entries []store.Summary, now time.Time, dateMode, sizeMode, idMode string, name, preview bool, chars int, filters []metaFilter) []lsRow {
 	rows := make([]lsRow, len(entries))
 	for i, m := range entries {
 		r := lsRow{
-			id:      lsID(m, i, idMode),
-			name:    lsName(m),
-			matched: lsMatchedAttrs(m.Attrs, filters),
-			size:    store.HumanSize(m.Size),
-			date:    formatLSDate(parseTS(m.TS), now, dateMode),
-			mime:    displayTypeLabel(m.MIME),
+			id: lsID(m, i, idMode),
 		}
+		if name {
+			r.name = lsName(m)
+			r.matched = lsMatchedAttrs(m.Attrs, filters)
+		}
+		if sizeMode != "" {
+			r.size = formatLSSize(m.Size, sizeMode)
+		}
+		if dateMode != "" {
+			r.date = formatLSDate(parseTS(m.TS), now, dateMode)
+		}
+		r.mime = displayTypeLabel(m.MIME)
 		if r.mime == "" {
 			r.mime = m.Type
 		}
@@ -153,9 +236,16 @@ func buildLSRows(entries []store.Summary, now time.Time, dateMode, idMode string
 	return rows
 }
 
-func renderLS(entries []store.Summary, now time.Time, dateMode, idMode string, mime, preview bool, chars int, filters []metaFilter, long bool) error {
-	rows := buildLSRows(entries, now, dateMode, idMode, preview, chars, filters)
-	if long && dateMode == "ls" {
+func renderLS(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode string, name, mime, preview bool, chars int, filters []metaFilter) error {
+	if dateMode == "" && sizeMode == "" && !name && !mime && !preview {
+		for i, m := range entries {
+			fmt.Println(lsID(m, i, idMode))
+		}
+		return nil
+	}
+
+	rows := buildLSRows(entries, now, dateMode, sizeMode, idMode, name, preview, chars, filters)
+	if dateMode == "ls" {
 		for i, m := range entries {
 			rows[i].date = lsDate(parseTS(m.TS), now)
 		}
@@ -179,22 +269,32 @@ func renderLS(entries []store.Summary, now time.Time, dateMode, idMode string, m
 
 	for _, r := range rows {
 		idCol := clrID(fmt.Sprintf("%-*s", maxID, r.id))
-		nameCol := r.name
-		if nameCol != r.id {
-			nameCol = clrFile(fmt.Sprintf("%-*s", maxName, r.name))
-		} else {
-			nameCol = fmt.Sprintf("%-*s", maxName, r.name)
+		parts := []string{idCol}
+		if r.size != "" {
+			parts = append(parts, fmt.Sprintf("%*s", maxSize, r.size))
 		}
-		line := fmt.Sprintf("%s  %*s  %*s  %s", idCol, maxSize, r.size, maxDate, r.date, nameCol)
-		if r.matched != "" {
-			line += "  " + clrAttrs(r.matched)
+		if r.date != "" {
+			parts = append(parts, fmt.Sprintf("%*s", maxDate, r.date))
+		}
+		if r.name != "" {
+			nameCol := r.name
+			if nameCol != r.id {
+				nameCol = clrFile(fmt.Sprintf("%-*s", maxName, r.name))
+			} else {
+				nameCol = fmt.Sprintf("%-*s", maxName, r.name)
+			}
+			parts = append(parts, nameCol)
+			if r.matched != "" {
+				parts = append(parts, clrAttrs(r.matched))
+			}
 		}
 		if mime && r.mime != "" {
-			line += "  " + r.mime
+			parts = append(parts, r.mime)
 		}
 		if r.preview != "" {
-			line += "  " + r.preview
+			parts = append(parts, r.preview)
 		}
+		line := strings.Join(parts, "  ")
 		if width, ok := terminalWidth(); ok {
 			line = trimANSIToWidth(line, width)
 		}

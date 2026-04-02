@@ -150,6 +150,47 @@ func TestMetadataCommandsSetUnsetAndPrint(t *testing.T) {
 	}
 }
 
+func TestLsPlainOutputsOnlyIDs(t *testing.T) {
+	setupTempCmdStash(t)
+	id1, err := store.Push(strings.NewReader("one"), nil)
+	if err != nil {
+		t.Fatalf("push 1: %v", err)
+	}
+	id2, err := store.Push(strings.NewReader("two"), nil)
+	if err != nil {
+		t.Fatalf("push 2: %v", err)
+	}
+
+	cmd := newLsCmd()
+	cmd.SetArgs([]string{})
+	stdout, _, err := captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("ls execute: %v", err)
+	}
+	meta2, err := store.GetMeta(id2)
+	if err != nil {
+		t.Fatalf("GetMeta 2: %v", err)
+	}
+	meta1, err := store.GetMeta(id1)
+	if err != nil {
+		t.Fatalf("GetMeta 1: %v", err)
+	}
+	want := meta2.ShortID() + "\n" + meta1.ShortID() + "\n"
+	if stdout != want {
+		t.Fatalf("ls output = %q, want %q", stdout, want)
+	}
+
+	cmd = newLsCmd()
+	cmd.SetArgs([]string{"--id=pos"})
+	stdout, _, err = captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("ls --id=pos execute: %v", err)
+	}
+	if stdout != "1\n2\n" {
+		t.Fatalf("ls --id=pos output = %q", stdout)
+	}
+}
+
 func TestInspectFormatOutputsHash(t *testing.T) {
 	setupTempCmdStash(t)
 	id, err := store.Push(strings.NewReader("inspect me"), map[string]string{"filename": "inspect.txt"})
