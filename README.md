@@ -63,6 +63,20 @@ Available under [releases](/releases).
 brew install vrypan/tap/stash
 ```
 
+### Auto-Completion
+
+If you installed `stash` with Homebrew, shell completions for bash, zsh, and fish
+are installed automatically.
+
+If you installed `stash` manually, you can generate and install completions
+yourself, using `stash completion`.
+
+Manual installation instructions:
+
+- [Bash](docs/bash.md)
+- [Fish](docs/fish.md)
+- [Zsh](docs/zsh.md)
+
 ## Stash Repository Location
 
 By default, `stash` stores data under `~/.stash`.
@@ -83,6 +97,7 @@ projects, or CI runs.
 - Usage guide: [docs/usage.md](docs/usage.md)
 - Command/reference guide: [docs/reference.md](docs/reference.md)
 - Example workflows: [docs/examples.md](docs/examples.md)
+- Shell completion setup: [docs/bash.md](docs/bash.md), [docs/fish.md](docs/fish.md), [docs/zsh.md](docs/zsh.md)
 - Demos: [demos/](demos/)
 - Helper scripts: [scripts/README.md](scripts/README.md)
 

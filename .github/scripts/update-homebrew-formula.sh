@@ -88,6 +88,15 @@ class Stash < Formula
   def install
     bin.install "stash"
     pkgshare.install "scripts" if Dir.exist?("scripts")
+    (bash_completion/"stash").write Utils.safe_popen_read(
+      bin/"stash", "completion", "bash"
+    )
+    (zsh_completion/"_stash").write Utils.safe_popen_read(
+      bin/"stash", "completion", "zsh"
+    )
+    (fish_completion/"stash.fish").write Utils.safe_popen_read(
+      bin/"stash", "completion", "fish"
+    )
   end
 
   test do
