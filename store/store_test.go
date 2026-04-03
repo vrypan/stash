@@ -46,13 +46,6 @@ func createImportedEntry(t *testing.T, root string, ts time.Time, data []byte, a
 		Size:  int64(len(data)),
 		Attrs: mapsClone(attrs),
 	}
-	major, sub := detectMIMEParts(data)
-	if major != "" {
-		meta.Attrs["mimetype"] = major
-	}
-	if sub != "" {
-		meta.Attrs["mimesubtype"] = sub
-	}
 
 	entryDir := filepath.Join(root, "entries", id)
 	if err := os.MkdirAll(entryDir, 0o700); err != nil {

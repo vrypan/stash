@@ -91,10 +91,8 @@ stash ls -m @
 stash ls --date
 stash ls --size
 stash ls --name
-stash ls --type
-stash ls --subtype
 stash ls --preview
-stash ls --size=bytes --name --type --subtype
+stash ls --size=bytes --name
 stash ls -m source -m stage
 ```
 
@@ -113,8 +111,6 @@ Notes:
 - `-m tag` filters to entries where `tag` is set
 - multiple `-m/--meta` flags use OR semantics
 - `stash ls` renders one column per requested tag when explicit tags are used
-- `--type` shows the MIME major type from `meta.mimetype`
-- `--subtype` shows the MIME subtype from `meta.mimesubtype`
 - `--id=short|full|pos` controls the first column in all modes
 
 ## Log Output
@@ -146,8 +142,7 @@ stash log -m job -m owner
 Multiple `-m/--meta` flags are combined with OR.
 
 Notes:
-- `stash log` shows the detected MIME label, size, date, hash, metadata, and a
-  preview only for text-like entries.
+- `stash log` shows size, date, hash, metadata, and a preview.
 - Use `stash ls` for one-line ID views and `stash ls -l` for file-oriented detail.
 
 ## Structured Output
@@ -168,7 +163,6 @@ Each JSON entry includes:
 - `hash`
 - `size`
 - `size_human`
-- `mime`
 - `meta`
 - `preview`
 
@@ -177,7 +171,7 @@ Each JSON entry includes:
 `stash log --format` renders each entry through a Go template:
 
 ```bash
-stash log --format '{{.ShortID}} {{.Date}} {{.SizeHuman}} {{.MIME}}'
+stash log --format '{{.ShortID}} {{.Date}} {{.SizeHuman}}'
 stash log --format '{{.ShortID}} {{index .Meta "filename"}}'
 stash log --format '{{.ID}} {{.Hash}}'
 ```
@@ -195,9 +189,6 @@ Available template fields:
 - `Meta`
 - `Preview`
 
-`MIME` is exposed in display form, so parameters such as `; charset=utf-8` are
-stripped.
-
 ## Storage
 
 Each entry stores metadata in `~/.stash/entries/<ULID>/meta.json`.
@@ -210,9 +201,7 @@ Current fields include:
 - `meta`
 
 `meta` contains user-supplied `--meta key=value` pairs, `filename` when the
-entry was created from a file path, and detected MIME parts under:
-- `mimetype`
-- `mimesubtype`
+entry was created from a file path, and other user-managed metadata.
 
 Entries live under:
 

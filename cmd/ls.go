@@ -18,8 +18,6 @@ func newLsCmd() *cobra.Command {
 	var dateMode string
 	var sizeMode string
 	var name bool
-	var typeCol bool
-	var subtypeCol bool
 	var n int
 	var preview bool
 	var reverse bool
@@ -70,9 +68,9 @@ func newLsCmd() *cobra.Command {
 
 			now := time.Now()
 			if preview && !c.Flags().Changed("chars") {
-				effectiveChars = autoLSPreviewChars(entries, now, idMode, effectiveDateMode, effectiveSizeMode, effectiveName, typeCol, subtypeCol, metaSel)
+				effectiveChars = autoLSPreviewChars(entries, now, idMode, effectiveDateMode, effectiveSizeMode, effectiveName, metaSel)
 			}
-			return renderLS(entries, now, idMode, effectiveDateMode, effectiveSizeMode, effectiveName, typeCol, subtypeCol, preview, effectiveChars, metaSel)
+			return renderLS(entries, now, idMode, effectiveDateMode, effectiveSizeMode, effectiveName, preview, effectiveChars, metaSel)
 		},
 	}
 
@@ -84,8 +82,6 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sizeMode, "size", "", "Include size column: human or bytes")
 	cmd.Flags().Lookup("size").NoOptDefVal = "human"
 	cmd.Flags().BoolVar(&name, "name", false, "Include filename or full ULID column")
-	cmd.Flags().BoolVar(&typeCol, "type", false, "Include MIME type column (equivalent to -m mimetype)")
-	cmd.Flags().BoolVar(&subtypeCol, "subtype", false, "Include MIME subtype column (equivalent to -m mimesubtype)")
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
 	cmd.Flags().BoolVarP(&preview, "preview", "p", false, "Append compact preview text")
 	cmd.Flags().BoolVarP(&reverse, "reverse", "r", false, "Show oldest first")
@@ -135,8 +131,8 @@ func lsAllAttrs(attrs map[string]string) string {
 }
 
 type lsRow struct {
-	id, name, metaInline, size, date, typ, subtype, preview string
-	metaVals                                                []string
+	id, name, metaInline, size, date, preview string
+	metaVals                                  []string
 }
 
 func formatLSSize(size int64, mode string) string {
@@ -153,14 +149,14 @@ func lsMetaColumns(entries []store.Summary, sel metaSelection) []string {
 	return nil
 }
 
-func autoLSPreviewChars(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode string, name, typeCol, subtypeCol bool, metaSel metaSelection) int {
+func autoLSPreviewChars(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode string, name bool, metaSel metaSelection) int {
 	width, ok := terminalWidth()
 	if !ok {
 		return 80
 	}
 	metaCols := lsMetaColumns(entries, metaSel)
 	metaWidths := make([]int, len(metaCols))
-	maxID, maxSize, maxDate, maxName, maxType, maxSubtype, maxInlineMeta := 0, 0, 0, 0, 0, 0, 0
+	maxID, maxSize, maxDate, maxName, maxInlineMeta := 0, 0, 0, 0, 0
 	for i, m := range entries {
 		if id := lsID(m, i, idMode); len(id) > maxID {
 			maxID = len(id)
@@ -178,16 +174,6 @@ func autoLSPreviewChars(entries []store.Summary, now time.Time, idMode, dateMode
 		if name {
 			if n := lsName(m); len(n) > maxName {
 				maxName = len(n)
-			}
-		}
-		if typeCol {
-			if label := m.MIMEMajor(); len(label) > maxType {
-				maxType = len(label)
-			}
-		}
-		if subtypeCol {
-			if label := m.MIMESubtype(); len(label) > maxSubtype {
-				maxSubtype = len(label)
 			}
 		}
 		if len(metaCols) > 0 {
@@ -215,12 +201,6 @@ func autoLSPreviewChars(entries []store.Summary, now time.Time, idMode, dateMode
 	}
 	if name {
 		fixed += 2 + maxName
-	}
-	if typeCol {
-		fixed += 2 + maxType
-	}
-	if subtypeCol {
-		fixed += 2 + maxSubtype
 	}
 	for _, w := range metaWidths {
 		fixed += 2 + w
@@ -262,8 +242,6 @@ func buildLSRows(entries []store.Summary, now time.Time, dateMode, sizeMode, idM
 		if dateMode != "" {
 			r.date = formatLSDate(parseTS(m.TS), now, dateMode)
 		}
-		r.typ = m.MIMEMajor()
-		r.subtype = m.MIMESubtype()
 		if preview && m.Preview != "" {
 			r.preview = m.Preview
 			if m.Size > int64(chars) {
@@ -275,9 +253,9 @@ func buildLSRows(entries []store.Summary, now time.Time, dateMode, sizeMode, idM
 	return rows
 }
 
-func renderLS(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode string, name, typeCol, subtypeCol, preview bool, chars int, metaSel metaSelection) error {
+func renderLS(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode string, name, preview bool, chars int, metaSel metaSelection) error {
 	showMeta := metaSel.showAll || len(metaSel.tags) > 0
-	if dateMode == "" && sizeMode == "" && !name && !typeCol && !subtypeCol && !preview && !showMeta {
+	if dateMode == "" && sizeMode == "" && !name && !preview && !showMeta {
 		for i, m := range entries {
 			fmt.Println(lsID(m, i, idMode))
 		}
@@ -292,7 +270,7 @@ func renderLS(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode
 		}
 	}
 
-	maxID, maxName, maxSize, maxDate, maxType, maxSubtype, maxInlineMeta := 0, 0, 0, 0, 0, 0, 0
+	maxID, maxName, maxSize, maxDate, maxInlineMeta := 0, 0, 0, 0, 0
 	metaWidths := make([]int, len(metaCols))
 	for _, r := range rows {
 		if len(r.id) > maxID {
@@ -306,12 +284,6 @@ func renderLS(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode
 		}
 		if len(r.date) > maxDate {
 			maxDate = len(r.date)
-		}
-		if len(r.typ) > maxType {
-			maxType = len(r.typ)
-		}
-		if len(r.subtype) > maxSubtype {
-			maxSubtype = len(r.subtype)
 		}
 		if len(r.metaInline) > maxInlineMeta {
 			maxInlineMeta = len(r.metaInline)
@@ -346,12 +318,6 @@ func renderLS(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode
 		}
 		if r.metaInline != "" {
 			parts = append(parts, clrAttrs(fmt.Sprintf("%-*s", maxInlineMeta, r.metaInline)))
-		}
-		if typeCol && r.typ != "" {
-			parts = append(parts, fmt.Sprintf("%-*s", maxType, r.typ))
-		}
-		if subtypeCol && r.subtype != "" {
-			parts = append(parts, fmt.Sprintf("%-*s", maxSubtype, r.subtype))
 		}
 		if r.preview != "" {
 			parts = append(parts, r.preview)

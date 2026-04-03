@@ -35,23 +35,6 @@ func TestLsLongEnablesDateSizeAndName(t *testing.T) {
 	}
 }
 
-func TestLsTypeAndSubtypeColumns(t *testing.T) {
-	setupTempCmdStash(t)
-	if _, err := store.Push(strings.NewReader(`{"ok":true}`), nil); err != nil {
-		t.Fatalf("store.Push: %v", err)
-	}
-
-	cmd := newLsCmd()
-	cmd.SetArgs([]string{"--type", "--subtype"})
-	stdout, _, err := captureIO(t, "", cmd.Execute)
-	if err != nil {
-		t.Fatalf("ls --type --subtype execute: %v", err)
-	}
-	if !strings.Contains(stdout, "application") || !strings.Contains(stdout, "json") {
-		t.Fatalf("ls --type --subtype output = %q", stdout)
-	}
-}
-
 func TestLsMetaWithoutArgumentShowsAttrsWithoutFiltering(t *testing.T) {
 	setupTempCmdStash(t)
 	if _, err := store.Push(strings.NewReader("one"), map[string]string{"label": "first"}); err != nil {

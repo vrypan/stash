@@ -4,7 +4,6 @@ go 1.26.1
 
 require (
 	github.com/fatih/color v1.19.0
-	github.com/gabriel-vasile/mimetype v1.4.11
 	github.com/mattn/go-isatty v0.0.20
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2

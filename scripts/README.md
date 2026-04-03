@@ -86,3 +86,28 @@ find . -type f | sort | sstash -m source=find -m stage=raw
 du -sh * | sstash -m label=nightly
 stash attr @1 meta.command
 ```
+
+## `stash-push-type`
+
+Wraps the local `stash` binary and records a `type` metadata field using the
+system `file` command after the entry is created.
+
+### Usage
+
+```bash
+scripts/stash-push-type path/to/file
+cat output.txt | scripts/stash-push-type
+```
+
+### Behavior
+
+- runs `stash push`
+- resolves the new entry path with `stash path`
+- runs `file -b` on the stored `data` file
+- stores the result in `meta.type` via `stash attr set type=...`
+- prints the new entry id to stdout
+
+### Requirements
+
+- `stash` available in `PATH`
+- `/usr/bin/file`

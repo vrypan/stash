@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v file >/dev/null 2>&1; then
+  echo "file binary not found in PATH" >&2
+  exit 1
+fi
+
+if ! command -v stash >/dev/null 2>&1; then
+  echo "stash binary not found in PATH" >&2
+  exit 1
+fi
+
+id="$(stash push "$@")"
+data_path="$(stash path "${id}")"
+type="$(file -b --mime-type "${data_path}")"
+stash attr "${id}" set "type=${type}" >/dev/null
+
+printf '%s\n' "${id}"

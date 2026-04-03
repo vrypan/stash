@@ -26,38 +26,6 @@ var (
 	clrFile  = color.New(color.FgCyan, color.Bold).SprintFunc()
 )
 
-func typeColor(t string) color.Attribute {
-	switch t {
-	case "text":
-		return color.FgGreen
-	case "json":
-		return color.FgCyan
-	case "empty":
-		return color.Faint
-	default: // binary, gzip, zstd, zip, png, jpeg, pdf, gif, …
-		return color.FgCyan
-	}
-}
-
-// clrTypeBare returns typeStr with color, no brackets — for long format.
-func clrTypeBare(t string) string {
-	return color.New(typeColor(t)).Sprint(t)
-}
-
-func displayTypeLabel(t string) string {
-	base, _, _ := strings.Cut(t, ";")
-	return strings.TrimSpace(base)
-}
-
-func longTypeLabel(t string) string {
-	switch {
-	case t == "text", t == "json", t == "application/json", strings.HasPrefix(t, "text/"):
-		return t
-	default:
-		return clrTypeBare(t)
-	}
-}
-
 func newLogCmd() *cobra.Command {
 	var chars int
 	var idMode string
@@ -323,7 +291,6 @@ type logJSONEntry struct {
 	Hash      string            `json:"hash"`
 	Size      int64             `json:"size"`
 	SizeHuman string            `json:"size_human"`
-	MIME      string            `json:"mime,omitempty"`
 	Meta      map[string]string `json:"meta,omitempty"`
 	Preview   []string          `json:"preview,omitempty"`
 }
@@ -342,7 +309,6 @@ func buildLogJSONEntry(s store.Summary, idx int, now time.Time, chars int, dateM
 		Hash:      s.Hash,
 		Size:      s.Size,
 		SizeHuman: store.HumanSize(s.Size),
-		MIME:      s.MIME(),
 		Meta:      s.Attrs,
 		Preview:   lines,
 	}
@@ -365,7 +331,6 @@ func logTemplate(entries []store.Summary, now time.Time, chars int, dateMode, fo
 	}
 	for i, s := range entries {
 		item := buildLogJSONEntry(s, i, now, chars, dateMode)
-		item.MIME = displayTypeLabel(item.MIME)
 		if err := tmpl.Execute(color.Output, item); err != nil {
 			return fmt.Errorf("render --format template: %w", err)
 		}
@@ -381,8 +346,6 @@ func logLong(entries []store.Summary, now time.Time, chars int, dateMode, idMode
 		}
 		item := buildLogJSONEntry(s, i, now, chars, dateMode)
 		tsStr := item.Date
-		typeLabel := item.MIME
-		typeLabel = displayTypeLabel(typeLabel)
 
 		idLabel := item.ShortID
 		switch idMode {
@@ -391,7 +354,7 @@ func logLong(entries []store.Summary, now time.Time, chars int, dateMode, idMode
 		case "pos":
 			idLabel = item.StackRef
 		}
-		fmt.Printf("entry %s (%s, %s)\n", clrID(idLabel), longTypeLabel(typeLabel), item.SizeHuman)
+		fmt.Printf("entry %s (%s)\n", clrID(idLabel), item.SizeHuman)
 		fmt.Printf("%s%s\n", clrLabel("Date: "), tsStr)
 		fmt.Printf("%s%s\n", clrLabel("Hash: "), clrHash(item.Hash))
 		if a := fmtAttrs(item.Meta, metaSel); a != "" {

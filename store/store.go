@@ -52,35 +52,6 @@ func (m Meta) DisplayID() string {
 	return strings.ToLower(m.ID)
 }
 
-func (m Meta) MIMEMajor() string {
-	if m.Attrs == nil {
-		return ""
-	}
-	return strings.TrimSpace(m.Attrs["mimetype"])
-}
-
-func (m Meta) MIMESubtype() string {
-	if m.Attrs == nil {
-		return ""
-	}
-	return strings.TrimSpace(m.Attrs["mimesubtype"])
-}
-
-func (m Meta) MIME() string {
-	major := m.MIMEMajor()
-	sub := m.MIMESubtype()
-	switch {
-	case major == "" && sub == "":
-		return ""
-	case major == "":
-		return sub
-	case sub == "":
-		return major
-	default:
-		return major + "/" + sub
-	}
-}
-
 // Sentinel errors.
 var ErrEmpty = errors.New("stash is empty")
 
@@ -313,13 +284,6 @@ func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sam
 		attrs = map[string]string{}
 	}
 	attrs = mapsClone(attrs)
-	major, sub := detectMIMEParts(sample)
-	if major != "" {
-		attrs["mimetype"] = major
-	}
-	if sub != "" {
-		attrs["mimesubtype"] = sub
-	}
 
 	m := Meta{
 		ID:    id,
@@ -643,7 +607,7 @@ func writeSummaryIndex(ids []string) error {
 			os.Remove(tmpPath)
 			return err
 		}
-		_, preview := buildPreviewData(buf, 180)
+		preview := buildPreviewData(buf, 180)
 		data, err := json.Marshal(Summary{Meta: m, Preview: preview})
 		if err != nil {
 			f.Close()

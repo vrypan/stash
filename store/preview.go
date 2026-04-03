@@ -1,97 +1,40 @@
 package store
 
 import (
-	"fmt"
 	"io"
-	stdmime "mime"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/gabriel-vasile/mimetype"
 )
 
-func isPreviewTextType(major, sub string) bool {
-	return major == "text" || (major == "application" && sub == "json")
-}
-
-func mimeLabel(major, sub string) string {
-	switch {
-	case major == "" && sub == "":
-		return ""
-	case major == "":
-		return sub
-	case sub == "":
-		return major
-	default:
-		return major + "/" + sub
-	}
-}
-
-func detectMIMEParts(buf []byte) (major, sub string) {
+func buildPreviewData(buf []byte, chars int) string {
 	if len(buf) == 0 {
-		return "application", "octet-stream"
+		return "[empty]"
 	}
-	mt := mimetype.Detect(buf)
-	label := mt.String()
-	if base, _, err := stdmime.ParseMediaType(label); err == nil {
-		label = base
-	}
-	major, sub, _ = strings.Cut(strings.TrimSpace(strings.ToLower(label)), "/")
-	if major == "" && sub != "" {
-		major, sub = sub, ""
-	}
-	return major, sub
+	return buildTextPreview(buf, chars)
 }
 
-func buildPreviewData(buf []byte, chars int) (mimeType, preview string) {
-	if len(buf) == 0 {
-		return "application/octet-stream", "[empty]"
-	}
-	major, sub := detectMIMEParts(buf)
-	mimeType = mimeLabel(major, sub)
-	switch {
-	case isPreviewTextType(major, sub):
-		preview = buildTextPreview(buf, chars)
-	default:
-		preview = ""
-	}
-	return mimeType, preview
-}
-
-// SmartPreview reads up to chars bytes from an entry and returns the detected
-// content type and a human-readable preview string.
-func SmartPreview(id string, chars int) (mimeType, preview string, err error) {
+// SmartPreview reads up to chars bytes from an entry and returns a human-readable
+// preview string built from the sampled bytes.
+func SmartPreview(id string, chars int) (string, error) {
 	buf, err := readSample(id, chars)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	mimeType, preview = buildPreviewData(buf, chars)
-	if preview == "" && mimeType != "application/octet-stream" {
-		preview = fmt.Sprintf("[%s]", mimeType)
-	}
-	return mimeType, preview, nil
+	return buildPreviewData(buf, chars), nil
 }
 
-// LongPreview returns up to maxLines of text from an entry for verbose display.
-// Non-text content returns no preview lines.
+// LongPreview returns up to maxLines of preview text from an entry.
 func LongPreview(id string, charsPerLine, maxLines int) ([]string, error) {
 	buf, err := readSample(id, charsPerLine*maxLines)
 	if err != nil {
 		return nil, err
 	}
-
 	if len(buf) == 0 {
 		return nil, nil
 	}
 
-	major, sub := detectMIMEParts(buf)
-	if !isPreviewTextType(major, sub) {
-		return nil, nil
-	}
-
 	raw := string(buf)
-	// Normalise line endings.
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	raw = strings.ReplaceAll(raw, "\r", "\n")
 
@@ -100,7 +43,6 @@ func LongPreview(id string, charsPerLine, maxLines int) ([]string, error) {
 		if len(lines) == maxLines {
 			break
 		}
-		// Replace non-printable chars.
 		line = strings.Map(func(r rune) rune {
 			if r == '\t' {
 				return ' '
@@ -116,7 +58,7 @@ func LongPreview(id string, charsPerLine, maxLines int) ([]string, error) {
 }
 
 // readSample reads up to n bytes from an entry's data file.
-// Always reads at least 512 bytes so type detection has enough signal.
+// Always reads at least 512 bytes so previews have enough content.
 func readSample(id string, n int) ([]byte, error) {
 	bufSize := n
 	if bufSize < 512 {

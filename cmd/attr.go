@@ -100,11 +100,6 @@ func attrValue(m store.Meta, preview, key string) (string, bool) {
 		return m.Hash, true
 	case "size":
 		return fmt.Sprintf("%d", m.Size), true
-	case "mime":
-		if m.MIME() == "" {
-			return "", false
-		}
-		return m.MIME(), true
 	case "preview":
 		if strings.TrimSpace(preview) == "" {
 			return "", false
@@ -135,7 +130,7 @@ func printAttrValue(m store.Meta, preview, key, sep string, jsonOut bool) error 
 
 func isWritableAttrKey(key string) bool {
 	switch key {
-	case "id", "ts", "hash", "size", "mime", "preview":
+	case "id", "ts", "hash", "size", "preview":
 		return false
 	default:
 		return writableAttrKeyRe.MatchString(key)
