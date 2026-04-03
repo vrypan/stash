@@ -233,3 +233,50 @@ func TestTeeInterruptedSavedWithPartial(t *testing.T) {
 		t.Fatalf("job attr = %q, want test", meta.Attrs["job"])
 	}
 }
+
+func TestListCacheRebuildsAndInvalidates(t *testing.T) {
+	setupTempStash(t)
+
+	id, err := Push(strings.NewReader("one"), map[string]string{"label": "first"})
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	items, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("List len = %d, want 1", len(items))
+	}
+
+	cachePath, err := listCachePath()
+	if err != nil {
+		t.Fatalf("listCachePath: %v", err)
+	}
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("expected cache file: %v", err)
+	}
+
+	if err := SetAttrs(id, map[string]string{"label": "updated"}); err != nil {
+		t.Fatalf("SetAttrs: %v", err)
+	}
+	items, err = List()
+	if err != nil {
+		t.Fatalf("List after SetAttrs: %v", err)
+	}
+	if items[0].Attrs["label"] != "updated" {
+		t.Fatalf("cached attrs = %#v", items[0].Attrs)
+	}
+
+	if err := Remove(id); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	items, err = List()
+	if err != nil {
+		t.Fatalf("List after Remove: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("List len after remove = %d, want 0", len(items))
+	}
+}

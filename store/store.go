@@ -2,6 +2,7 @@ package store
 
 import (
 	crand "crypto/rand"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 const shortIDLen = 8
 const minIDLen = 6
+const listCacheVersion = 1
 
 // entropy is a monotonic ULID entropy source backed by crypto/rand.
 var entropy = ulid.Monotonic(crand.Reader, 0)
@@ -149,6 +151,14 @@ func tmpStashDir() (string, error) {
 	return filepath.Join(b, "tmp"), nil
 }
 
+func cacheDir() (string, error) {
+	b, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(b, "cache"), nil
+}
+
 func LockFilePath() (string, error) {
 	b, err := BaseDir()
 	if err != nil {
@@ -165,6 +175,7 @@ func Init() error {
 	}
 	for _, dir := range []string{
 		filepath.Join(b, "entries"),
+		filepath.Join(b, "cache"),
 		filepath.Join(b, "tmp"),
 	} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
@@ -192,6 +203,12 @@ type sampleWriter struct {
 	max int
 }
 
+type listCache struct {
+	Version           int
+	EntriesDirModTime int64
+	Items             []Meta
+}
+
 func mapsClone(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return map[string]string{}
@@ -212,6 +229,106 @@ func (w *sampleWriter) Write(p []byte) (int, error) {
 		w.buf = append(w.buf, p[:need]...)
 	}
 	return len(p), nil
+}
+
+func listCachePath() (string, error) {
+	d, err := cacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "list.gob"), nil
+}
+
+func entriesDirModTime() (int64, error) {
+	ed, err := entriesDir()
+	if err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(ed)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return info.ModTime().UnixNano(), nil
+}
+
+func invalidateListCache() error {
+	path, err := listCachePath()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func readListCache() ([]Meta, bool, error) {
+	path, err := listCachePath()
+	if err != nil {
+		return nil, false, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	defer f.Close()
+
+	var cache listCache
+	if err := gob.NewDecoder(f).Decode(&cache); err != nil {
+		return nil, false, nil
+	}
+	if cache.Version != listCacheVersion {
+		return nil, false, nil
+	}
+	modTime, err := entriesDirModTime()
+	if err != nil {
+		return nil, false, err
+	}
+	if cache.EntriesDirModTime != modTime {
+		return nil, false, nil
+	}
+	return cache.Items, true, nil
+}
+
+func writeListCache(items []Meta) error {
+	if err := Init(); err != nil {
+		return err
+	}
+	modTime, err := entriesDirModTime()
+	if err != nil {
+		return err
+	}
+	path, err := listCachePath()
+	if err != nil {
+		return err
+	}
+	tmpPath := path + ".tmp"
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	cache := listCache{
+		Version:           listCacheVersion,
+		EntriesDirModTime: modTime,
+		Items:             items,
+	}
+	if err := gob.NewEncoder(f).Encode(cache); err != nil {
+		f.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func prepareEntry() (id string, entryTmp string, cleanup func(), err error) {
@@ -260,7 +377,7 @@ func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sam
 	if err := os.Rename(entryTmp, filepath.Join(ed, id)); err != nil {
 		return fmt.Errorf("finalize entry: %w", err)
 	}
-	return nil
+	return invalidateListCache()
 }
 
 // Push reads r, stores it as a new entry, and returns the canonical ULID.
@@ -370,6 +487,11 @@ func listEntryDirIDs() ([]string, error) {
 
 // List returns all entries sorted newest first.
 func List() ([]Meta, error) {
+	if items, ok, err := readListCache(); err != nil {
+		return nil, err
+	} else if ok {
+		return items, nil
+	}
 	ids, err := listEntryDirIDs()
 	if err != nil {
 		return nil, err
@@ -385,6 +507,9 @@ func List() ([]Meta, error) {
 			return nil, err
 		}
 		metas = append(metas, m)
+	}
+	if err := writeListCache(metas); err != nil {
+		return nil, err
 	}
 	return metas, nil
 }
@@ -429,7 +554,7 @@ func writeMeta(id string, m Meta) error {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return err
 	}
-	return nil
+	return invalidateListCache()
 }
 
 // SetAttrs updates only the user metadata map for a resolved canonical entry ID.
@@ -470,14 +595,14 @@ func UnsetAttrs(id string, keys []string) error {
 
 // Newest returns the most recent entry or ErrEmpty.
 func Newest() (Meta, error) {
-	ids, err := listEntryDirIDs()
+	items, err := List()
 	if err != nil {
 		return Meta{}, err
 	}
-	if len(ids) == 0 {
+	if len(items) == 0 {
 		return Meta{}, ErrEmpty
 	}
-	return GetMeta(ids[0])
+	return items[0], nil
 }
 
 // NthNewest returns the nth newest entry, where n=1 is the most recent entry.
@@ -485,17 +610,17 @@ func NthNewest(n int) (Meta, error) {
 	if n < 1 {
 		return Meta{}, fmt.Errorf("invalid entry index %d (minimum 1)", n)
 	}
-	ids, err := listEntryDirIDs()
+	items, err := List()
 	if err != nil {
 		return Meta{}, err
 	}
-	if len(ids) == 0 {
+	if len(items) == 0 {
 		return Meta{}, ErrEmpty
 	}
-	if n > len(ids) {
-		return Meta{}, fmt.Errorf("entry index %d out of range (%d entries)", n, len(ids))
+	if n > len(items) {
+		return Meta{}, fmt.Errorf("entry index %d out of range (%d entries)", n, len(items))
 	}
-	return GetMeta(ids[n-1])
+	return items[n-1], nil
 }
 
 // Resolve resolves a user-supplied ID to a canonical ULID.
@@ -597,18 +722,21 @@ func Remove(id string) error {
 	if err := os.RemoveAll(filepath.Join(ed, id)); err != nil {
 		return err
 	}
-	return nil
+	return invalidateListCache()
 }
 
 // OlderThanIDs returns IDs older than the referenced canonical entry ID.
 func OlderThanIDs(id string) ([]string, error) {
-	ids, err := listEntryDirIDs()
+	items, err := List()
 	if err != nil {
 		return nil, err
 	}
-	for i, cur := range ids {
-		if cur == id {
-			out := append([]string(nil), ids[i+1:]...)
+	for i, item := range items {
+		if item.ID == id {
+			out := make([]string, 0, len(items)-i-1)
+			for _, older := range items[i+1:] {
+				out = append(out, older.ID)
+			}
 			return out, nil
 		}
 	}
