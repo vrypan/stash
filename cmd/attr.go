@@ -68,26 +68,11 @@ func newAttrCmd() *cobra.Command {
 }
 
 func loadAttrData(id string) (store.Meta, string, error) {
-	var preview string
-	var found bool
-	if err := store.StreamSummaries(func(s store.Summary) (bool, error) {
-		if s.ID != id {
-			return true, nil
-		}
-		preview = s.Preview
-		found = true
-		return false, nil
-	}); err != nil {
-		return store.Meta{}, "", err
-	}
 	m, err := store.GetMeta(id)
 	if err != nil {
 		return store.Meta{}, "", err
 	}
-	if found {
-		return m, preview, nil
-	}
-	return m, "", nil
+	return m, m.Preview, nil
 }
 
 func attrValue(m store.Meta, preview, key string) (string, bool) {

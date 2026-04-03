@@ -18,21 +18,6 @@ stash version
 
 `stash list` is an alias for `stash log`.
 
-## Index
-
-`stash` keeps internal indexes to speed up stack refs, listing, and history
-commands.
-
-Rebuild them manually with:
-
-```bash
-stash index update
-```
-
-This is mainly useful after external changes to the stash directory, such as
-copying entries from another machine. Normal `stash` commands maintain or
-rebuild indexes automatically when needed.
-
 ## Attr
 
 Show all stored entry fields:

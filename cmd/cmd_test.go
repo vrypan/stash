@@ -186,38 +186,6 @@ func TestRunRmBeforeForce(t *testing.T) {
 	}
 }
 
-func TestIndexUpdateCommand(t *testing.T) {
-	root := setupTempCmdStash(t)
-	if _, err := store.Push(strings.NewReader("one"), nil); err != nil {
-		t.Fatalf("push 1: %v", err)
-	}
-	if _, err := store.Push(strings.NewReader("two"), nil); err != nil {
-		t.Fatalf("push 2: %v", err)
-	}
-
-	olderDir := filepath.Join(root, "entries", "01ARZ3NDEKTSV4RRFFQ69G5FAV")
-	if err := os.MkdirAll(olderDir, 0o700); err != nil {
-		t.Fatalf("mkdir older dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(olderDir, "data"), []byte("old"), 0o600); err != nil {
-		t.Fatalf("write older data: %v", err)
-	}
-	metaJSON := `{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","ts":"2020-01-01T00:00:00Z","hash":"x","size":3}`
-	if err := os.WriteFile(filepath.Join(olderDir, "meta.json"), []byte(metaJSON), 0o600); err != nil {
-		t.Fatalf("write older meta: %v", err)
-	}
-
-	cmd := newIndexCmd()
-	cmd.SetArgs([]string{"update"})
-	stdout, _, err := captureIO(t, "", cmd.Execute)
-	if err != nil {
-		t.Fatalf("index update execute: %v", err)
-	}
-	if !strings.Contains(stdout, "indexed 3 entries") {
-		t.Fatalf("index update output = %q", stdout)
-	}
-}
-
 func TestTeeCommandWritesStreamToStdoutAndIDToStderr(t *testing.T) {
 	setupTempCmdStash(t)
 

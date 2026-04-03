@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 func buildPreviewData(buf []byte, chars int) string {
 	if len(buf) == 0 {
-		return "[empty]"
+		return ""
 	}
 	return buildTextPreview(buf, chars)
 }
@@ -34,24 +36,13 @@ func LongPreview(id string, charsPerLine, maxLines int) ([]string, error) {
 		return nil, nil
 	}
 
-	raw := string(buf)
-	raw = strings.ReplaceAll(raw, "\r\n", "\n")
-	raw = strings.ReplaceAll(raw, "\r", "\n")
+	raw := buildPreviewData(buf, len(buf))
 
 	var lines []string
 	for _, line := range strings.SplitN(raw, "\n", maxLines+1) {
 		if len(lines) == maxLines {
 			break
 		}
-		line = strings.Map(func(r rune) rune {
-			if r == '\t' {
-				return ' '
-			}
-			if r < 0x20 || r > 0x7e {
-				return -1
-			}
-			return r
-		}, line)
 		lines = append(lines, line)
 	}
 	return lines, nil
@@ -83,31 +74,27 @@ func readSample(id string, n int) ([]byte, error) {
 }
 
 func buildTextPreview(buf []byte, chars int) string {
-	if len(buf) > chars {
-		buf = buf[:chars]
-	}
 	var b strings.Builder
-	lastSpace := true
-	for _, r := range string(buf) {
-		switch {
-		case r == '\n':
-			if b.Len() > 0 && !lastSpace {
-				b.WriteByte(' ')
-			}
-			b.WriteString("⏎")
-			b.WriteByte(' ')
-			lastSpace = true
-		case r == '\t' || r == '\r' || r == ' ':
-			if !lastSpace {
-				b.WriteByte(' ')
-				lastSpace = true
-			}
-		case r < 0x20 || r > 0x7e:
-			// Drop other non-printable and non-ASCII runes from compact preview.
-		default:
-			b.WriteRune(r)
-			lastSpace = false
+	runes := 0
+	for len(buf) > 0 {
+		r, size := utf8.DecodeRune(buf)
+		if r == utf8.RuneError && size == 1 {
+			r = utf8.RuneError
 		}
+		switch r {
+		case '\n', '\r', '\t':
+			r = ' '
+		default:
+			if !unicode.IsPrint(r) || unicode.IsControl(r) {
+				r = '.'
+			}
+		}
+		b.WriteRune(r)
+		runes++
+		if chars > 0 && runes >= chars {
+			break
+		}
+		buf = buf[size:]
 	}
 	return strings.TrimSpace(b.String())
 }

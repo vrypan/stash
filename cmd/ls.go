@@ -96,7 +96,7 @@ func lsDate(t, now time.Time) string {
 	return t.Local().Format("Jan _2  2006")
 }
 
-func lsID(m store.Summary, idx int, idMode string) string {
+func lsID(m store.Meta, idx int, idMode string) string {
 	switch idMode {
 	case "full":
 		return m.DisplayID()
@@ -107,7 +107,7 @@ func lsID(m store.Summary, idx int, idMode string) string {
 	}
 }
 
-func lsName(m store.Summary) string {
+func lsName(m store.Meta) string {
 	if name := strings.TrimSpace(m.Attrs["filename"]); name != "" {
 		return name
 	}
@@ -142,14 +142,14 @@ func formatLSSize(size int64, mode string) string {
 	return store.HumanSize(size)
 }
 
-func lsMetaColumns(entries []store.Summary, sel metaSelection) []string {
+func lsMetaColumns(entries []store.Meta, sel metaSelection) []string {
 	if len(sel.tags) > 0 {
 		return append([]string(nil), sel.tags...)
 	}
 	return nil
 }
 
-func autoLSPreviewChars(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode string, name bool, metaSel metaSelection) int {
+func autoLSPreviewChars(entries []store.Meta, now time.Time, idMode, dateMode, sizeMode string, name bool, metaSel metaSelection) int {
 	width, ok := terminalWidth()
 	if !ok {
 		return 80
@@ -215,7 +215,7 @@ func autoLSPreviewChars(entries []store.Summary, now time.Time, idMode, dateMode
 	return chars
 }
 
-func buildLSRows(entries []store.Summary, now time.Time, dateMode, sizeMode, idMode string, name, preview bool, chars int, metaSel metaSelection) []lsRow {
+func buildLSRows(entries []store.Meta, now time.Time, dateMode, sizeMode, idMode string, name, preview bool, chars int, metaSel metaSelection) []lsRow {
 	metaCols := lsMetaColumns(entries, metaSel)
 	rows := make([]lsRow, len(entries))
 	for i, m := range entries {
@@ -243,17 +243,14 @@ func buildLSRows(entries []store.Summary, now time.Time, dateMode, sizeMode, idM
 			r.date = formatLSDate(parseTS(m.TS), now, dateMode)
 		}
 		if preview && m.Preview != "" {
-			r.preview = m.Preview
-			if m.Size > int64(chars) {
-				r.preview += "..."
-			}
+			r.preview = previewSnippet(m.Preview, chars)
 		}
 		rows[i] = r
 	}
 	return rows
 }
 
-func renderLS(entries []store.Summary, now time.Time, idMode, dateMode, sizeMode string, name, preview bool, chars int, metaSel metaSelection) error {
+func renderLS(entries []store.Meta, now time.Time, idMode, dateMode, sizeMode string, name, preview bool, chars int, metaSel metaSelection) error {
 	showMeta := metaSel.showAll || len(metaSel.tags) > 0
 	if dateMode == "" && sizeMode == "" && !name && !preview && !showMeta {
 		for i, m := range entries {

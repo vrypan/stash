@@ -82,9 +82,4 @@ rsync -a \
   "$remote_host:$remote_root/entries/" \
   "$local_entries/"
 
-if command -v stash >/dev/null 2>&1; then
-  echo "Updating local stash index"
-  stash index update >/dev/null
-fi
-
 echo "Done."

@@ -27,7 +27,6 @@ func init() {
 	rootCmd.AddCommand(
 		newPushCmd(),
 		newTeeCmd(),
-		newIndexCmd(),
 		newLogCmd(),
 		newLsCmd(),
 		newAttrCmd(),

@@ -28,9 +28,6 @@ func TestLogMetaWithoutArgumentShowsMetaWithoutFiltering(t *testing.T) {
 	if strings.Count(stdout, "entry ") != 2 {
 		t.Fatalf("log --meta @ should not filter entries, got %q", stdout)
 	}
-	if strings.Contains(stdout, "mimetype=") || strings.Contains(stdout, "mimesubtype=") {
-		t.Fatalf("log --meta @ should not show auto MIME attrs: %q", stdout)
-	}
 }
 
 func TestLogMetaFiltersByPresenceWithOrSemantics(t *testing.T) {

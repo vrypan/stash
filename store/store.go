@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bufio"
 	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -21,23 +20,18 @@ import (
 
 const shortIDLen = 8
 const minIDLen = 6
-const indexVersion = 3
 
 // entropy is a monotonic ULID entropy source backed by crypto/rand.
 var entropy = ulid.Monotonic(crand.Reader, 0)
 
 // Meta holds per-entry metadata stored in meta.json.
 type Meta struct {
-	ID    string            `json:"id"`
-	TS    string            `json:"ts"`
-	Hash  string            `json:"hash"`
-	Size  int64             `json:"size"`
-	Attrs map[string]string `json:"meta,omitempty"`
-}
-
-type Summary struct {
-	Meta
-	Preview string `json:"preview,omitempty"`
+	ID      string            `json:"id"`
+	TS      string            `json:"ts"`
+	Hash    string            `json:"hash"`
+	Size    int64             `json:"size"`
+	Preview string            `json:"preview,omitempty"`
+	Attrs   map[string]string `json:"meta,omitempty"`
 }
 
 func (m Meta) ShortID() string {
@@ -166,30 +160,6 @@ func LockFilePath() (string, error) {
 	return filepath.Join(b, "lock"), nil
 }
 
-func indexDir() (string, error) {
-	b, err := BaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(b, "index"), nil
-}
-
-func entryIndexPath() (string, error) {
-	d, err := indexDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, "entries.json"), nil
-}
-
-func summaryIndexPath() (string, error) {
-	d, err := indexDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, "entries.ndjson"), nil
-}
-
 // Init creates the base directory structure.
 func Init() error {
 	b, err := BaseDir()
@@ -198,7 +168,6 @@ func Init() error {
 	}
 	for _, dir := range []string{
 		filepath.Join(b, "entries"),
-		filepath.Join(b, "index"),
 		filepath.Join(b, "tmp"),
 	} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
@@ -220,19 +189,6 @@ func Init() error {
 func newULID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
 }
-
-type entryIndex struct {
-	Version           int      `json:"version"`
-	EntriesDirModTime int64    `json:"entries_dir_mod_time"`
-	IDs               []string `json:"ids"`
-}
-
-type summaryIndexHeader struct {
-	Version           int   `json:"version"`
-	EntriesDirModTime int64 `json:"entries_dir_mod_time"`
-}
-
-type summaryYieldFunc func(Summary) (bool, error)
 
 type sampleWriter struct {
 	buf []byte
@@ -286,11 +242,12 @@ func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sam
 	attrs = mapsClone(attrs)
 
 	m := Meta{
-		ID:    id,
-		TS:    time.Now().UTC().Format(time.RFC3339Nano),
-		Hash:  hex.EncodeToString(hash),
-		Size:  size,
-		Attrs: attrs,
+		ID:      id,
+		TS:      time.Now().UTC().Format(time.RFC3339Nano),
+		Hash:    hex.EncodeToString(hash),
+		Size:    size,
+		Preview: buildPreviewData(sample, len(sample)),
+		Attrs:   attrs,
 	}
 	metaData, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -307,10 +264,7 @@ func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sam
 	if err := os.Rename(entryTmp, filepath.Join(ed, id)); err != nil {
 		return fmt.Errorf("finalize entry: %w", err)
 	}
-	if err := insertIndexedID(id); err != nil {
-		return err
-	}
-	return invalidateSummaryIndex()
+	return nil
 }
 
 // Push reads r, stores it as a new entry, and returns the canonical ULID.
@@ -398,32 +352,17 @@ func Tee(r io.Reader, w io.Writer, attrs map[string]string, partial bool) (strin
 	return id, nil
 }
 
-func entriesDirModTime() (int64, error) {
+func listEntryDirIDs() ([]string, error) {
 	ed, err := entriesDir()
 	if err != nil {
-		return 0, err
-	}
-	info, err := os.Stat(ed)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	return info.ModTime().UnixNano(), nil
-}
-
-func listEntryDirIDs() ([]string, int64, error) {
-	ed, err := entriesDir()
-	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	dirEntries, err := os.ReadDir(ed)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, 0, nil
+			return nil, nil
 		}
-		return nil, 0, err
+		return nil, err
 	}
 	ids := make([]string, 0, len(dirEntries))
 	for _, de := range dirEntries {
@@ -432,164 +371,16 @@ func listEntryDirIDs() ([]string, int64, error) {
 		}
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
-	info, err := os.Stat(ed)
-	if err != nil {
-		return nil, 0, err
-	}
-	return ids, info.ModTime().UnixNano(), nil
-}
-
-func readEntryIndex() (entryIndex, error) {
-	path, err := entryIndexPath()
-	if err != nil {
-		return entryIndex{}, err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return entryIndex{}, err
-	}
-	var idx entryIndex
-	if err := json.Unmarshal(data, &idx); err != nil {
-		return entryIndex{}, err
-	}
-	if idx.Version != indexVersion {
-		return entryIndex{}, fmt.Errorf("unsupported index version %d", idx.Version)
-	}
-	return idx, nil
-}
-
-func writeEntryIndex(ids []string) error {
-	if err := Init(); err != nil {
-		return err
-	}
-	idx := entryIndex{
-		Version: indexVersion,
-		IDs:     append([]string(nil), ids...),
-	}
-	modTime, err := entriesDirModTime()
-	if err != nil {
-		return err
-	}
-	idx.EntriesDirModTime = modTime
-	data, err := json.MarshalIndent(idx, "", "  ")
-	if err != nil {
-		return err
-	}
-	path, err := entryIndexPath()
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0600)
-}
-
-func rebuildEntryIndex() ([]string, error) {
-	ids, _, err := listEntryDirIDs()
-	if err != nil {
-		return nil, err
-	}
-	if err := writeEntryIndex(ids); err != nil {
-		return nil, err
-	}
 	return ids, nil
 }
 
-func loadEntryIDs() ([]string, error) {
-	idx, err := readEntryIndex()
-	if err == nil {
-		ed, dirErr := entriesDir()
-		if dirErr != nil {
-			return nil, dirErr
-		}
-		info, statErr := os.Stat(ed)
-		if statErr == nil && info.ModTime().UnixNano() == idx.EntriesDirModTime {
-			return append([]string(nil), idx.IDs...), nil
-		}
-		if statErr != nil && os.IsNotExist(statErr) && idx.EntriesDirModTime == 0 {
-			return append([]string(nil), idx.IDs...), nil
-		}
-	}
-	return rebuildEntryIndex()
-}
-
-func insertIndexedID(id string) error {
-	ids, err := loadEntryIDs()
+// List returns all entries sorted newest first.
+func List() ([]Meta, error) {
+	ids, err := listEntryDirIDs()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	pos := sort.Search(len(ids), func(i int) bool { return ids[i] <= id })
-	if pos < len(ids) && ids[pos] == id {
-		return writeEntryIndex(ids)
-	}
-	ids = append(ids, "")
-	copy(ids[pos+1:], ids[pos:])
-	ids[pos] = id
-	return writeEntryIndex(ids)
-}
-
-func removeIndexedID(id string) error {
-	ids, err := loadEntryIDs()
-	if err != nil {
-		return err
-	}
-	for i, cur := range ids {
-		if cur == id {
-			ids = append(ids[:i], ids[i+1:]...)
-			break
-		}
-	}
-	return writeEntryIndex(ids)
-}
-
-func invalidateSummaryIndex() error {
-	path, err := summaryIndexPath()
-	if err != nil {
-		return err
-	}
-	err = os.Remove(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
-func writeSummaryIndex(ids []string) error {
-	if err := Init(); err != nil {
-		return err
-	}
-	path, err := summaryIndexPath()
-	if err != nil {
-		return err
-	}
-	tmpPath := path + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	bw := bufio.NewWriter(f)
-	header := summaryIndexHeader{Version: indexVersion}
-	modTime, err := entriesDirModTime()
-	if err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	header.EntriesDirModTime = modTime
-	headerData, err := json.Marshal(header)
-	if err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if _, err := bw.Write(headerData); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := bw.WriteByte('\n'); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		return err
-	}
+	metas := make([]Meta, 0, len(ids))
 	for _, id := range ids {
 		m, err := GetMeta(id)
 		if err != nil {
@@ -597,126 +388,9 @@ func writeSummaryIndex(ids []string) error {
 			if errors.As(err, &notFound) {
 				continue
 			}
-			f.Close()
-			os.Remove(tmpPath)
-			return err
+			return nil, err
 		}
-		buf, err := readSample(id, 180)
-		if err != nil && !os.IsNotExist(err) {
-			f.Close()
-			os.Remove(tmpPath)
-			return err
-		}
-		preview := buildPreviewData(buf, 180)
-		data, err := json.Marshal(Summary{Meta: m, Preview: preview})
-		if err != nil {
-			f.Close()
-			os.Remove(tmpPath)
-			return err
-		}
-		if _, err := bw.Write(data); err != nil {
-			f.Close()
-			os.Remove(tmpPath)
-			return err
-		}
-		if err := bw.WriteByte('\n'); err != nil {
-			f.Close()
-			os.Remove(tmpPath)
-			return err
-		}
-	}
-	if err := bw.Flush(); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	return os.Rename(tmpPath, path)
-}
-
-func streamSummaryIndex(yield summaryYieldFunc) error {
-	path, err := summaryIndexPath()
-	if err != nil {
-		return err
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	dec := json.NewDecoder(f)
-	var header summaryIndexHeader
-	if err := dec.Decode(&header); err != nil {
-		return err
-	}
-	if header.Version != indexVersion {
-		return fmt.Errorf("unsupported summary index version %d", header.Version)
-	}
-	modTime, err := entriesDirModTime()
-	if err != nil {
-		return err
-	}
-	if header.EntriesDirModTime != modTime {
-		return fmt.Errorf("stale summary index")
-	}
-
-	for {
-		var s Summary
-		err := dec.Decode(&s)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		cont, err := yield(s)
-		if err != nil {
-			return err
-		}
-		if !cont {
-			break
-		}
-	}
-	return nil
-}
-
-// StreamSummaries iterates through the summary index in newest-first order.
-// The callback can return false to stop iteration early.
-func StreamSummaries(yield func(Summary) (bool, error)) error {
-	err := streamSummaryIndex(yield)
-	if err == nil {
-		return nil
-	}
-	if _, rebuildErr := UpdateIndex(); rebuildErr != nil {
-		return rebuildErr
-	}
-	return streamSummaryIndex(yield)
-}
-
-// UpdateIndex rebuilds the entry ID index from the current entries directory.
-func UpdateIndex() (int, error) {
-	ids, err := rebuildEntryIndex()
-	if err != nil {
-		return 0, err
-	}
-	if err := writeSummaryIndex(ids); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
-// List returns all entries sorted newest first.
-func List() ([]Meta, error) {
-	metas := make([]Meta, 0)
-	if err := StreamSummaries(func(s Summary) (bool, error) {
-		metas = append(metas, s.Meta)
-		return true, nil
-	}); err != nil {
-		return nil, err
+		metas = append(metas, m)
 	}
 	return metas, nil
 }
@@ -761,7 +435,7 @@ func writeMeta(id string, m Meta) error {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return err
 	}
-	return invalidateSummaryIndex()
+	return nil
 }
 
 // SetAttrs updates only the user metadata map for a resolved canonical entry ID.
@@ -802,7 +476,7 @@ func UnsetAttrs(id string, keys []string) error {
 
 // Newest returns the most recent entry or ErrEmpty.
 func Newest() (Meta, error) {
-	ids, err := loadEntryIDs()
+	ids, err := listEntryDirIDs()
 	if err != nil {
 		return Meta{}, err
 	}
@@ -817,7 +491,7 @@ func NthNewest(n int) (Meta, error) {
 	if n < 1 {
 		return Meta{}, fmt.Errorf("invalid entry index %d (minimum 1)", n)
 	}
-	ids, err := loadEntryIDs()
+	ids, err := listEntryDirIDs()
 	if err != nil {
 		return Meta{}, err
 	}
@@ -850,7 +524,7 @@ func Resolve(input string) (string, error) {
 		return "", fmt.Errorf("id too short: %q (minimum %d characters)", input, minIDLen)
 	}
 
-	ids, err := loadEntryIDs()
+	ids, err := listEntryDirIDs()
 	if err != nil {
 		return "", err
 	}
@@ -896,32 +570,13 @@ func Resolve(input string) (string, error) {
 	return "", &ErrNotFound{Input: input}
 }
 
-// Preview reads up to n bytes from the entry and returns them as a string,
-// replacing non-printable bytes with '.'.
+// Preview reads up to n bytes from the entry and returns a sanitized preview.
 func Preview(id string, n int) (string, error) {
-	ed, err := entriesDir()
+	buf, err := readSample(id, n)
 	if err != nil {
 		return "", err
 	}
-	f, err := os.Open(filepath.Join(ed, id, "data"))
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	buf := make([]byte, n)
-	nr, err := io.ReadFull(f, buf)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		return "", err
-	}
-	buf = buf[:nr]
-
-	for i, b := range buf {
-		if b < 0x20 || b > 0x7e {
-			buf[i] = '.'
-		}
-	}
-	return string(buf), nil
+	return buildPreviewData(buf, n), nil
 }
 
 // Cat writes the entry's raw data to w.
@@ -948,15 +603,12 @@ func Remove(id string) error {
 	if err := os.RemoveAll(filepath.Join(ed, id)); err != nil {
 		return err
 	}
-	if err := removeIndexedID(id); err != nil {
-		return err
-	}
-	return invalidateSummaryIndex()
+	return nil
 }
 
 // OlderThanIDs returns IDs older than the referenced canonical entry ID.
 func OlderThanIDs(id string) ([]string, error) {
-	ids, err := loadEntryIDs()
+	ids, err := listEntryDirIDs()
 	if err != nil {
 		return nil, err
 	}

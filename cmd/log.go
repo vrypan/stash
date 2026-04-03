@@ -144,19 +144,20 @@ func matchesMetaSelection(attrs map[string]string, sel metaSelection) bool {
 	return false
 }
 
-func collectEntries(sel metaSelection, reverse bool, n int) ([]store.Summary, error) {
-	out := make([]store.Summary, 0)
-	if err := store.StreamSummaries(func(s store.Summary) (bool, error) {
-		if !matchesMetaSelection(s.Attrs, sel) {
-			return true, nil
-		}
-		out = append(out, s)
-		if !reverse && n > 0 && len(out) >= n {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
+func collectEntries(sel metaSelection, reverse bool, n int) ([]store.Meta, error) {
+	entries, err := store.List()
+	if err != nil {
 		return nil, err
+	}
+	out := make([]store.Meta, 0, len(entries))
+	for _, m := range entries {
+		if !matchesMetaSelection(m.Attrs, sel) {
+			continue
+		}
+		out = append(out, m)
+		if !reverse && n > 0 && len(out) >= n {
+			break
+		}
 	}
 	if reverse {
 		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
@@ -169,7 +170,7 @@ func collectEntries(sel metaSelection, reverse bool, n int) ([]store.Summary, er
 	return out, nil
 }
 
-func autoPreviewChars(entries []store.Summary, now time.Time, idMode string, dateMode string) int {
+func autoPreviewChars(entries []store.Meta, now time.Time, idMode string, dateMode string) int {
 	width, ok := terminalWidth()
 	if !ok {
 		return 80
@@ -255,6 +256,20 @@ func trimANSIToWidth(s string, width int) string {
 	return b.String()
 }
 
+func previewSnippet(preview string, chars int) string {
+	if chars <= 0 {
+		return ""
+	}
+	runes := []rune(preview)
+	if len(runes) <= chars {
+		return preview
+	}
+	if chars <= 3 {
+		return string(runes[:chars])
+	}
+	return string(runes[:chars]) + "..."
+}
+
 func fmtAttrs(attrs map[string]string, sel metaSelection) string {
 	if len(attrs) == 0 {
 		return ""
@@ -295,9 +310,10 @@ type logJSONEntry struct {
 	Preview   []string          `json:"preview,omitempty"`
 }
 
-func buildLogJSONEntry(s store.Summary, idx int, now time.Time, chars int, dateMode string) logJSONEntry {
+func buildLogJSONEntry(s store.Meta, idx int, now time.Time, chars int, dateMode string) logJSONEntry {
 	var lines []string
 	if p := strings.TrimSpace(s.Preview); p != "" {
+		p = previewSnippet(p, chars)
 		lines = []string{p}
 	}
 	return logJSONEntry{
@@ -314,7 +330,7 @@ func buildLogJSONEntry(s store.Summary, idx int, now time.Time, chars int, dateM
 	}
 }
 
-func logJSON(entries []store.Summary, now time.Time, chars int, dateMode string) error {
+func logJSON(entries []store.Meta, now time.Time, chars int, dateMode string) error {
 	out := make([]logJSONEntry, len(entries))
 	for i, s := range entries {
 		out[i] = buildLogJSONEntry(s, i, now, chars, dateMode)
@@ -324,7 +340,7 @@ func logJSON(entries []store.Summary, now time.Time, chars int, dateMode string)
 	return enc.Encode(out)
 }
 
-func logTemplate(entries []store.Summary, now time.Time, chars int, dateMode, formatStr string) error {
+func logTemplate(entries []store.Meta, now time.Time, chars int, dateMode, formatStr string) error {
 	tmpl, err := template.New("log").Parse(formatStr)
 	if err != nil {
 		return fmt.Errorf("invalid --format template: %w", err)
@@ -339,7 +355,7 @@ func logTemplate(entries []store.Summary, now time.Time, chars int, dateMode, fo
 	return nil
 }
 
-func logLong(entries []store.Summary, now time.Time, chars int, dateMode, idMode string, metaSel metaSelection) error {
+func logLong(entries []store.Meta, now time.Time, chars int, dateMode, idMode string, metaSel metaSelection) error {
 	for i, s := range entries {
 		if i > 0 {
 			fmt.Println()

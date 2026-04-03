@@ -124,7 +124,7 @@ func TestIndexRebuildIncludesImportedOlderEntries(t *testing.T) {
 	}
 }
 
-func TestOlderThanIDsAndRemoveUpdateIndex(t *testing.T) {
+func TestOlderThanIDsAndRemove(t *testing.T) {
 	setupTempStash(t)
 
 	id1, err := Push(strings.NewReader("one"), nil)
@@ -160,14 +160,6 @@ func TestOlderThanIDsAndRemoveUpdateIndex(t *testing.T) {
 		t.Fatalf("Resolve(@2) = %s, want %s", got, id2)
 	}
 
-	count, err := UpdateIndex()
-	if err != nil {
-		t.Fatalf("UpdateIndex: %v", err)
-	}
-	if count != 2 {
-		t.Fatalf("UpdateIndex count = %d, want 2", count)
-	}
-
 	entries, err := List()
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -194,6 +186,9 @@ func TestTeeSuccess(t *testing.T) {
 	}
 	if meta.Attrs["job"] != "test" {
 		t.Fatalf("meta job = %q, want test", meta.Attrs["job"])
+	}
+	if strings.TrimSpace(meta.Preview) == "" {
+		t.Fatal("expected preview to be stored in meta.json")
 	}
 }
 

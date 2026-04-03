@@ -32,9 +32,6 @@ func setupBenchmarkStash(b *testing.B, entries, payloadSize int) []string {
 		}
 		ids = append(ids, id)
 	}
-	if _, err := UpdateIndex(); err != nil {
-		b.Fatalf("UpdateIndex: %v", err)
-	}
 	return ids
 }
 
@@ -125,63 +122,6 @@ func BenchmarkOlderThanIDs1000(b *testing.B) {
 		}
 		if len(older) != 500 {
 			b.Fatalf("len(older) = %d, want 500", len(older))
-		}
-	}
-}
-
-func BenchmarkUpdateIndex1000(b *testing.B) {
-	setupBenchmarkStash(b, 1000, 256)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		n, err := UpdateIndex()
-		if err != nil {
-			b.Fatal(err)
-		}
-		if n != 1000 {
-			b.Fatalf("indexed = %d, want 1000", n)
-		}
-	}
-}
-
-func BenchmarkStreamSummariesFirst20_1000(b *testing.B) {
-	setupBenchmarkStash(b, 1000, 256)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		count := 0
-		if err := StreamSummaries(func(s Summary) (bool, error) {
-			if s.ID == "" {
-				b.Fatal("empty id")
-			}
-			count++
-			return count < 20, nil
-		}); err != nil {
-			b.Fatal(err)
-		}
-		if count != 20 {
-			b.Fatalf("count = %d, want 20", count)
-		}
-	}
-}
-
-func BenchmarkStreamSummariesFirst20WithPreview_1000(b *testing.B) {
-	setupBenchmarkStash(b, 1000, 256)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		count := 0
-		if err := StreamSummaries(func(s Summary) (bool, error) {
-			if s.Preview == "" {
-				b.Fatal("empty preview")
-			}
-			count++
-			return count < 20, nil
-		}); err != nil {
-			b.Fatal(err)
-		}
-		if count != 20 {
-			b.Fatalf("count = %d, want 20", count)
 		}
 	}
 }
