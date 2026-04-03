@@ -9,11 +9,17 @@ import (
 	"unicode/utf8"
 )
 
+const maxStoredPreviewRunes = 128
+
 func buildPreviewData(buf []byte, chars int) string {
 	if len(buf) == 0 {
 		return ""
 	}
-	return buildTextPreview(buf, chars)
+	limit := maxStoredPreviewRunes
+	if chars > 0 && chars < limit {
+		limit = chars
+	}
+	return buildTextPreview(buf, limit)
 }
 
 // SmartPreview reads up to chars bytes from an entry and returns a human-readable
@@ -76,10 +82,12 @@ func readSample(id string, n int) ([]byte, error) {
 func buildTextPreview(buf []byte, chars int) string {
 	var b strings.Builder
 	runes := 0
+	var last rune
+	var haveLast bool
 	for len(buf) > 0 {
 		r, size := utf8.DecodeRune(buf)
 		if r == utf8.RuneError && size == 1 {
-			r = utf8.RuneError
+			r = '.'
 		}
 		switch r {
 		case '\n', '\r', '\t':
@@ -89,7 +97,13 @@ func buildTextPreview(buf []byte, chars int) string {
 				r = '.'
 			}
 		}
+		if haveLast && r == ' ' && last == ' ' {
+			buf = buf[size:]
+			continue
+		}
 		b.WriteRune(r)
+		last = r
+		haveLast = true
 		runes++
 		if chars > 0 && runes >= chars {
 			break
