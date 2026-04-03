@@ -139,12 +139,44 @@ func BaseDir() (string, error) {
 	return filepath.Join(home, ".stash"), nil
 }
 
+func BaseDirPath() (string, error) {
+	b, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(b)
+}
+
 func entriesDir() (string, error) {
 	b, err := BaseDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(b, "entries"), nil
+}
+
+func EntriesDirPath() (string, error) {
+	ed, err := entriesDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(ed)
+}
+
+func EntryDirPath(id string) (string, error) {
+	ed, err := entriesDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(filepath.Join(ed, id))
+}
+
+func EntryDataPath(id string) (string, error) {
+	ed, err := entriesDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(filepath.Join(ed, id, "data"))
 }
 
 func tmpStashDir() (string, error) {

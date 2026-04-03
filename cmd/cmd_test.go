@@ -244,3 +244,97 @@ func TestTeeCommandWritesStreamToStdoutAndIDToStderr(t *testing.T) {
 		t.Fatalf("meta.Size = %d, want %d", meta.Size, len(stdout))
 	}
 }
+
+func TestPathCommandReturnsEntriesDirWithNoArgs(t *testing.T) {
+	root := setupTempCmdStash(t)
+
+	cmd := newPathCmd()
+	stdout, _, err := captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("path execute: %v", err)
+	}
+
+	want := filepath.Join(root, "entries") + "\n"
+	if stdout != want {
+		t.Fatalf("path output = %q, want %q", stdout, want)
+	}
+}
+
+func TestPathCommandReturnsBaseDirWithDirFlagAndNoArgs(t *testing.T) {
+	root := setupTempCmdStash(t)
+
+	cmd := newPathCmd()
+	cmd.SetArgs([]string{"-d"})
+	stdout, _, err := captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("path -d execute: %v", err)
+	}
+
+	want := root + "\n"
+	if stdout != want {
+		t.Fatalf("path -d output = %q, want %q", stdout, want)
+	}
+}
+
+func TestPathCommandResolvesExplicitRefToDataFileByDefault(t *testing.T) {
+	root := setupTempCmdStash(t)
+	id, err := store.Push(strings.NewReader("one"), nil)
+	if err != nil {
+		t.Fatalf("store.Push: %v", err)
+	}
+
+	cmd := newPathCmd()
+	cmd.SetArgs([]string{"@1"})
+	stdout, _, err := captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("path @1 execute: %v", err)
+	}
+
+	want := filepath.Join(root, "entries", id, "data") + "\n"
+	if stdout != want {
+		t.Fatalf("path output = %q, want %q", stdout, want)
+	}
+}
+
+func TestPathCommandResolvesExplicitRefToDirectoryWithDirFlag(t *testing.T) {
+	root := setupTempCmdStash(t)
+	id, err := store.Push(strings.NewReader("one"), nil)
+	if err != nil {
+		t.Fatalf("store.Push: %v", err)
+	}
+
+	cmd := newPathCmd()
+	cmd.SetArgs([]string{"-d", "@1"})
+	stdout, _, err := captureIO(t, "", cmd.Execute)
+	if err != nil {
+		t.Fatalf("path -d @1 execute: %v", err)
+	}
+
+	want := filepath.Join(root, "entries", id) + "\n"
+	if stdout != want {
+		t.Fatalf("path -d output = %q, want %q", stdout, want)
+	}
+}
+
+func TestPathCommandReadsRefsFromStdin(t *testing.T) {
+	root := setupTempCmdStash(t)
+	id1, err := store.Push(strings.NewReader("one"), nil)
+	if err != nil {
+		t.Fatalf("push 1: %v", err)
+	}
+	id2, err := store.Push(strings.NewReader("two"), nil)
+	if err != nil {
+		t.Fatalf("push 2: %v", err)
+	}
+
+	cmd := newPathCmd()
+	stdout, _, err := captureIO(t, "@1\n"+id1+"\n", cmd.Execute)
+	if err != nil {
+		t.Fatalf("path stdin execute: %v", err)
+	}
+
+	want := filepath.Join(root, "entries", id2, "data") + "\n" + filepath.Join(root, "entries", id1, "data") + "\n"
+	if stdout != want {
+		t.Fatalf("path stdin output = %q, want %q", stdout, want)
+	}
+}

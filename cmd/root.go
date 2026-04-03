@@ -33,6 +33,7 @@ func init() {
 		newAttrCmd(),
 		newPopCmd(),
 		newCatCmd(),
+		newPathCmd(),
 		newRmCmd(),
 		newVersionCmd(),
 	)
