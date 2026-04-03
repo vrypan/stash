@@ -81,8 +81,6 @@ func attrValue(m store.Meta, preview, key string) (string, bool) {
 		return m.DisplayID(), true
 	case "ts":
 		return m.TS, true
-	case "hash":
-		return m.Hash, true
 	case "size":
 		return fmt.Sprintf("%d", m.Size), true
 	case "preview":
@@ -115,7 +113,7 @@ func printAttrValue(m store.Meta, preview, key, sep string, jsonOut bool) error 
 
 func isWritableAttrKey(key string) bool {
 	switch key {
-	case "id", "ts", "hash", "size", "preview":
+	case "id", "ts", "size", "preview":
 		return false
 	default:
 		return writableAttrKeyRe.MatchString(key)
@@ -169,7 +167,6 @@ func writeAttrLines(m store.Meta, sep string, withPreview bool, preview string) 
 	lines := [][2]string{
 		{"id", m.DisplayID()},
 		{"ts", m.TS},
-		{"hash", m.Hash},
 		{"size", fmt.Sprintf("%d", m.Size)},
 	}
 	if len(m.Attrs) > 0 {

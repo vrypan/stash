@@ -2,7 +2,6 @@ package store
 
 import (
 	crand "crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"lukechampine.com/blake3"
 )
 
 func setupTempStash(t *testing.T) string {
@@ -38,13 +36,12 @@ func createImportedEntry(t *testing.T, root string, ts time.Time, data []byte, a
 	t.Helper()
 
 	id := ulid.MustNew(ulid.Timestamp(ts), ulid.Monotonic(strings.NewReader(strings.Repeat("a", 64)), 0)).String()
-	sum := blake3.Sum256(data)
 	meta := Meta{
-		ID:    id,
-		TS:    ts.UTC().Format(time.RFC3339Nano),
-		Hash:  hex.EncodeToString(sum[:]),
-		Size:  int64(len(data)),
-		Attrs: mapsClone(attrs),
+		ID:      id,
+		TS:      ts.UTC().Format(time.RFC3339Nano),
+		Size:    int64(len(data)),
+		Preview: buildPreviewData(data, len(data)),
+		Attrs:   mapsClone(attrs),
 	}
 
 	entryDir := filepath.Join(root, "entries", id)

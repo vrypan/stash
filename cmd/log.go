@@ -20,7 +20,6 @@ import (
 
 var (
 	clrID    = color.New(color.FgYellow, color.Bold).SprintFunc()
-	clrHash  = color.New(color.Faint).SprintFunc()
 	clrLabel = color.New(color.Bold).SprintFunc()
 	clrAttrs = color.New(color.FgMagenta).SprintFunc()
 	clrFile  = color.New(color.FgCyan, color.Bold).SprintFunc()
@@ -303,7 +302,6 @@ type logJSONEntry struct {
 	StackRef  string            `json:"stack_ref"`
 	TS        string            `json:"ts"`
 	Date      string            `json:"date"`
-	Hash      string            `json:"hash"`
 	Size      int64             `json:"size"`
 	SizeHuman string            `json:"size_human"`
 	Meta      map[string]string `json:"meta,omitempty"`
@@ -322,7 +320,6 @@ func buildLogJSONEntry(s store.Meta, idx int, now time.Time, chars int, dateMode
 		StackRef:  fmt.Sprintf("%d", idx+1),
 		TS:        s.TS,
 		Date:      formatTS(parseTS(s.TS), now, dateMode),
-		Hash:      s.Hash,
 		Size:      s.Size,
 		SizeHuman: store.HumanSize(s.Size),
 		Meta:      s.Attrs,
@@ -372,7 +369,6 @@ func logLong(entries []store.Meta, now time.Time, chars int, dateMode, idMode st
 		}
 		fmt.Printf("entry %s (%s)\n", clrID(idLabel), item.SizeHuman)
 		fmt.Printf("%s%s\n", clrLabel("Date: "), tsStr)
-		fmt.Printf("%s%s\n", clrLabel("Hash: "), clrHash(item.Hash))
 		if a := fmtAttrs(item.Meta, metaSel); a != "" {
 			fmt.Printf("%s%s\n", clrLabel("Meta: "), clrAttrs(a))
 		}

@@ -23,9 +23,6 @@ func TestAttrCommandOutputsTabSeparatedAndJSON(t *testing.T) {
 	if !strings.Contains(stdout, "id\t"+strings.ToLower(id)+"\n") {
 		t.Fatalf("attr output missing id: %q", stdout)
 	}
-	if !strings.Contains(stdout, "hash\t") {
-		t.Fatalf("attr output missing hash: %q", stdout)
-	}
 	if !strings.Contains(stdout, "size\t5\n") {
 		t.Fatalf("attr output missing size: %q", stdout)
 	}
@@ -53,24 +50,9 @@ func TestAttrCommandGetsSingleKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.Push: %v", err)
 	}
-	meta, err := store.GetMeta(id)
-	if err != nil {
-		t.Fatalf("GetMeta: %v", err)
-	}
-
 	cmd := newAttrCmd()
-	cmd.SetArgs([]string{id, "hash"})
-	stdout, _, err := captureIO(t, "", cmd.Execute)
-	if err != nil {
-		t.Fatalf("attr hash execute: %v", err)
-	}
-	if strings.TrimSpace(stdout) != meta.Hash {
-		t.Fatalf("attr hash output = %q, want %q", strings.TrimSpace(stdout), meta.Hash)
-	}
-
-	cmd = newAttrCmd()
 	cmd.SetArgs([]string{id, "meta.source"})
-	stdout, _, err = captureIO(t, "", cmd.Execute)
+	stdout, _, err := captureIO(t, "", cmd.Execute)
 	if err != nil {
 		t.Fatalf("attr meta.source execute: %v", err)
 	}
@@ -128,7 +110,7 @@ func TestAttrCommandRejectsWritesToCoreFields(t *testing.T) {
 	}
 
 	cmd := newAttrCmd()
-	cmd.SetArgs([]string{id, "set", "hash=nope"})
+	cmd.SetArgs([]string{id, "set", "size=nope"})
 	_, _, err = captureIO(t, "", cmd.Execute)
 	if err == nil {
 		t.Fatal("expected error when setting core field")

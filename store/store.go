@@ -2,7 +2,6 @@ package store
 
 import (
 	crand "crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"lukechampine.com/blake3"
 )
 
 const shortIDLen = 8
@@ -28,7 +26,6 @@ var entropy = ulid.Monotonic(crand.Reader, 0)
 type Meta struct {
 	ID      string            `json:"id"`
 	TS      string            `json:"ts"`
-	Hash    string            `json:"hash"`
 	Size    int64             `json:"size"`
 	Preview string            `json:"preview,omitempty"`
 	Attrs   map[string]string `json:"meta,omitempty"`
@@ -235,7 +232,7 @@ func prepareEntry() (id string, entryTmp string, cleanup func(), err error) {
 	return id, entryTmp, cleanup, nil
 }
 
-func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sample []byte, hash []byte) error {
+func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sample []byte) error {
 	if attrs == nil {
 		attrs = map[string]string{}
 	}
@@ -244,7 +241,6 @@ func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sam
 	m := Meta{
 		ID:      id,
 		TS:      time.Now().UTC().Format(time.RFC3339Nano),
-		Hash:    hex.EncodeToString(hash),
 		Size:    size,
 		Preview: buildPreviewData(sample, len(sample)),
 		Attrs:   attrs,
@@ -286,14 +282,13 @@ func Push(r io.Reader, attrs map[string]string) (string, error) {
 		return "", err
 	}
 
-	h := blake3.New(32, nil)
 	sample := &sampleWriter{max: 512}
-	size, err := io.Copy(io.MultiWriter(f, h, sample), r)
+	size, err := io.Copy(io.MultiWriter(f, sample), r)
 	f.Close()
 	if err != nil {
 		return "", fmt.Errorf("write data: %w", err)
 	}
-	if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf, h.Sum(nil)); err != nil {
+	if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf); err != nil {
 		return "", err
 	}
 	keep = true
@@ -322,9 +317,8 @@ func Tee(r io.Reader, w io.Writer, attrs map[string]string, partial bool) (strin
 		return "", err
 	}
 
-	h := blake3.New(32, nil)
 	sample := &sampleWriter{max: 512}
-	size, copyErr := io.Copy(io.MultiWriter(f, h, sample, w), r)
+	size, copyErr := io.Copy(io.MultiWriter(f, sample, w), r)
 	closeErr := f.Close()
 	if copyErr == nil && closeErr != nil {
 		copyErr = closeErr
@@ -338,14 +332,14 @@ func Tee(r io.Reader, w io.Writer, attrs map[string]string, partial bool) (strin
 			attrs = make(map[string]string, 1)
 		}
 		attrs["partial"] = "true"
-		if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf, h.Sum(nil)); err != nil {
+		if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf); err != nil {
 			return "", err
 		}
 		keep = true
 		return id, &ErrPartialSaved{ID: id, Cause: copyErr}
 	}
 
-	if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf, h.Sum(nil)); err != nil {
+	if err := finalizeEntry(id, entryTmp, size, attrs, sample.buf); err != nil {
 		return "", err
 	}
 	keep = true
