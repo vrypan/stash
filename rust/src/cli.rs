@@ -1,5 +1,6 @@
 use clap::{ArgAction, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
@@ -660,7 +661,9 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
 
     let meta = store::get_meta(&id)?;
     if args.json {
-        print!("{}", meta.to_json_pretty(args.preview));
+        serde_json::to_writer_pretty(io::stdout(), &meta.to_json_value(args.preview))
+            .map_err(io::Error::other)?;
+        println!();
         return Ok(());
     }
 
@@ -1083,42 +1086,46 @@ fn format_log_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> Opt
 }
 
 fn print_log_json(items: &[Meta], date_mode: &str, chars: usize) {
-    println!("[");
-    for (idx, item) in items.iter().enumerate() {
-        if idx > 0 {
-            println!(",");
-        }
-        print!("  {{");
-        print!("\"id\":\"{}\",", escape_json(&item.display_id()));
-        print!("\"short_id\":\"{}\",", escape_json(&item.short_id()));
-        print!("\"stack_ref\":\"{}\",", idx + 1);
-        print!("\"ts\":\"{}\",", escape_json(&item.ts));
-        print!("\"date\":\"{}\",", escape_json(&format_date(&item.ts, date_mode)));
-        print!("\"size\":{},", item.size);
-        print!(
-            "\"size_human\":\"{}\"",
-            escape_json(&store::human_size(item.size))
-        );
-        if !item.attrs.is_empty() {
-            print!(",\"meta\":{{");
-            let mut first = true;
-            for (k, v) in &item.attrs {
-                if !first {
-                    print!(",");
-                }
-                first = false;
-                print!("\"{}\":\"{}\"", escape_json(k), escape_json(v));
-            }
-            print!("}}");
-        }
-        let preview = preview_snippet(&item.preview, chars);
-        if !preview.is_empty() {
-            print!(",\"preview\":[\"{}\"]", escape_json(&preview));
-        }
-        print!("}}");
+    #[derive(Serialize)]
+    struct LogJsonEntry {
+        id: String,
+        short_id: String,
+        stack_ref: String,
+        ts: String,
+        date: String,
+        size: i64,
+        size_human: String,
+        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        meta: BTreeMap<String, String>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        preview: Vec<String>,
     }
+
+    let out: Vec<LogJsonEntry> = items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            let preview = preview_snippet(&item.preview, chars);
+            LogJsonEntry {
+                id: item.display_id(),
+                short_id: item.short_id(),
+                stack_ref: (idx + 1).to_string(),
+                ts: item.ts.clone(),
+                date: format_date(&item.ts, date_mode),
+                size: item.size,
+                size_human: store::human_size(item.size),
+                meta: item.attrs.clone(),
+                preview: if preview.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![preview]
+                },
+            }
+        })
+        .collect();
+
+    serde_json::to_writer_pretty(io::stdout(), &out).expect("write log json");
     println!();
-    println!("]");
 }
 
 fn preview_snippet(preview: &str, chars: usize) -> String {
@@ -1229,10 +1236,6 @@ fn print_log_template(items: &[Meta], date_mode: &str, chars: usize, format: &st
         println!("{}", render_log_template(item, idx, date_mode, chars, format));
     }
     Ok(())
-}
-
-fn escape_json(s: &str) -> String {
-    crate::json::escape_string(s)
 }
 
 fn parse_ts_seconds(ts: &str) -> Option<i64> {

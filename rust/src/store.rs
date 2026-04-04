@@ -1,5 +1,6 @@
-use crate::json::{JsonValue, escape_string, parse};
 use crate::preview::build_preview_data;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fs::{self, File};
@@ -9,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const SHORT_ID_LEN: usize = 8;
 pub const MIN_ID_LEN: usize = 6;
+const LIST_CACHE_VERSION: u32 = 1;
 
 #[derive(Debug)]
 pub struct PartialSavedError {
@@ -37,6 +39,47 @@ pub struct Meta {
     pub attrs: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct ListCacheFile {
+    version: u32,
+    data_mtime: String,
+    attr_mtime: String,
+    items: Vec<CachedMeta>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct CachedMeta {
+    id: String,
+    ts: String,
+    size: i64,
+    preview: String,
+    attrs: BTreeMap<String, String>,
+}
+
+impl From<Meta> for CachedMeta {
+    fn from(value: Meta) -> Self {
+        Self {
+            id: value.id,
+            ts: value.ts,
+            size: value.size,
+            preview: value.preview,
+            attrs: value.attrs,
+        }
+    }
+}
+
+impl From<CachedMeta> for Meta {
+    fn from(value: CachedMeta) -> Self {
+        Self {
+            id: value.id,
+            ts: value.ts,
+            size: value.size,
+            preview: value.preview,
+            attrs: value.attrs,
+        }
+    }
+}
+
 impl Meta {
     pub fn short_id(&self) -> String {
         self.id[self.id.len().saturating_sub(SHORT_ID_LEN)..].to_ascii_lowercase()
@@ -46,41 +89,20 @@ impl Meta {
         self.id.to_ascii_lowercase()
     }
 
-    pub fn to_json_pretty(&self, include_preview: bool) -> String {
-        let mut out = String::new();
-        out.push_str("{\n");
-        out.push_str(&format!("  \"id\": \"{}\",\n", escape_string(&self.id)));
-        out.push_str(&format!("  \"ts\": \"{}\",\n", escape_string(&self.ts)));
-        out.push_str(&format!("  \"size\": {}", self.size));
+    pub fn to_json_value(&self, include_preview: bool) -> Value {
+        let mut map = serde_json::Map::new();
+        map.insert("id".into(), Value::String(self.id.clone()));
+        map.insert("ts".into(), Value::String(self.ts.clone()));
+        map.insert("size".into(), Value::Number(self.size.into()));
         for (k, v) in &self.attrs {
-            out.push_str(&format!(
-                ",\n  \"{}\": \"{}\"",
-                escape_string(k),
-                escape_string(v)
-            ));
+            map.insert(k.clone(), Value::String(v.clone()));
         }
         if include_preview && !self.preview.is_empty() {
-            out.push_str(&format!(",\n  \"preview\": \"{}\"", escape_string(&self.preview)));
+            map.insert("preview".into(), Value::String(self.preview.clone()));
         }
-        out.push_str("\n}\n");
-        out
+        Value::Object(map)
     }
 
-    pub fn to_json_compact(&self) -> String {
-        let mut out = String::new();
-        out.push('{');
-        out.push_str(&format!("\"id\":\"{}\"", escape_string(&self.id)));
-        out.push_str(&format!(",\"ts\":\"{}\"", escape_string(&self.ts)));
-        out.push_str(&format!(",\"size\":{}", self.size));
-        for (k, v) in &self.attrs {
-            out.push_str(&format!(",\"{}\":\"{}\"", escape_string(k), escape_string(v)));
-        }
-        if !self.preview.is_empty() {
-            out.push_str(&format!(",\"preview\":\"{}\"", escape_string(&self.preview)));
-        }
-        out.push('}');
-        out
-    }
 }
 
 pub fn base_dir() -> io::Result<PathBuf> {
@@ -182,50 +204,33 @@ pub fn list() -> io::Result<Vec<Meta>> {
 
 fn read_list_cache() -> io::Result<Vec<Meta>> {
     let path = list_cache_path()?;
-    let data = fs::read_to_string(path)?;
-    let mut lines = data.lines();
-    let Some(header) = lines.next() else {
-        return Err(io::Error::other("empty list cache"));
-    };
-    let mut parts = header.split_whitespace();
-    let Some(cached_data) = parts.next().and_then(|s| s.strip_prefix("data_mtime=")) else {
-        return Err(io::Error::other("invalid list cache header"));
-    };
-    let Some(cached_attr) = parts.next().and_then(|s| s.strip_prefix("attr_mtime=")) else {
-        return Err(io::Error::other("invalid list cache header"));
-    };
-    let current_data = dir_mtime_key(data_dir()?)?;
-    let current_attr = dir_mtime_key(attr_dir()?)?;
-    if cached_data != current_data || cached_attr != current_attr {
+    let data = fs::read(path)?;
+    let cfg = bincode::config::standard();
+    let (cache, _): (ListCacheFile, usize) =
+        bincode::serde::decode_from_slice(&data, cfg).map_err(io::Error::other)?;
+    if cache.version != LIST_CACHE_VERSION {
         return Err(io::Error::other("stale list cache"));
     }
-    let mut items = Vec::new();
-    for line in lines {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let item = parse_cached_meta(line).map_err(io::Error::other)?;
-        items.push(item);
+    let current_data = dir_mtime_key(data_dir()?)?;
+    let current_attr = dir_mtime_key(attr_dir()?)?;
+    if cache.data_mtime != current_data || cache.attr_mtime != current_attr {
+        return Err(io::Error::other("stale list cache"));
     }
-    Ok(items)
+    Ok(cache.items.into_iter().map(Into::into).collect())
 }
 
 fn write_list_cache(items: &[Meta]) -> io::Result<()> {
     init()?;
     let path = list_cache_path()?;
-    let mut out = String::new();
-    out.push_str("data_mtime=");
-    out.push_str(&dir_mtime_key(data_dir()?)?);
-    out.push(' ');
-    out.push_str("attr_mtime=");
-    out.push_str(&dir_mtime_key(attr_dir()?)?);
-    out.push('\n');
-    for item in items {
-        out.push_str(&item.to_json_compact());
-        out.push('\n');
-    }
-    fs::write(path, out)
+    let cache = ListCacheFile {
+        version: LIST_CACHE_VERSION,
+        data_mtime: dir_mtime_key(data_dir()?)?,
+        attr_mtime: dir_mtime_key(attr_dir()?)?,
+        items: items.iter().cloned().map(Into::into).collect(),
+    };
+    let cfg = bincode::config::standard();
+    let encoded = bincode::serde::encode_to_vec(&cache, cfg).map_err(io::Error::other)?;
+    fs::write(path, encoded)
 }
 
 pub fn newest() -> io::Result<Meta> {
@@ -653,31 +658,4 @@ fn unescape_attr(input: &str) -> Result<String, String> {
         }
     }
     Ok(out)
-}
-
-fn parse_cached_meta(input: &str) -> Result<Meta, String> {
-    let root = parse(input)?;
-    let JsonValue::Object(obj) = root else {
-        return Err("cache entry root must be an object".into());
-    };
-    let mut meta = Meta {
-        id: String::new(),
-        ts: String::new(),
-        size: 0,
-        preview: String::new(),
-        attrs: BTreeMap::new(),
-    };
-    for (k, v) in obj {
-        match (k.as_str(), v) {
-            ("id", JsonValue::String(s)) => meta.id = s,
-            ("ts", JsonValue::String(s)) => meta.ts = s,
-            ("size", JsonValue::Number(n)) => meta.size = n,
-            ("preview", JsonValue::String(s)) => meta.preview = s,
-            (_, JsonValue::String(s)) => {
-                meta.attrs.insert(k, s);
-            }
-            _ => return Err(format!("invalid cached field {k}")),
-        }
-    }
-    Ok(meta)
 }
