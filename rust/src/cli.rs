@@ -56,8 +56,8 @@ enum Command {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct PushArgs {
-    #[arg(short = 'm', long = "meta", value_name = "key=value", action = ArgAction::Append, help = "Metadata key=value (repeatable)")]
-    meta: Vec<String>,
+    #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Attribute key=value (repeatable)")]
+    attr: Vec<String>,
 
     #[arg(help = "Optional file to stash; reads stdin when omitted")]
     file: Option<PathBuf>,
@@ -65,8 +65,8 @@ pub struct PushArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct TeeArgs {
-    #[arg(short = 'm', long = "meta", value_name = "key=value", action = ArgAction::Append, help = "Metadata key=value (repeatable)")]
-    meta: Vec<String>,
+    #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Attribute key=value (repeatable)")]
+    attr: Vec<String>,
 
     #[arg(long, help = "Save a partial entry if the stream is interrupted")]
     partial: bool,
@@ -83,8 +83,8 @@ pub struct LsArgs {
     #[arg(long, default_value = "short", help = "ID display: short, full, or pos")]
     id: String,
 
-    #[arg(short = 'm', long = "meta", value_name = "tag|@", action = ArgAction::Append, help = "Show metadata tags with @, or filter by tag name (repeatable)")]
-    meta: Vec<String>,
+    #[arg(short = 'a', long = "attr", value_name = "name|@", action = ArgAction::Append, help = "Show attributes with @, or filter by attribute name (repeatable)")]
+    attr: Vec<String>,
 
     #[arg(short = 'n', long = "number", default_value_t = 0, help = "Limit number of entries shown (0 = all)")]
     number: usize,
@@ -119,8 +119,8 @@ pub struct LogArgs {
     #[arg(long, default_value = "full", help = "ID display: short, full, or pos")]
     id: String,
 
-    #[arg(short = 'm', long = "meta", value_name = "tag|@", action = ArgAction::Append, help = "Show metadata tags with @, or filter by tag name (repeatable)")]
-    meta: Vec<String>,
+    #[arg(short = 'a', long = "attr", value_name = "name|@", action = ArgAction::Append, help = "Show attributes with @, or filter by attribute name (repeatable)")]
+    attr: Vec<String>,
 
     #[arg(short = 'n', long = "number", default_value_t = 0, help = "Limit number of entries shown (0 = all)")]
     number: usize,
@@ -254,7 +254,7 @@ fn parse_meta_flags(values: &[String]) -> io::Result<BTreeMap<String, String>> {
         let Some((k, v)) = value.split_once('=') else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "metadata must be key=value",
+                "attribute must be key=value",
             ));
         };
         attrs.insert(k.to_string(), v.to_string());
@@ -276,7 +276,7 @@ fn parse_meta_selection(values: &[String]) -> io::Result<MetaSelection> {
         } else if value.contains(',') || value.contains('=') || value.trim().is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "--meta accepts tag names or @ and is repeatable",
+                "--attr accepts names or @ and is repeatable",
             ));
         } else if !out.tags.contains(value) {
             out.tags.push(value.clone());
@@ -293,7 +293,7 @@ fn matches_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> bool {
 }
 
 fn push_command(args: PushArgs) -> io::Result<()> {
-    let mut attrs = parse_meta_flags(&args.meta)?;
+    let mut attrs = parse_meta_flags(&args.attr)?;
     let id = if let Some(path) = args.file {
         let mut file = File::open(&path)?;
         store::add_filename_attr(&path, &mut attrs);
@@ -308,7 +308,7 @@ fn push_command(args: PushArgs) -> io::Result<()> {
 }
 
 fn tee_command(args: TeeArgs) -> io::Result<()> {
-    let attrs = parse_meta_flags(&args.meta)?;
+    let attrs = parse_meta_flags(&args.attr)?;
     let stdin = io::stdin();
     let mut input = stdin.lock();
     let stdout = io::stdout();
@@ -435,7 +435,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
     if let Some(mode) = args.date.as_deref() {
         args.date = Some(normalize_date_mode(mode)?.to_string());
     }
-    let meta_sel = parse_meta_selection(&args.meta)?;
+    let meta_sel = parse_meta_selection(&args.attr)?;
     let items = collect_entries(&meta_sel, args.reverse, args.number)?;
     let ls_date_mode = args.date.as_deref().unwrap_or("ls");
     let effective_chars = if args.preview && args.chars == 80 {
@@ -576,7 +576,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
 fn log_command(args: LogArgs) -> io::Result<()> {
     let color = if args.no_color { false } else { color_enabled(&args.color)? };
     let date_mode = normalize_date_mode(&args.date)?;
-    let meta_sel = parse_meta_selection(&args.meta)?;
+    let meta_sel = parse_meta_selection(&args.attr)?;
     let items = collect_entries(&meta_sel, args.reverse, args.number)?;
     if args.json {
         print_log_json(&items, date_mode, args.chars);

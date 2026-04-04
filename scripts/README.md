@@ -45,7 +45,7 @@ stash-copy vrypan@srv2.local:/srv/stash
 ## `sstash.zsh`
 
 Adds a zsh helper function named `sstash` that captures the full interactive
-command line into `meta.command` when you pipe output into `stash`.
+command line into `command` when you pipe output into `stash`.
 
 ### Setup
 
@@ -68,21 +68,21 @@ find . -type f | sort | sstash
 Pass additional `stash` flags as usual:
 
 ```bash
-du -sh * | sstash -m label=ci
-find . -type f | sort | sstash -m source=find -m stage=raw
+du -sh * | sstash -a label=ci
+find . -type f | sort | sstash -a source=find -a stage=raw
 ```
 
 ### Behavior
 
-- stores the full interactive command line in `meta.command`
+- stores the full interactive command line in `command`
 - keeps any extra `stash` flags you pass to `sstash`
 - if no matching command line was captured, falls back to plain `stash`
 
 ### Example
 
 ```bash
-du -sh * | sstash -m label=nightly
-stash attr @1 meta.command
+du -sh * | sstash -a label=nightly
+stash attr @1 command
 ```
 
 ## `stash-push-type`
@@ -102,7 +102,7 @@ cat output.txt | scripts/stash-push-type
 - runs `stash push`
 - resolves the new entry path with `stash path`
 - runs `file -b` on the stored `data` file
-- stores the result in `meta.type` via `stash attr set type=...`
+- stores the result in `type` via `stash attr set type=...`
 - prints the new entry id to stdout
 
 ### Requirements

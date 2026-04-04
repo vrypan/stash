@@ -28,7 +28,7 @@ var (
 func newLogCmd() *cobra.Command {
 	var chars int
 	var idMode string
-	var metaFilters []string
+	var attrFilters []string
 	var n int
 	var reverse bool
 	var jsonFlag bool
@@ -58,7 +58,7 @@ func newLogCmd() *cobra.Command {
 			effectiveIDMode := idMode
 			effectiveChars := chars
 
-			metaSel, err := parseMetaSelection(metaFilters)
+			metaSel, err := parseMetaSelection(attrFilters)
 			if err != nil {
 				return err
 			}
@@ -89,7 +89,7 @@ func newLogCmd() *cobra.Command {
 
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
 	cmd.Flags().StringVar(&idMode, "id", "full", "ID display: short, full, or pos")
-	cmd.Flags().StringArrayVarP(&metaFilters, "meta", "m", nil, "Show metadata tags with @, or filter by tag name (repeatable)")
+	cmd.Flags().StringArrayVarP(&attrFilters, "attr", "a", nil, "Show attributes with @, or filter by attribute name (repeatable)")
 	cmd.Flags().IntVarP(&n, "number", "n", 0, "Limit number of entries shown (0 = all)")
 	cmd.Flags().BoolVarP(&reverse, "reverse", "r", false, "Show oldest first")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output verbose entry history as JSON")
@@ -114,13 +114,13 @@ func parseMetaSelection(inputs []string) (metaSelection, error) {
 			continue
 		}
 		if input == "" {
-			return metaSelection{}, fmt.Errorf("--meta requires a tag name or @")
+			return metaSelection{}, fmt.Errorf("--attr requires a name or @")
 		}
 		if strings.Contains(input, ",") {
-			return metaSelection{}, fmt.Errorf("--meta is repeatable; pass one tag per flag")
+			return metaSelection{}, fmt.Errorf("--attr is repeatable; pass one name per flag")
 		}
 		if strings.Contains(input, "=") {
-			return metaSelection{}, fmt.Errorf("--meta only accepts tag names or @")
+			return metaSelection{}, fmt.Errorf("--attr only accepts names or @")
 		}
 		if !seen[input] {
 			sel.tags = append(sel.tags, input)

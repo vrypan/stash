@@ -23,14 +23,14 @@ compinit
 ## Why?
 
 `sstash` is a zsh helper that captures the full command line and stores it in
-`meta.command`.
+`command`.
 
 This is useful when stashing pipeline output and wanting to remember where it
 came from:
 
 ```zsh
 du -sh * | sstash
-stash attr @1 meta.command
+stash attr @1 command
 ```
 
 ## Homebrew install

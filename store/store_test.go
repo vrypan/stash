@@ -2,7 +2,6 @@ package store
 
 import (
 	crand "crypto/rand"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -51,14 +50,49 @@ func createImportedEntry(t *testing.T, root string, ts time.Time, data []byte, a
 	if err := os.WriteFile(filepath.Join(entryDir, "data"), data, 0o600); err != nil {
 		t.Fatalf("write imported data: %v", err)
 	}
-	metaData, err := json.MarshalIndent(meta, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal imported meta: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(entryDir, "meta.json"), metaData, 0o600); err != nil {
-		t.Fatalf("write imported meta: %v", err)
+	if err := os.WriteFile(filepath.Join(entryDir, "attr"), marshalAttr(meta), 0o600); err != nil {
+		t.Fatalf("write imported attr: %v", err)
 	}
 	return id
+}
+
+func TestPushWritesAttrFileAndEscapesValues(t *testing.T) {
+	setupTempStash(t)
+
+	id, err := Push(strings.NewReader("alpha\nbeta"), map[string]string{
+		"filename": "demo=file.txt",
+		"note":     "line1\nline2",
+	})
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	path, err := attrPath(id)
+	if err != nil {
+		t.Fatalf("attrPath: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(attr): %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "preview=alpha beta") {
+		t.Fatalf("attr file missing escaped preview: %q", text)
+	}
+	if !strings.Contains(text, "filename=demo\\=file.txt") {
+		t.Fatalf("attr file missing escaped filename: %q", text)
+	}
+	if !strings.Contains(text, "note=line1\\nline2") {
+		t.Fatalf("attr file missing escaped note: %q", text)
+	}
+
+	meta, err := GetMeta(id)
+	if err != nil {
+		t.Fatalf("GetMeta: %v", err)
+	}
+	if meta.Attrs["filename"] != "demo=file.txt" || meta.Attrs["note"] != "line1\nline2" {
+		t.Fatalf("decoded attrs = %#v", meta.Attrs)
+	}
 }
 
 type failAfterWriter struct {
@@ -79,7 +113,7 @@ func (w *failAfterWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestIndexRebuildIncludesImportedOlderEntries(t *testing.T) {
+func TestListIncludesImportedOlderEntries(t *testing.T) {
 	root := setupTempStash(t)
 
 	id1, err := Push(strings.NewReader("one"), nil)
@@ -185,7 +219,7 @@ func TestTeeSuccess(t *testing.T) {
 		t.Fatalf("meta job = %q, want test", meta.Attrs["job"])
 	}
 	if strings.TrimSpace(meta.Preview) == "" {
-		t.Fatal("expected preview to be stored in meta.json")
+		t.Fatal("expected preview to be stored in attr")
 	}
 }
 

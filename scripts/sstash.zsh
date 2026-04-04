@@ -1,5 +1,5 @@
 # Source this file from ~/.zshrc to add `sstash`, a zsh helper that captures
-# the full interactive command line into `meta.command`.
+# the full interactive command line into `command`.
 #
 # Example:
 #   source /path/to/stash/scripts/sstash.zsh
@@ -29,7 +29,7 @@ sstash() {
   STASH_SSTASH_LAST_CMD=""
 
   if [[ -n "$cmd" ]]; then
-    command stash -m command="$cmd" "$@"
+    command stash -a command="$cmd" "$@"
   else
     command stash "$@"
   fi

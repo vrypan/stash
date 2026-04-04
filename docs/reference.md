@@ -27,26 +27,26 @@ stash attr wpc43xd3
 stash attr 01kn2ahqhr738w84t3wpc43xd3
 ```
 
-This prints core fields such as `id`, `ts`, and `size`, plus nested
-user metadata as flattened `meta.*` keys.
+This prints core fields such as `id`, `ts`, and `size`, plus any user-defined
+attributes.
 
 Read a single field:
 
 ```bash
-stash attr @1 meta.source
+stash attr @1 source
 ```
 
-Update user metadata:
+Update attributes:
 
 ```bash
 stash attr @1 set source=usgs stage=raw
 stash attr @1 unset stage
 ```
 
-Writable keys are stored under `meta.*`, but `attr set` and `attr unset` accept
-bare keys. Core fields such as `id`, `ts`, and `size` are read-only.
+Core fields such as `id`, `ts`, and `size` are read-only. Other attributes are
+writable with `attr set` and `attr unset`.
 
-Use `--json` to print the full `meta.json` object shape:
+Use `--json` to print the full attribute object shape:
 
 ```bash
 stash attr @1 --json
@@ -71,13 +71,13 @@ stash ls --id=pos
 Add columns explicitly:
 
 ```bash
-stash ls -m @
+stash ls -a @
 stash ls --date
 stash ls --size
 stash ls --name
 stash ls --preview
 stash ls --size=bytes --name
-stash ls -m source -m stage
+stash ls -a source -a stage
 ```
 
 `--long` is shorthand for `--date --size --name`:
@@ -87,13 +87,13 @@ stash ls -l
 ```
 
 Notes:
-- `--date` defaults to `absolute` if no value is given
+- `--date` defaults to `ls` if no value is given
 - `--size` defaults to `human` if no value is given
-- `--date` accepts `absolute`, `relative`, or `ls`
+- `--date` accepts `iso`, `ago`, or `ls`
 - `--size` accepts `human` or `bytes`
-- `-m @` or `--meta @` shows metadata where available without filtering
-- `-m tag` filters to entries where `tag` is set
-- multiple `-m/--meta` flags use OR semantics
+- `-a @` or `--attr @` shows attributes where available without filtering
+- `-a name` filters to entries where the attribute is set
+- multiple `-a/--attr` flags use OR semantics
 - `stash ls` renders one column per requested tag when explicit tags are used
 - `--id=short|full|pos` controls the first column in all modes
 
@@ -107,23 +107,23 @@ stash log -n 10
 stash log -r
 stash log --id=short
 stash log --id=pos
-stash log -m @
+stash log -a @
 ```
 
-`stash log` defaults to full IDs and absolute dates.
+`stash log` defaults to full IDs and ISO dates.
 Use `--id=short`, `--id=full`, or `--id=pos` to override the display mode.
 
 Show or filter log metadata:
 
 ```bash
-stash log -m @
-stash log -m job
-stash log -m job -m owner
+stash log -a @
+stash log -a job
+stash log -a job -a owner
 ```
 
-`-m @` shows metadata where available without filtering.
-`-m tag` matches entries that contain the tag with any value.
-Multiple `-m/--meta` flags are combined with OR.
+`-a @` shows attributes where available without filtering.
+`-a name` matches entries that contain the attribute with any value.
+Multiple `-a/--attr` flags are combined with OR.
 
 Notes:
 - `stash log` shows size, date, metadata, and a preview.
@@ -171,7 +171,7 @@ Available template fields:
 
 ## Storage
 
-Each entry stores metadata in `~/.stash/entries/<ULID>/meta.json`.
+Each entry stores attributes in `~/.stash/entries/<ULID>/attr`.
 
 Current fields include:
 - `id`
@@ -180,15 +180,15 @@ Current fields include:
 - `preview`
 - `meta`
 
-`meta` contains user-supplied `--meta key=value` pairs, `filename` when the
-entry was created from a file path, and other user-managed metadata.
+`attr` contains user-supplied `--attr key=value` pairs, `filename` when the
+entry was created from a file path, and other user-managed attributes.
 
 Entries live under:
 
 ```text
 ~/.stash/
   entries/<ULID>/data
-  entries/<ULID>/meta.json
+  entries/<ULID>/attr
 ```
 
 When `STASH_DIR` is set, that directory becomes the stash root instead.

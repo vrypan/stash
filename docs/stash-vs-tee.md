@@ -59,7 +59,7 @@ If you want, you can attach arbitrary metadata:
 stash attr @1 set cpp=gcc-15.2.0
 
 # the last column is the meta tag you just set
-stash ls -l --meta cpp
+stash ls -l --attr cpp
 ak4x9sr1  99B  Thu Apr  2 22:03:51 2026 +0300  01kn7s9624z4dpxz7nak4x9sr1  gcc-15.2.0
 n5pwa78h  99B  Thu Apr  2 22:03:41 2026 +0300  01kn7s8wd35es5txscn5pwa78h  gcc-15.1.0
 90e66f4b  99B  Thu Apr  2 22:01:09 2026 +0300  01kn7s47q5t9k8kfzb90e66f4b  gcc-15.1.0
@@ -67,21 +67,21 @@ aczsve56  99B  Thu Apr  2 21:58:35 2026 +0300  01kn7rzhew4tghsh4aaczsve56  gcc-1
 
 stash attr @1 set note="use-blake3"
 
-stash ls -l -m cpp -m note
+stash ls -l -a cpp -a note
 ak4x9sr1  99B  Thu Apr  2 22:03:51 2026 +0300  01kn7s9624z4dpxz7nak4x9sr1  gcc-15.2.0  use-blake3
 n5pwa78h  99B  Thu Apr  2 22:03:41 2026 +0300  01kn7s8wd35es5txscn5pwa78h  gcc-15.1.0
 90e66f4b  99B  Thu Apr  2 22:01:09 2026 +0300  01kn7s47q5t9k8kfzb90e66f4b  gcc-15.1.0
 aczsve56  99B  Thu Apr  2 21:58:35 2026 +0300  01kn7rzhew4tghsh4aaczsve56  gcc-15.2.0
 
 # if you create entries from various jobs, you can set a meta tag when the entry is created
-make build 2>&1 | stash tee -m type=build.log
-make tests 2>&1 | stash tee -m type=tests.log
+make build 2>&1 | stash tee -a type=build.log
+make tests 2>&1 | stash tee -a type=tests.log
 
 # deleting old entries is easy
 stash rm --before n5pwa78h
 Remove 2 entries older than n5pwa78h? [y/N] y
 
-stash ls -l --meta cpp --meta note
+stash ls -l --attr cpp --attr note
 ak4x9sr1  99B  Thu Apr  2 22:03:51 2026 +0300  01kn7s9624z4dpxz7nak4x9sr1  gcc-15.2.0  use-blake3
 n5pwa78h  99B  Thu Apr  2 22:03:41 2026 +0300  01kn7s8wd35es5txscn5pwa78h  gcc-15.1.0
 ```

@@ -17,13 +17,13 @@ stash push path/to/file.txt
 ```
 
 When stashing a file path, `stash` stores the basename in entry metadata as
-`meta.filename`.
+`filename`.
 
 Pass data through and stash it at the same time:
 
 ```bash
 some-command | stash tee | next-command
-some-command | stash tee -m job=nightly | next-command
+some-command | stash tee -a job=nightly | next-command
 some-command | stash tee --partial | next-command
 ```
 
@@ -86,7 +86,7 @@ In that model:
 - `stash cat` reads an entry by stack ref or ID
 - `stash rm` deletes an entry by stack ref or ID, or removes older entries with `--before`
 
-Filenames come from `meta.filename` when available, so stashing files directly
+Filenames come from `filename` when available, so stashing files directly
 works naturally with `stash ls --name` or `stash ls -l`.
 
 ## Stack Refs
@@ -150,9 +150,9 @@ stash cat | magick png:- -threshold 80% final80.png
 ### Use with diff
 
 ```bash
-find . -type f | sort | stash -m label=before
+find . -type f | sort | stash -a label=before
 # ... later ...
-find . -type f | sort | stash -m label=after
+find . -type f | sort | stash -a label=after
 
 diff -u <(stash cat @2) <(stash cat @1)
 ```
@@ -160,8 +160,8 @@ diff -u <(stash cat @2) <(stash cat @1)
 And if you want to find the right snapshots first:
 
 ```bash
-stash log -m label
-stash ls -m @
+stash log -a label
+stash ls -a @
 ```
 
 ### As a rolling scratch stack during shell work
@@ -198,7 +198,7 @@ stash cat | jq 'length'
 
 ```bash
 for f in *.json; do
-  jq '.important' "$f" | stash -m q="$f"
+  jq '.important' "$f" | stash -a q="$f"
 done
 
 stash log

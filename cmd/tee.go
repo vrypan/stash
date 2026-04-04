@@ -11,7 +11,7 @@ import (
 )
 
 func newTeeCmd() *cobra.Command {
-	var metaFlags []string
+	var attrFlags []string
 	var partial bool
 
 	cmd := &cobra.Command{
@@ -29,7 +29,7 @@ func newTeeCmd() *cobra.Command {
 				return fmt.Errorf("no stdin provided")
 			}
 
-			attrs, err := parseMetaFlags(metaFlags)
+			attrs, err := parseAttrFlags(attrFlags)
 			if err != nil {
 				return err
 			}
@@ -49,7 +49,7 @@ func newTeeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringArrayVarP(&metaFlags, "meta", "m", nil, "Metadata key=value (repeatable)")
+	cmd.Flags().StringArrayVarP(&attrFlags, "attr", "a", nil, "Attribute key=value (repeatable)")
 	cmd.Flags().BoolVar(&partial, "partial", false, "Save a partial entry if the stream is interrupted")
 	return cmd
 }

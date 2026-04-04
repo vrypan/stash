@@ -17,16 +17,16 @@ func TestLogMetaWithoutArgumentShowsMetaWithoutFiltering(t *testing.T) {
 	}
 
 	cmd := newLogCmd()
-	cmd.SetArgs([]string{"--meta", "@", "--no-color"})
+	cmd.SetArgs([]string{"--attr", "@", "--no-color"})
 	stdout, _, err := captureIO(t, "", cmd.Execute)
 	if err != nil {
-		t.Fatalf("log --meta @ execute: %v", err)
+		t.Fatalf("log --attr @ execute: %v", err)
 	}
 	if !strings.Contains(stdout, "label=first") {
-		t.Fatalf("log --meta output missing meta: %q", stdout)
+		t.Fatalf("log --attr output missing attrs: %q", stdout)
 	}
 	if strings.Count(stdout, "entry ") != 2 {
-		t.Fatalf("log --meta @ should not filter entries, got %q", stdout)
+		t.Fatalf("log --attr @ should not filter entries, got %q", stdout)
 	}
 }
 
@@ -43,18 +43,18 @@ func TestLogMetaFiltersByPresenceWithOrSemantics(t *testing.T) {
 	}
 
 	cmd := newLogCmd()
-	cmd.SetArgs([]string{"--meta", "label", "--meta", "note", "--no-color"})
+	cmd.SetArgs([]string{"--attr", "label", "--attr", "note", "--no-color"})
 	stdout, _, err := captureIO(t, "", cmd.Execute)
 	if err != nil {
-		t.Fatalf("log --meta label --meta note execute: %v", err)
+		t.Fatalf("log --attr label --attr note execute: %v", err)
 	}
 	if strings.Count(stdout, "entry ") != 2 {
-		t.Fatalf("log --meta label --meta note should match entries with either tag, got %q", stdout)
+		t.Fatalf("log --attr label --attr note should match entries with either tag, got %q", stdout)
 	}
 	if !strings.Contains(stdout, "label=first") || !strings.Contains(stdout, "note=second") {
-		t.Fatalf("log --meta label --meta note output missing selected tags: %q", stdout)
+		t.Fatalf("log --attr label --attr note output missing selected tags: %q", stdout)
 	}
 	if strings.Contains(stdout, "other=ignored") {
-		t.Fatalf("log --meta label --meta note should not show unrelated tags: %q", stdout)
+		t.Fatalf("log --attr label --attr note should not show unrelated tags: %q", stdout)
 	}
 }

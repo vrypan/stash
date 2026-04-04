@@ -1,9 +1,9 @@
 package store
 
 import (
+	"bufio"
 	crand "crypto/rand"
 	"encoding/gob"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,13 +24,13 @@ const listCacheVersion = 1
 // entropy is a monotonic ULID entropy source backed by crypto/rand.
 var entropy = ulid.Monotonic(crand.Reader, 0)
 
-// Meta holds per-entry metadata stored in meta.json.
+// Meta holds per-entry attributes stored in attr.
 type Meta struct {
 	ID      string            `json:"id"`
 	TS      string            `json:"ts"`
 	Size    int64             `json:"size"`
 	Preview string            `json:"preview,omitempty"`
-	Attrs   map[string]string `json:"meta,omitempty"`
+	Attrs   map[string]string `json:"attr,omitempty"`
 }
 
 func (m Meta) ShortID() string {
@@ -345,11 +345,8 @@ func finalizeEntry(id, entryTmp string, size int64, attrs map[string]string, sam
 		Preview: buildPreviewData(sample, len(sample)),
 		Attrs:   attrs,
 	}
-	metaData, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(entryTmp, "meta.json"), metaData, 0o600); err != nil {
+	attrData := marshalAttr(m)
+	if err := os.WriteFile(filepath.Join(entryTmp, "attr"), attrData, 0o600); err != nil {
 		return err
 	}
 
@@ -497,17 +494,17 @@ func List() ([]Meta, error) {
 	return metas, nil
 }
 
-func metaPath(id string) (string, error) {
+func attrPath(id string) (string, error) {
 	ed, err := entriesDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(ed, id, "meta.json"), nil
+	return filepath.Join(ed, id, "attr"), nil
 }
 
-// GetMeta loads meta.json for a resolved canonical entry ID.
+// GetMeta loads attr for a resolved canonical entry ID.
 func GetMeta(id string) (Meta, error) {
-	path, err := metaPath(id)
+	path, err := attrPath(id)
 	if err != nil {
 		return Meta{}, err
 	}
@@ -518,29 +515,172 @@ func GetMeta(id string) (Meta, error) {
 		}
 		return Meta{}, err
 	}
-	var m Meta
-	if err := json.Unmarshal(data, &m); err != nil {
-		return Meta{}, err
-	}
-	return m, nil
+	return unmarshalAttr(data)
 }
 
 func writeMeta(id string, m Meta) error {
-	path, err := metaPath(id)
+	path, err := attrPath(id)
 	if err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, marshalAttr(m), 0600); err != nil {
 		return err
 	}
 	return invalidateListCache()
 }
 
-// SetAttrs updates only the user metadata map for a resolved canonical entry ID.
+func marshalAttr(m Meta) []byte {
+	var b strings.Builder
+	writeAttrLine(&b, "id", m.ID)
+	writeAttrLine(&b, "ts", m.TS)
+	writeAttrLine(&b, "size", strconv.FormatInt(m.Size, 10))
+	if strings.TrimSpace(m.Preview) != "" {
+		writeAttrLine(&b, "preview", m.Preview)
+	}
+	if len(m.Attrs) > 0 {
+		keys := make([]string, 0, len(m.Attrs))
+		for k := range m.Attrs {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			writeAttrLine(&b, k, m.Attrs[k])
+		}
+	}
+	return []byte(b.String())
+}
+
+func writeAttrLine(b *strings.Builder, key, value string) {
+	b.WriteString(escapeAttr(key))
+	b.WriteByte('=')
+	b.WriteString(escapeAttr(value))
+	b.WriteByte('\n')
+}
+
+func escapeAttr(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '=':
+			b.WriteString(`\=`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func unmarshalAttr(data []byte) (Meta, error) {
+	var m Meta
+	attrs := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		key, value, ok := splitAttrLine(line)
+		if !ok {
+			return Meta{}, fmt.Errorf("invalid attr line %q", line)
+		}
+		key, err := unescapeAttr(key)
+		if err != nil {
+			return Meta{}, err
+		}
+		value, err = unescapeAttr(value)
+		if err != nil {
+			return Meta{}, err
+		}
+		switch {
+		case key == "id":
+			m.ID = value
+		case key == "ts":
+			m.TS = value
+		case key == "size":
+			n, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return Meta{}, fmt.Errorf("invalid size %q", value)
+			}
+			m.Size = n
+		case key == "preview":
+			m.Preview = value
+		default:
+			attrs[key] = value
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return Meta{}, err
+	}
+	if len(attrs) > 0 {
+		m.Attrs = attrs
+	}
+	return m, nil
+}
+
+func splitAttrLine(line string) (string, string, bool) {
+	escaped := false
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '\\':
+			escaped = !escaped
+		case '=':
+			if !escaped {
+				return line[:i], line[i+1:], true
+			}
+			escaped = false
+		default:
+			escaped = false
+		}
+	}
+	return "", "", false
+}
+
+func unescapeAttr(s string) (string, error) {
+	var b strings.Builder
+	b.Grow(len(s))
+	escaped := false
+	for _, r := range s {
+		if !escaped {
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			b.WriteRune(r)
+			continue
+		}
+		switch r {
+		case '\\':
+			b.WriteRune('\\')
+		case 'n':
+			b.WriteRune('\n')
+		case 'r':
+			b.WriteRune('\r')
+		case 't':
+			b.WriteRune('\t')
+		case '=':
+			b.WriteRune('=')
+		default:
+			return "", fmt.Errorf("invalid attr escape \\%c", r)
+		}
+		escaped = false
+	}
+	if escaped {
+		return "", fmt.Errorf("unterminated attr escape")
+	}
+	return b.String(), nil
+}
+
+// SetAttrs updates only the user-defined attribute map for a resolved canonical
+// entry ID.
 func SetAttrs(id string, attrs map[string]string) error {
 	m, err := GetMeta(id)
 	if err != nil {
@@ -558,7 +698,8 @@ func SetAttrs(id string, attrs map[string]string) error {
 	return writeMeta(id, m)
 }
 
-// UnsetAttrs removes keys from the user metadata map for a resolved canonical entry ID.
+// UnsetAttrs removes keys from the user-defined attribute map for a resolved
+// canonical entry ID.
 func UnsetAttrs(id string, keys []string) error {
 	m, err := GetMeta(id)
 	if err != nil {

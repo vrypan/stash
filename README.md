@@ -31,9 +31,9 @@ curl -s https://api.example.com/data | stash tee | jq .
 Use with diff:
 
 ```bash
-find . -type f | sort | stash -m label=before
+find . -type f | sort | stash -a label=before
 # ... later ...
-find . -type f | sort | stash -m label=after
+find . -type f | sort | stash -a label=after
 
 diff -u <(stash cat @2) <(stash cat @1)
 ```

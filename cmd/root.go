@@ -9,7 +9,7 @@ import (
 	"stash/store"
 )
 
-var rootMetaFlags []string
+var rootAttrFlags []string
 
 var rootCmd = &cobra.Command{
 	Use:           "stash [file]",
@@ -18,12 +18,12 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		return runPushWithMeta(c, args, rootMetaFlags)
+		return runPushWithAttrs(c, args, rootAttrFlags)
 	},
 }
 
 func init() {
-	rootCmd.Flags().StringArrayVarP(&rootMetaFlags, "meta", "m", nil, "Metadata key=value (repeatable)")
+	rootCmd.Flags().StringArrayVarP(&rootAttrFlags, "attr", "a", nil, "Attribute key=value (repeatable)")
 	rootCmd.AddCommand(
 		newPushCmd(),
 		newTeeCmd(),

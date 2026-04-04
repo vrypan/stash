@@ -21,7 +21,7 @@ It shows how to:
 ```bash
 curl -s \
   'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson' \
-  | stash -m source=usgs-earthquakes -m stage=raw
+  | stash -a source=usgs-earthquakes -a stage=raw
 ```
 
 This creates a stash entry containing the full GeoJSON response.
@@ -29,7 +29,7 @@ This creates a stash entry containing the full GeoJSON response.
 If you want to confirm that it was saved:
 
 ```bash
-stash ls -l -m source -m stage
+stash ls -l -a source -a stage
 ```
 
 ### 2. Transform the raw feed and stash the reduced dataset
@@ -52,7 +52,7 @@ stash cat @1 \
         ]
       }
     ' \
-  | stash -m source=usgs-earthquakes -m stage=reduced
+  | stash -a source=usgs-earthquakes -a stage=reduced
 ```
 
 Now you have two related entries:
@@ -132,7 +132,7 @@ Fetch the feed again and stash a new raw snapshot:
 ```bash
 curl -s \
   'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson' \
-  | stash -m source=usgs-earthquakes -m stage=raw
+  | stash -a source=usgs-earthquakes -a stage=raw
 ```
 
 Transform that new raw snapshot into the same reduced shape and stash it too:
@@ -155,7 +155,7 @@ stash cat @1 \
         ]
       }
     ' \
-  | stash -m source=usgs-earthquakes -m stage=reduced
+  | stash -a source=usgs-earthquakes -a stage=reduced
 ```
 
 At this point:
@@ -169,7 +169,7 @@ you are interested in, and use them in place of `@1`, `@3`.
 
 ```bash
 # example
-stash ls -l -m source -m stage
+stash ls -l -a source -a stage
 
 g5xa4znm  412.0K  Tue Apr  1 13:35:40 2026 +0300  01kn4z3q4vv5crxjdkg5xa4znm  usgs-earthquakes  reduced
 4p0rgpda    1.3M  Tue Apr  1 13:35:00 2026 +0300  01kn4z358zf1fme79d4p0rgpda  usgs-earthquakes  raw

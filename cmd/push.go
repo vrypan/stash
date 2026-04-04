@@ -11,7 +11,7 @@ import (
 )
 
 func newPushCmd() *cobra.Command {
-	var metaFlags []string
+	var attrFlags []string
 
 	cmd := &cobra.Command{
 		Use:           "push [file]",
@@ -20,35 +20,35 @@ func newPushCmd() *cobra.Command {
 		SilenceErrors: true,
 		Args:          cobra.MaximumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			return runPushWithMeta(c, args, metaFlags)
+			return runPushWithAttrs(c, args, attrFlags)
 		},
 	}
 
-	cmd.Flags().StringArrayVarP(&metaFlags, "meta", "m", nil, "Metadata key=value (repeatable)")
+	cmd.Flags().StringArrayVarP(&attrFlags, "attr", "a", nil, "Attribute key=value (repeatable)")
 	return cmd
 }
 
 func runPush(c *cobra.Command, args []string) error {
-	return runPushWithMeta(c, args, nil)
+	return runPushWithAttrs(c, args, nil)
 }
 
-func parseMetaFlags(metaFlags []string) (map[string]string, error) {
-	if len(metaFlags) == 0 {
+func parseAttrFlags(attrFlags []string) (map[string]string, error) {
+	if len(attrFlags) == 0 {
 		return nil, nil
 	}
-	attrs := make(map[string]string, len(metaFlags))
-	for _, kv := range metaFlags {
+	attrs := make(map[string]string, len(attrFlags))
+	for _, kv := range attrFlags {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
-			return nil, fmt.Errorf("invalid --meta value %q: expected key=value", kv)
+			return nil, fmt.Errorf("invalid --attr value %q: expected key=value", kv)
 		}
 		attrs[k] = v
 	}
 	return attrs, nil
 }
 
-func runPushWithMeta(_ *cobra.Command, args []string, metaFlags []string) error {
-	attrs, err := parseMetaFlags(metaFlags)
+func runPushWithAttrs(_ *cobra.Command, args []string, attrFlags []string) error {
+	attrs, err := parseAttrFlags(attrFlags)
 	if err != nil {
 		return err
 	}

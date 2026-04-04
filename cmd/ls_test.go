@@ -49,17 +49,17 @@ func TestLsMetaWithoutArgumentShowsAttrsWithoutFiltering(t *testing.T) {
 	}
 
 	cmd := newLsCmd()
-	cmd.SetArgs([]string{"--meta", "@"})
+	cmd.SetArgs([]string{"--attr", "@"})
 	stdout, _, err := captureIO(t, "", cmd.Execute)
 	if err != nil {
-		t.Fatalf("ls --meta @ execute: %v", err)
+		t.Fatalf("ls --attr @ execute: %v", err)
 	}
 	if !strings.Contains(stdout, "first") {
-		t.Fatalf("ls --meta output missing attrs: %q", stdout)
+		t.Fatalf("ls --attr output missing attrs: %q", stdout)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	if len(lines) != 2 {
-		t.Fatalf("ls --meta @ should not filter entries, got %d lines in %q", len(lines), stdout)
+		t.Fatalf("ls --attr @ should not filter entries, got %d lines in %q", len(lines), stdout)
 	}
 }
 
@@ -76,20 +76,20 @@ func TestLsMetaFiltersByPresenceWithOrSemanticsAndColumns(t *testing.T) {
 	}
 
 	cmd := newLsCmd()
-	cmd.SetArgs([]string{"--meta", "label", "--meta", "note"})
+	cmd.SetArgs([]string{"--attr", "label", "--attr", "note"})
 	stdout, _, err := captureIO(t, "", cmd.Execute)
 	if err != nil {
-		t.Fatalf("ls --meta label --meta note execute: %v", err)
+		t.Fatalf("ls --attr label --attr note execute: %v", err)
 	}
 	if !strings.Contains(stdout, "first") || !strings.Contains(stdout, "second") || !strings.Contains(stdout, "third-note") {
-		t.Fatalf("ls --meta label --meta note output missing tag values: %q", stdout)
+		t.Fatalf("ls --attr label --attr note output missing tag values: %q", stdout)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	if len(lines) != 3 {
-		t.Fatalf("ls --meta label --meta note should match entries with either tag, got %d lines in %q", len(lines), stdout)
+		t.Fatalf("ls --attr label --attr note should match entries with either tag, got %d lines in %q", len(lines), stdout)
 	}
 	if strings.Contains(stdout, "<empty>") {
-		t.Fatalf("ls --meta label --meta note should not show placeholder text, got %q", stdout)
+		t.Fatalf("ls --attr label --attr note should not show placeholder text, got %q", stdout)
 	}
 }
 
@@ -100,12 +100,12 @@ func TestLsMetaShortFlagAlias(t *testing.T) {
 	}
 
 	cmd := newLsCmd()
-	cmd.SetArgs([]string{"-m", "@"})
+	cmd.SetArgs([]string{"-a", "@"})
 	stdout, _, err := captureIO(t, "", cmd.Execute)
 	if err != nil {
-		t.Fatalf("ls -m @ execute: %v", err)
+		t.Fatalf("ls -a @ execute: %v", err)
 	}
 	if !strings.Contains(stdout, "first") {
-		t.Fatalf("ls -m @ output missing attrs: %q", stdout)
+		t.Fatalf("ls -a @ output missing attrs: %q", stdout)
 	}
 }

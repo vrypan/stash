@@ -89,11 +89,8 @@ func attrValue(m store.Meta, preview, key string) (string, bool) {
 		}
 		return preview, true
 	default:
-		if strings.HasPrefix(key, "meta.") {
-			v, ok := m.Attrs[strings.TrimPrefix(key, "meta.")]
-			return v, ok
-		}
-		return "", false
+		v, ok := m.Attrs[key]
+		return v, ok
 	}
 }
 
@@ -176,7 +173,7 @@ func writeAttrLines(m store.Meta, sep string, withPreview bool, preview string) 
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			lines = append(lines, [2]string{"meta." + k, m.Attrs[k]})
+			lines = append(lines, [2]string{k, m.Attrs[k]})
 		}
 	}
 	if withPreview && strings.TrimSpace(preview) != "" {

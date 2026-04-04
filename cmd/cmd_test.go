@@ -86,16 +86,16 @@ func captureIO(t *testing.T, stdin string, fn func() error) (stdout, stderr stri
 	return string(outBytes), string(errBytes), err
 }
 
-func TestRunPushWithMetaStoresFilename(t *testing.T) {
+func TestRunPushWithAttrsStoresFilename(t *testing.T) {
 	dir := t.TempDir()
 	setupTempCmdStash(t)
 	path := randomFile(t, dir, "sample.bin", 512)
 
 	stdout, _, err := captureIO(t, "", func() error {
-		return runPushWithMeta(nil, []string{path}, []string{"tag=test"})
+		return runPushWithAttrs(nil, []string{path}, []string{"tag=test"})
 	})
 	if err != nil {
-		t.Fatalf("runPushWithMeta: %v", err)
+		t.Fatalf("runPushWithAttrs: %v", err)
 	}
 
 	id, err := store.Resolve(strings.TrimSpace(stdout))

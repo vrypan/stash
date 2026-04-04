@@ -45,20 +45,20 @@ for ((i = 1; i <= COUNT; i++)); do
   if (( i % 6 == 0 )); then
     printf '%s' "$payload" | \
       STASH_DIR="$STASH_DIR" "$SETUP_BIN" \
-        -m "filename=file-$i.txt" \
-        -m "source=bench" \
-        -m "stage=raw" \
+        -a "filename=file-$i.txt" \
+        -a "source=bench" \
+        -a "stage=raw" \
         >/dev/null
   elif (( i % 2 == 0 )); then
     printf '%s' "$payload" | \
       STASH_DIR="$STASH_DIR" "$SETUP_BIN" \
-        -m "filename=file-$i.txt" \
-        -m "source=bench" \
+        -a "filename=file-$i.txt" \
+        -a "source=bench" \
         >/dev/null
   else
     printf '%s' "$payload" | \
       STASH_DIR="$STASH_DIR" "$SETUP_BIN" \
-        -m "filename=file-$i.txt" \
+        -a "filename=file-$i.txt" \
         >/dev/null
   fi
 done
@@ -132,6 +132,6 @@ print_row() {
 echo
 echo "Scenario results:"
 print_row "ls -l -n 100" "ls -l -n 100" "ls -l -n 100 --color=false"
-print_row "ls -l -m @ -p -n 100" "ls -l -m @ -p -n 100" "ls -l -m @ -p -n 100 --color=false"
+print_row "ls -l -a @ -p -n 100" "ls -l -a @ -p -n 100" "ls -l -a @ -p -n 100 --color=false"
 print_row "log -n 100" "log -n 100 --no-color" "log -n 100 --color=false"
 print_row "attr @1 --preview" "attr @1 --preview" "attr @1 --preview"

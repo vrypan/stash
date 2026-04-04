@@ -14,7 +14,7 @@ import (
 func newLsCmd() *cobra.Command {
 	var chars int
 	var idMode string
-	var metaFilters []string
+	var attrFilters []string
 	var dateMode string
 	var sizeMode string
 	var name bool
@@ -61,7 +61,7 @@ func newLsCmd() *cobra.Command {
 			}
 			effectiveChars := chars
 
-			metaSel, err := parseMetaSelection(metaFilters)
+			metaSel, err := parseMetaSelection(attrFilters)
 			if err != nil {
 				return err
 			}
@@ -80,7 +80,7 @@ func newLsCmd() *cobra.Command {
 
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
 	cmd.Flags().StringVar(&idMode, "id", "short", "ID display: short, full, or pos")
-	cmd.Flags().StringArrayVarP(&metaFilters, "meta", "m", nil, "Show metadata tags with @, or filter by tag name (repeatable)")
+	cmd.Flags().StringArrayVarP(&attrFilters, "attr", "a", nil, "Show attributes with @, or filter by attribute name (repeatable)")
 	cmd.Flags().StringVar(&dateMode, "date", "", "Include date column: iso, ago, or ls")
 	cmd.Flags().Lookup("date").NoOptDefVal = "ls"
 	cmd.Flags().StringVar(&sizeMode, "size", "", "Include size column: human or bytes")

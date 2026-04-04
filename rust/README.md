@@ -20,9 +20,9 @@ Current status:
 
 Notable compatibility points:
 - `ls` supports `-l`, `-n`, `-r`, `-p`, `--date`, `--size`, `--name`,
-  `-m/--meta`, `--chars`, and `--id`
+  `-a/--attr`, `--chars`, and `--id`
 - `log` supports `-n`, `-r`, `--json`, `--format`, `--date`,
-  `-m/--meta`, `--chars`, and `--id`
+  `-a/--attr`, `--chars`, and `--id`
 - `attr` supports `--json`, `-p/--preview`, `--separator`, and
   `set` / `unset` with the same writable-key rules as Go
 - `tee` supports `--partial`

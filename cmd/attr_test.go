@@ -26,8 +26,8 @@ func TestAttrCommandOutputsTabSeparatedAndJSON(t *testing.T) {
 	if !strings.Contains(stdout, "size\t5\n") {
 		t.Fatalf("attr output missing size: %q", stdout)
 	}
-	if !strings.Contains(stdout, "meta.job\tnightly\n") || !strings.Contains(stdout, "meta.owner\tci\n") {
-		t.Fatalf("attr output missing meta attrs: %q", stdout)
+	if !strings.Contains(stdout, "job\tnightly\n") || !strings.Contains(stdout, "owner\tci\n") {
+		t.Fatalf("attr output missing attrs: %q", stdout)
 	}
 
 	cmd = newAttrCmd()
@@ -39,7 +39,7 @@ func TestAttrCommandOutputsTabSeparatedAndJSON(t *testing.T) {
 	if !strings.Contains(stdout, "\"id\": \""+id+"\"") {
 		t.Fatalf("attr --json output missing id: %q", stdout)
 	}
-	if !strings.Contains(stdout, "\"meta\": {") || !strings.Contains(stdout, "\"job\": \"nightly\"") || !strings.Contains(stdout, "\"owner\": \"ci\"") {
+	if !strings.Contains(stdout, "\"attr\": {") || !strings.Contains(stdout, "\"job\": \"nightly\"") || !strings.Contains(stdout, "\"owner\": \"ci\"") {
 		t.Fatalf("attr --json output = %q", stdout)
 	}
 }
@@ -51,13 +51,13 @@ func TestAttrCommandGetsSingleKey(t *testing.T) {
 		t.Fatalf("store.Push: %v", err)
 	}
 	cmd := newAttrCmd()
-	cmd.SetArgs([]string{id, "meta.source"})
+	cmd.SetArgs([]string{id, "source"})
 	stdout, _, err := captureIO(t, "", cmd.Execute)
 	if err != nil {
-		t.Fatalf("attr meta.source execute: %v", err)
+		t.Fatalf("attr source execute: %v", err)
 	}
 	if strings.TrimSpace(stdout) != "demo" {
-		t.Fatalf("attr meta.source output = %q", strings.TrimSpace(stdout))
+		t.Fatalf("attr source output = %q", strings.TrimSpace(stdout))
 	}
 }
 

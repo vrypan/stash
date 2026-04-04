@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def escape_attr(value: str) -> str:
+    out = []
+    for ch in value:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ch == "=":
+            out.append("\\=")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def attr_lines(meta: dict) -> str:
+    lines = []
+
+    def add(key: str, value) -> None:
+        if value is None:
+            return
+        if not isinstance(value, str):
+            value = str(value)
+        lines.append(f"{escape_attr(key)}={escape_attr(value)}")
+
+    add("id", meta.get("id", ""))
+    add("ts", meta.get("ts", ""))
+    add("size", meta.get("size", 0))
+
+    preview = (meta.get("preview") or "").strip()
+    if preview:
+        add("preview", preview)
+
+    attrs = meta.get("meta") or meta.get("attr") or {}
+    for key in sorted(attrs):
+        add(key, attrs[key])
+
+    return "\n".join(lines) + "\n"
+
+
+def main() -> int:
+    stash_dir = Path(os.environ.get("STASH_DIR", Path.home() / ".stash"))
+    entries_dir = stash_dir / "entries"
+    if not entries_dir.is_dir():
+        print(f"entries directory not found: {entries_dir}", file=sys.stderr)
+        return 1
+
+    migrated = 0
+    skipped = 0
+
+    for entry_dir in sorted(p for p in entries_dir.iterdir() if p.is_dir()):
+        meta_path = entry_dir / "meta.json"
+        attr_path = entry_dir / "attr"
+
+        if attr_path.exists():
+            skipped += 1
+            continue
+        if not meta_path.exists():
+            skipped += 1
+            continue
+
+        with meta_path.open("r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+
+        tmp_path = entry_dir / ".attr.tmp"
+        with tmp_path.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(attr_lines(meta))
+        os.replace(tmp_path, attr_path)
+        migrated += 1
+
+    print(f"migrated {migrated} entries, skipped {skipped}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
