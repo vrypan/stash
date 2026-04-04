@@ -39,7 +39,7 @@ func TestAttrCommandOutputsTabSeparatedAndJSON(t *testing.T) {
 	if !strings.Contains(stdout, "\"id\": \""+id+"\"") {
 		t.Fatalf("attr --json output missing id: %q", stdout)
 	}
-	if !strings.Contains(stdout, "\"attr\": {") || !strings.Contains(stdout, "\"job\": \"nightly\"") || !strings.Contains(stdout, "\"owner\": \"ci\"") {
+	if strings.Contains(stdout, "\"attr\": {") || !strings.Contains(stdout, "\"job\": \"nightly\"") || !strings.Contains(stdout, "\"owner\": \"ci\"") {
 		t.Fatalf("attr --json output = %q", stdout)
 	}
 }

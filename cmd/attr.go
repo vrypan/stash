@@ -50,13 +50,7 @@ func newAttrCmd() *cobra.Command {
 			if jsonOut {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
-				if withPreview && strings.TrimSpace(preview) != "" {
-					return enc.Encode(struct {
-						store.Meta
-						Preview string `json:"preview,omitempty"`
-					}{Meta: m, Preview: preview})
-				}
-				return enc.Encode(m)
+				return enc.Encode(flattenAttrJSON(m, withPreview, preview))
 			}
 			return writeAttrLines(m, sep, withPreview, preview)
 		},
@@ -155,6 +149,20 @@ func runAttrUnset(id string, args []string) error {
 		keys = append(keys, k)
 	}
 	return runMetadataUnset(id, keys)
+}
+
+func flattenAttrJSON(m store.Meta, withPreview bool, preview string) map[string]any {
+	out := make(map[string]any, len(m.Attrs)+4)
+	out["id"] = m.ID
+	out["ts"] = m.TS
+	out["size"] = m.Size
+	for k, v := range m.Attrs {
+		out[k] = v
+	}
+	if withPreview && strings.TrimSpace(preview) != "" {
+		out["preview"] = preview
+	}
+	return out
 }
 
 func writeAttrLines(m store.Meta, sep string, withPreview bool, preview string) error {
