@@ -15,7 +15,7 @@ Current status:
   - `rm`
   - `pop`
   - `version`
-- matches the current metadata and preview layout
+- matches the current attribute and preview layout
 - includes the ordered list cache used by the Go implementation
 
 Notable compatibility points:

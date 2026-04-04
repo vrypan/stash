@@ -627,7 +627,7 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
                     if !is_writable_attr_key(k) {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            format!("only metadata keys are writable: {k:?}"),
+                            format!("only user-defined attributes are writable: {k:?}"),
                         ));
                     }
                     attrs.insert(k.to_string(), v.to_string());
@@ -639,7 +639,7 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
                     if !is_writable_attr_key(key) {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            format!("only metadata keys are writable: {key:?}"),
+                            format!("only user-defined attributes are writable: {key:?}"),
                         ));
                     }
                 }
@@ -657,7 +657,7 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
 
     let meta = store::get_meta(&id)?;
     if args.json {
-        print!("{}", meta.to_json_pretty());
+        print!("{}", meta.to_json_pretty(args.preview));
         return Ok(());
     }
 
@@ -676,7 +676,7 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
     println!("ts{}{}", args.separator, meta.ts);
     println!("size{}{}", args.separator, meta.size);
     for (k, v) in &meta.attrs {
-        println!("meta.{}{}{}", k, args.separator, v);
+        println!("{}{}{}", k, args.separator, v);
     }
     if args.preview && !meta.preview.is_empty() {
         println!("preview{}{}", args.separator, meta.preview);
@@ -1284,8 +1284,6 @@ fn attr_value(meta: &Meta, key: &str, with_preview: bool) -> Option<String> {
         "preview" if with_preview || !meta.preview.is_empty() => {
             (!meta.preview.is_empty()).then(|| meta.preview.clone())
         }
-        _ => key
-            .strip_prefix("meta.")
-            .and_then(|k| meta.attrs.get(k).cloned()),
+        _ => meta.attrs.get(key).cloned(),
     }
 }

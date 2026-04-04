@@ -3,7 +3,7 @@ use crate::preview::build_preview_data;
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -46,30 +46,21 @@ impl Meta {
         self.id.to_ascii_lowercase()
     }
 
-    pub fn to_json_pretty(&self) -> String {
+    pub fn to_json_pretty(&self, include_preview: bool) -> String {
         let mut out = String::new();
         out.push_str("{\n");
         out.push_str(&format!("  \"id\": \"{}\",\n", escape_string(&self.id)));
         out.push_str(&format!("  \"ts\": \"{}\",\n", escape_string(&self.ts)));
         out.push_str(&format!("  \"size\": {}", self.size));
-        if !self.preview.is_empty() {
-            out.push_str(&format!(",\n  \"preview\": \"{}\"", escape_string(&self.preview)));
+        for (k, v) in &self.attrs {
+            out.push_str(&format!(
+                ",\n  \"{}\": \"{}\"",
+                escape_string(k),
+                escape_string(v)
+            ));
         }
-        if !self.attrs.is_empty() {
-            out.push_str(",\n  \"meta\": {\n");
-            let mut first = true;
-            for (k, v) in &self.attrs {
-                if !first {
-                    out.push_str(",\n");
-                }
-                first = false;
-                out.push_str(&format!(
-                    "    \"{}\": \"{}\"",
-                    escape_string(k),
-                    escape_string(v)
-                ));
-            }
-            out.push_str("\n  }");
+        if include_preview && !self.preview.is_empty() {
+            out.push_str(&format!(",\n  \"preview\": \"{}\"", escape_string(&self.preview)));
         }
         out.push_str("\n}\n");
         out
@@ -81,78 +72,14 @@ impl Meta {
         out.push_str(&format!("\"id\":\"{}\"", escape_string(&self.id)));
         out.push_str(&format!(",\"ts\":\"{}\"", escape_string(&self.ts)));
         out.push_str(&format!(",\"size\":{}", self.size));
+        for (k, v) in &self.attrs {
+            out.push_str(&format!(",\"{}\":\"{}\"", escape_string(k), escape_string(v)));
+        }
         if !self.preview.is_empty() {
             out.push_str(&format!(",\"preview\":\"{}\"", escape_string(&self.preview)));
         }
-        if !self.attrs.is_empty() {
-            out.push_str(",\"meta\":{");
-            let mut first = true;
-            for (k, v) in &self.attrs {
-                if !first {
-                    out.push(',');
-                }
-                first = false;
-                out.push_str(&format!("\"{}\":\"{}\"", escape_string(k), escape_string(v)));
-            }
-            out.push('}');
-        }
         out.push('}');
         out
-    }
-
-    pub fn from_json_str(input: &str) -> Result<Self, String> {
-        let root = parse(input)?;
-        let JsonValue::Object(obj) = root else {
-            return Err("meta.json root must be an object".into());
-        };
-        let id = get_string(&obj, "id")?;
-        let ts = get_string(&obj, "ts")?;
-        let size = get_number(&obj, "size")?;
-        let preview = get_optional_string(&obj, "preview").unwrap_or_default();
-        let attrs = match obj.get("meta") {
-            Some(JsonValue::Object(meta_obj)) => {
-                let mut out = BTreeMap::new();
-                for (k, v) in meta_obj {
-                    match v {
-                        JsonValue::String(s) => {
-                            out.insert(k.clone(), s.clone());
-                        }
-                        _ => return Err("meta values must be strings".into()),
-                    }
-                }
-                out
-            }
-            Some(JsonValue::Null) | None => BTreeMap::new(),
-            _ => return Err("meta must be an object".into()),
-        };
-        Ok(Self {
-            id,
-            ts,
-            size,
-            preview,
-            attrs,
-        })
-    }
-}
-
-fn get_string(obj: &BTreeMap<String, JsonValue>, key: &str) -> Result<String, String> {
-    match obj.get(key) {
-        Some(JsonValue::String(s)) => Ok(s.clone()),
-        _ => Err(format!("missing string field {key}")),
-    }
-}
-
-fn get_optional_string(obj: &BTreeMap<String, JsonValue>, key: &str) -> Option<String> {
-    match obj.get(key) {
-        Some(JsonValue::String(s)) => Some(s.clone()),
-        _ => None,
-    }
-}
-
-fn get_number(obj: &BTreeMap<String, JsonValue>, key: &str) -> Result<i64, String> {
-    match obj.get(key) {
-        Some(JsonValue::Number(n)) => Ok(*n),
-        _ => Err(format!("missing numeric field {key}")),
     }
 }
 
@@ -264,7 +191,7 @@ fn read_list_cache() -> io::Result<Vec<Meta>> {
         if line.is_empty() {
             continue;
         }
-        let item = Meta::from_json_str(line).map_err(io::Error::other)?;
+        let item = parse_cached_meta(line).map_err(io::Error::other)?;
         items.push(item);
     }
     Ok(items)
@@ -351,13 +278,13 @@ pub fn resolve(input: &str) -> io::Result<String> {
 }
 
 pub fn get_meta(id: &str) -> io::Result<Meta> {
-    let path = entry_dir(id)?.join("meta.json");
+    let path = entry_dir(id)?.join("attr");
     let data = fs::read_to_string(path)?;
-    Meta::from_json_str(&data).map_err(io::Error::other)
+    parse_attr_file(&data).map_err(io::Error::other)
 }
 
 pub fn write_meta(id: &str, meta: &Meta) -> io::Result<()> {
-    let result = fs::write(entry_dir(id)?.join("meta.json"), meta.to_json_pretty());
+    let result = fs::write(entry_dir(id)?.join("attr"), encode_attr(meta));
     if result.is_ok() {
         invalidate_list_cache();
     }
@@ -425,7 +352,7 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
         preview: build_preview_data(&sample, sample.len()),
         attrs,
     };
-    fs::write(tmp.join("meta.json"), meta.to_json_pretty())?;
+    fs::write(tmp.join("attr"), encode_attr(&meta))?;
     fs::rename(tmp, entry_dir(&id)?)?;
     invalidate_list_cache();
     Ok(id)
@@ -461,7 +388,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                     preview: build_preview_data(&sample, sample.len()),
                     attrs,
                 };
-                fs::write(tmp.join("meta.json"), meta.to_json_pretty())?;
+                fs::write(tmp.join("attr"), encode_attr(&meta))?;
                 fs::rename(&tmp, entry_dir(&id)?)?;
                 invalidate_list_cache();
                 return Err(io::Error::other(PartialSavedError { id, cause: err }));
@@ -491,7 +418,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                 preview: build_preview_data(&sample, sample.len()),
                 attrs,
             };
-            fs::write(tmp.join("meta.json"), meta.to_json_pretty())?;
+            fs::write(tmp.join("attr"), encode_attr(&meta))?;
             fs::rename(&tmp, entry_dir(&id)?)?;
             invalidate_list_cache();
             return Err(io::Error::other(PartialSavedError { id, cause: err }));
@@ -507,7 +434,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
         preview: build_preview_data(&sample, sample.len()),
         attrs,
     };
-    fs::write(tmp.join("meta.json"), meta.to_json_pretty())?;
+    fs::write(tmp.join("attr"), encode_attr(&meta))?;
     fs::rename(tmp, entry_dir(&id)?)?;
     invalidate_list_cache();
     Ok(id)
@@ -590,4 +517,138 @@ pub fn add_filename_attr(path: &Path, attrs: &mut BTreeMap<String, String>) {
     if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
         attrs.insert("filename".into(), name.into());
     }
+}
+
+fn encode_attr(meta: &Meta) -> String {
+    let mut out = String::new();
+    write_attr_line(&mut out, "id", &meta.id);
+    write_attr_line(&mut out, "ts", &meta.ts);
+    write_attr_line(&mut out, "size", &meta.size.to_string());
+    if !meta.preview.trim().is_empty() {
+        write_attr_line(&mut out, "preview", &meta.preview);
+    }
+    for (k, v) in &meta.attrs {
+        write_attr_line(&mut out, k, v);
+    }
+    out
+}
+
+fn write_attr_line(out: &mut String, key: &str, value: &str) {
+    out.push_str(&escape_attr(key));
+    out.push('=');
+    out.push_str(&escape_attr(value));
+    out.push('\n');
+}
+
+fn escape_attr(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '=' => out.push_str("\\="),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn parse_attr_file(input: &str) -> Result<Meta, String> {
+    let mut meta = Meta {
+        id: String::new(),
+        ts: String::new(),
+        size: 0,
+        preview: String::new(),
+        attrs: BTreeMap::new(),
+    };
+    for line in io::Cursor::new(input).lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = split_attr_line(line) else {
+            return Err(format!("invalid attr line {line:?}"));
+        };
+        let key = unescape_attr(key)?;
+        let value = unescape_attr(value)?;
+        match key.as_str() {
+            "id" => meta.id = value,
+            "ts" => meta.ts = value,
+            "size" => {
+                meta.size = value
+                    .parse::<i64>()
+                    .map_err(|_| format!("invalid size {value:?}"))?
+            }
+            "preview" => meta.preview = value,
+            _ => {
+                meta.attrs.insert(key, value);
+            }
+        }
+    }
+    Ok(meta)
+}
+
+fn split_attr_line(line: &str) -> Option<(&str, &str)> {
+    let mut escaped = false;
+    for (idx, ch) in line.char_indices() {
+        match ch {
+            '\\' => escaped = !escaped,
+            '=' if !escaped => return Some((&line[..idx], &line[idx + 1..])),
+            _ => escaped = false,
+        }
+    }
+    None
+}
+
+fn unescape_attr(input: &str) -> Result<String, String> {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        let Some(next) = chars.next() else {
+            return Err("unterminated attr escape".into());
+        };
+        match next {
+            '\\' => out.push('\\'),
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            '=' => out.push('='),
+            other => return Err(format!("invalid attr escape \\{other}")),
+        }
+    }
+    Ok(out)
+}
+
+fn parse_cached_meta(input: &str) -> Result<Meta, String> {
+    let root = parse(input)?;
+    let JsonValue::Object(obj) = root else {
+        return Err("cache entry root must be an object".into());
+    };
+    let mut meta = Meta {
+        id: String::new(),
+        ts: String::new(),
+        size: 0,
+        preview: String::new(),
+        attrs: BTreeMap::new(),
+    };
+    for (k, v) in obj {
+        match (k.as_str(), v) {
+            ("id", JsonValue::String(s)) => meta.id = s,
+            ("ts", JsonValue::String(s)) => meta.ts = s,
+            ("size", JsonValue::Number(n)) => meta.size = n,
+            ("preview", JsonValue::String(s)) => meta.preview = s,
+            (_, JsonValue::String(s)) => {
+                meta.attrs.insert(k, s);
+            }
+            _ => return Err(format!("invalid cached field {k}")),
+        }
+    }
+    Ok(meta)
 }
