@@ -13,21 +13,36 @@ func parseTS(s string) time.Time {
 	return t
 }
 
-const absoluteFormat = "Mon Jan _2 15:04:05 2006 -0700"
+const isoFormat = "Mon Jan _2 15:04:05 2006 -0700"
+
+func normalizeDateMode(mode string) string {
+	switch mode {
+	case "absolute":
+		return "iso"
+	case "relative":
+		return "ago"
+	default:
+		return mode
+	}
+}
 
 func formatTS(t time.Time, now time.Time, mode string) string {
-	if mode == "absolute" {
-		return t.Local().Format(absoluteFormat)
+	switch normalizeDateMode(mode) {
+	case "iso":
+		return t.Local().Format(isoFormat)
+	case "ago":
+		return relativeTime(now, t)
+	default:
+		return t.Local().Format(isoFormat)
 	}
-	return relativeTime(now, t)
 }
 
 func formatLSDate(t, now time.Time, mode string) string {
-	switch mode {
-	case "absolute":
-		return formatTS(t, now, "absolute")
-	case "relative":
-		return formatTS(t, now, "relative")
+	switch normalizeDateMode(mode) {
+	case "iso":
+		return formatTS(t, now, "iso")
+	case "ago":
+		return formatTS(t, now, "ago")
 	default:
 		return lsDate(t, now)
 	}

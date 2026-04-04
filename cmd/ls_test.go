@@ -30,8 +30,12 @@ func TestLsLongEnablesDateSizeAndName(t *testing.T) {
 	if !strings.Contains(stdout, "hello.txt") {
 		t.Fatalf("ls -l output missing name: %q", stdout)
 	}
-	if !strings.Contains(stdout, " +") {
-		t.Fatalf("ls -l output missing absolute date: %q", stdout)
+	if !strings.Contains(stdout, "hello.txt") || !strings.Contains(stdout, "5B") {
+		t.Fatalf("ls -l output missing expected columns: %q", stdout)
+	}
+	fields := strings.Fields(stdout)
+	if len(fields) < 5 {
+		t.Fatalf("ls -l output missing ls-style date columns: %q", stdout)
 	}
 }
 

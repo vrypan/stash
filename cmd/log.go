@@ -46,13 +46,15 @@ func newLogCmd() *cobra.Command {
 			if noColor {
 				color.NoColor = true
 			}
-			if dateMode != "absolute" && dateMode != "relative" {
-				return fmt.Errorf("--date must be absolute or relative")
+			effectiveDateMode := normalizeDateMode(dateMode)
+			switch effectiveDateMode {
+			case "iso", "ago":
+			default:
+				return fmt.Errorf("--date must be iso or ago")
 			}
 			if idMode != "short" && idMode != "full" && idMode != "pos" {
 				return fmt.Errorf("--id must be short, full, or pos")
 			}
-			effectiveDateMode := dateMode
 			effectiveIDMode := idMode
 			effectiveChars := chars
 
@@ -92,7 +94,7 @@ func newLogCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&reverse, "reverse", "r", false, "Show oldest first")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output verbose entry history as JSON")
 	cmd.Flags().StringVar(&formatStr, "format", "", "Go template for custom log output")
-	cmd.Flags().StringVar(&dateMode, "date", "absolute", "Date format: relative or absolute")
+	cmd.Flags().StringVar(&dateMode, "date", "iso", "Date format: iso or ago")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable color output")
 	return cmd
 }

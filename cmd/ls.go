@@ -29,8 +29,12 @@ func newLsCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(c *cobra.Command, args []string) error {
-			if dateMode != "" && dateMode != "absolute" && dateMode != "relative" && dateMode != "ls" {
-				return fmt.Errorf("--date must be absolute, relative, or ls")
+			if dateMode != "" {
+				switch normalizeDateMode(dateMode) {
+				case "iso", "ago", "ls":
+				default:
+					return fmt.Errorf("--date must be iso, ago, or ls")
+				}
 			}
 			if sizeMode != "" && sizeMode != "human" && sizeMode != "bytes" {
 				return fmt.Errorf("--size must be human or bytes")
@@ -46,7 +50,7 @@ func newLsCmd() *cobra.Command {
 			effectiveName := name
 			if long {
 				if !c.Flags().Changed("date") {
-					effectiveDateMode = "absolute"
+					effectiveDateMode = "ls"
 				}
 				if !c.Flags().Changed("size") {
 					effectiveSizeMode = "human"
@@ -77,8 +81,8 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().IntVar(&chars, "chars", 80, "Preview character limit")
 	cmd.Flags().StringVar(&idMode, "id", "short", "ID display: short, full, or pos")
 	cmd.Flags().StringArrayVarP(&metaFilters, "meta", "m", nil, "Show metadata tags with @, or filter by tag name (repeatable)")
-	cmd.Flags().StringVar(&dateMode, "date", "", "Include date column: absolute, relative, or ls")
-	cmd.Flags().Lookup("date").NoOptDefVal = "absolute"
+	cmd.Flags().StringVar(&dateMode, "date", "", "Include date column: iso, ago, or ls")
+	cmd.Flags().Lookup("date").NoOptDefVal = "ls"
 	cmd.Flags().StringVar(&sizeMode, "size", "", "Include size column: human or bytes")
 	cmd.Flags().Lookup("size").NoOptDefVal = "human"
 	cmd.Flags().BoolVar(&name, "name", false, "Include filename or full ULID column")
