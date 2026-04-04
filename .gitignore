@@ -2,3 +2,4 @@ stash
 dist/
 gitignore/
 .DS_Store
+rust/target/
