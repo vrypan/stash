@@ -169,42 +169,6 @@ func collectEntries(sel metaSelection, reverse bool, n int) ([]store.Meta, error
 	return out, nil
 }
 
-func autoPreviewChars(entries []store.Meta, now time.Time, idMode string, dateMode string) int {
-	width, ok := terminalWidth()
-	if !ok {
-		return 80
-	}
-
-	maxID, maxTS, maxSize := 0, 0, 0
-	for i, m := range entries {
-		idStr := m.ShortID()
-		switch idMode {
-		case "full":
-			idStr = m.DisplayID()
-		case "pos":
-			idStr = fmt.Sprintf("%d", i+1)
-		}
-		if len(idStr) > maxID {
-			maxID = len(idStr)
-		}
-		tsStr := formatTS(parseTS(m.TS), now, dateMode)
-		if len(tsStr) > maxTS {
-			maxTS = len(tsStr)
-		}
-		sizeStr := store.HumanSize(m.Size)
-		if len(sizeStr) > maxSize {
-			maxSize = len(sizeStr)
-		}
-	}
-
-	fixed := maxID + maxTS + maxSize + 6
-	chars := width - fixed
-	if chars < 20 {
-		return 20
-	}
-	return chars
-}
-
 func terminalWidth() (int, bool) {
 	fd := os.Stdout.Fd()
 	if !isatty.IsTerminal(fd) {
