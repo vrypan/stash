@@ -357,6 +357,74 @@ fn collect_entries(sel: &MetaSelection, reverse: bool, limit: usize) -> io::Resu
     Ok(items)
 }
 
+#[derive(Clone, Debug)]
+struct DecoratedEntry {
+    id: String,
+    size_bytes: String,
+    size_human: String,
+    date: String,
+    preview: String,
+    filename: Option<String>,
+    meta_vals: Vec<String>,
+    meta_inline: String,
+    log_meta: String,
+}
+
+fn decorate_entries(
+    items: &[Meta],
+    id_mode: &str,
+    date_mode: &str,
+    preview_chars: usize,
+    meta_sel: &MetaSelection,
+) -> Vec<DecoratedEntry> {
+    items.iter()
+        .enumerate()
+        .map(|(idx, item)| decorate_entry(item, idx, id_mode, date_mode, preview_chars, meta_sel))
+        .collect()
+}
+
+fn decorate_entry(
+    item: &Meta,
+    idx: usize,
+    id_mode: &str,
+    date_mode: &str,
+    preview_chars: usize,
+    meta_sel: &MetaSelection,
+) -> DecoratedEntry {
+    let filename = item.attrs.get("filename").cloned();
+    let meta_vals = if !meta_sel.tags.is_empty() {
+        meta_sel
+            .tags
+            .iter()
+            .map(|tag| item.attrs.get(tag).cloned().unwrap_or_else(|| " ".into()))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let meta_inline = if meta_sel.show_all && !item.attrs.is_empty() {
+        item.attrs.values().cloned().collect::<Vec<_>>().join("  ")
+    } else {
+        String::new()
+    };
+    let log_meta = format_log_meta(&item.attrs, meta_sel).unwrap_or_default();
+    let preview = if item.preview.is_empty() {
+        String::new()
+    } else {
+        preview_snippet(&item.preview, preview_chars)
+    };
+    DecoratedEntry {
+        id: display_id(item, idx, id_mode),
+        size_bytes: item.size.to_string(),
+        size_human: store::human_size(item.size),
+        date: format_date(&item.ts, date_mode),
+        preview,
+        filename,
+        meta_vals,
+        meta_inline,
+        log_meta,
+    }
+}
+
 fn ls_command(mut args: LsArgs) -> io::Result<()> {
     let color = color_enabled(&args.color)?;
     if args.long {
@@ -369,6 +437,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
     }
     let meta_sel = parse_meta_selection(&args.meta)?;
     let items = collect_entries(&meta_sel, args.reverse, args.number)?;
+    let ls_date_mode = args.date.as_deref().unwrap_or("ls");
     let effective_chars = if args.preview && args.chars == 80 {
         auto_ls_preview_chars(
             &items,
@@ -391,8 +460,9 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
     {
         let stdout = io::stdout();
         let mut out = stdout.lock();
-        for (idx, item) in items.iter().enumerate() {
-            write_colored(&mut out, &display_id(item, idx, &args.id), "1;33", color)?;
+        let rows = decorate_entries(&items, &args.id, ls_date_mode, effective_chars, &meta_sel);
+        for row in rows {
+            write_colored(&mut out, &row.id, "1;33", color)?;
             writeln!(out)?;
         }
         return Ok(());
@@ -408,54 +478,36 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
         preview: String,
     }
 
-    let mut rows = Vec::with_capacity(items.len());
-    for (idx, item) in items.iter().enumerate() {
-        let id = display_id(item, idx, &args.id);
-        let size = args
-            .size
-            .as_deref()
-            .map(|mode| format_size(item.size, mode))
-            .unwrap_or_default();
-        let date = args
-            .date
-            .as_deref()
-            .map(|mode| format_date(&item.ts, mode))
-            .unwrap_or_default();
-        let name = if args.name {
-            item.attrs
-                .get("filename")
-                .cloned()
-                .unwrap_or_else(|| item.display_id())
-        } else {
-            String::new()
-        };
-        let meta_vals = if !meta_sel.tags.is_empty() {
-            meta_sel
-                .tags
-                .iter()
-                .map(|tag| item.attrs.get(tag).cloned().unwrap_or_else(|| " ".into()))
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let meta_inline = if meta_sel.show_all && !item.attrs.is_empty() {
-            item.attrs.values().cloned().collect::<Vec<_>>().join("  ")
-        } else {
-            String::new()
-        };
-        let preview = if args.preview && !item.preview.is_empty() {
-            preview_snippet(&item.preview, effective_chars)
-        } else {
-            String::new()
-        };
-        rows.push(LsRow {
+    let decorated = decorate_entries(&items, &args.id, ls_date_mode, effective_chars, &meta_sel);
+    let mut rows = Vec::with_capacity(decorated.len());
+    for row in decorated {
+        let DecoratedEntry {
             id,
-            size,
+            size_bytes,
+            size_human,
             date,
-            name,
+            preview,
+            filename,
             meta_vals,
             meta_inline,
-            preview,
+            log_meta: _,
+        } = row;
+        rows.push(LsRow {
+            id: id.clone(),
+            size: args
+                .size
+                .as_deref()
+                .map(|mode| if mode == "bytes" { size_bytes.clone() } else { size_human.clone() })
+                .unwrap_or_default(),
+            date: if args.date.is_some() { date } else { String::new() },
+            name: if args.name {
+                filename.unwrap_or_else(|| id.clone())
+            } else {
+                String::new()
+            },
+            meta_vals,
+            meta_inline,
+            preview: if args.preview { preview } else { String::new() },
         });
     }
 
@@ -536,24 +588,24 @@ fn log_command(args: LogArgs) -> io::Result<()> {
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    for (idx, item) in items.iter().enumerate() {
+    let rows = decorate_entries(&items, &args.id, date_mode, args.chars, &meta_sel);
+    for (idx, row) in rows.into_iter().enumerate() {
         if idx > 0 {
             writeln!(out)?;
         }
-        let id = display_id(item, idx, &args.id);
         write!(out, "entry ")?;
-        write_colored(&mut out, &id, "1;33", color)?;
-        writeln!(out, " ({})", store::human_size(item.size))?;
+        write_colored(&mut out, &row.id, "1;33", color)?;
+        writeln!(out, " ({})", row.size_human)?;
         write_colored(&mut out, "Date: ", "1", color)?;
-        writeln!(out, "{}", format_date(&item.ts, date_mode))?;
-        if let Some(meta_line) = format_log_meta(&item.attrs, &meta_sel) {
+        writeln!(out, "{}", row.date)?;
+        if !row.log_meta.is_empty() {
             write_colored(&mut out, "Meta: ", "1", color)?;
-            write_colored(&mut out, &meta_line, "35", color)?;
+            write_colored(&mut out, &row.log_meta, "35", color)?;
             writeln!(out)?;
         }
-        if !item.preview.is_empty() {
+        if !row.preview.is_empty() {
             writeln!(out)?;
-            writeln!(out, "    {}", preview_snippet(&item.preview, args.chars))?;
+            writeln!(out, "    {}", row.preview)?;
         }
     }
     Ok(())
