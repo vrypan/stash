@@ -170,8 +170,11 @@ pub struct AttrArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct PathArgs {
-    #[arg(short = 'd', long = "dir", help = "Print entry directories instead of data file paths")]
+    #[arg(short = 'd', long = "dir", help = "Print container directories instead of file paths")]
     dir: bool,
+
+    #[arg(short = 'a', long = "attr", help = "Print attribute file paths instead of data file paths")]
+    attr: bool,
 
     #[arg(help = "Entry refs read from arguments or stdin")]
     refs: Vec<String>,
@@ -692,8 +695,10 @@ fn path_command(args: PathArgs) -> io::Result<()> {
         if stdin.is_terminal() {
             let path = if args.dir {
                 store::base_dir()?
+            } else if args.attr {
+                store::attr_dir()?
             } else {
-                store::entries_dir()?
+                store::data_dir()?
             };
             println!("{}", path.canonicalize().unwrap_or(path).display());
             return Ok(());
@@ -708,8 +713,10 @@ fn path_command(args: PathArgs) -> io::Result<()> {
         if refs.is_empty() {
             let path = if args.dir {
                 store::base_dir()?
+            } else if args.attr {
+                store::attr_dir()?
             } else {
-                store::entries_dir()?
+                store::data_dir()?
             };
             println!("{}", path.canonicalize().unwrap_or(path).display());
             return Ok(());
@@ -719,7 +726,13 @@ fn path_command(args: PathArgs) -> io::Result<()> {
     for reference in refs {
         let id = store::resolve(&reference)?;
         let path = if args.dir {
-            store::entry_dir(&id)?
+            if args.attr {
+                store::attr_dir()?
+            } else {
+                store::data_dir()?
+            }
+        } else if args.attr {
+            store::entry_attr_path(&id)?
         } else {
             store::entry_data_path(&id)?
         };

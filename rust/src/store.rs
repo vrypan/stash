@@ -95,8 +95,12 @@ pub fn base_dir() -> io::Result<PathBuf> {
     }
 }
 
-pub fn entries_dir() -> io::Result<PathBuf> {
-    Ok(base_dir()?.join("entries"))
+pub fn data_dir() -> io::Result<PathBuf> {
+    Ok(base_dir()?.join("data"))
+}
+
+pub fn attr_dir() -> io::Result<PathBuf> {
+    Ok(base_dir()?.join("attr"))
 }
 
 fn cache_dir() -> io::Result<PathBuf> {
@@ -108,11 +112,15 @@ fn list_cache_path() -> io::Result<PathBuf> {
 }
 
 pub fn entry_dir(id: &str) -> io::Result<PathBuf> {
-    Ok(entries_dir()?.join(id))
+    Ok(base_dir()?.join(id))
 }
 
 pub fn entry_data_path(id: &str) -> io::Result<PathBuf> {
-    Ok(entry_dir(id)?.join("data"))
+    Ok(data_dir()?.join(id.to_ascii_lowercase()))
+}
+
+pub fn entry_attr_path(id: &str) -> io::Result<PathBuf> {
+    Ok(attr_dir()?.join(id.to_ascii_lowercase()))
 }
 
 fn tmp_dir() -> io::Result<PathBuf> {
@@ -121,14 +129,15 @@ fn tmp_dir() -> io::Result<PathBuf> {
 
 pub fn init() -> io::Result<()> {
     let base = base_dir()?;
-    fs::create_dir_all(base.join("entries"))?;
+    fs::create_dir_all(base.join("data"))?;
+    fs::create_dir_all(base.join("attr"))?;
     fs::create_dir_all(base.join("tmp"))?;
     fs::create_dir_all(base.join("cache"))?;
     Ok(())
 }
 
-fn entries_mtime_key() -> io::Result<String> {
-    let modified = fs::metadata(entries_dir()?)?.modified()?;
+fn dir_mtime_key(path: PathBuf) -> io::Result<String> {
+    let modified = fs::metadata(path)?.modified()?;
     let duration = modified.duration_since(UNIX_EPOCH).map_err(io::Error::other)?;
     Ok(format!("{}.{:09}", duration.as_secs(), duration.subsec_nanos()))
 }
@@ -141,8 +150,8 @@ fn invalidate_list_cache() {
 
 pub fn list_entry_ids() -> io::Result<Vec<String>> {
     let mut ids = Vec::new();
-    let entries = entries_dir()?;
-    match fs::read_dir(entries) {
+    let attrs = attr_dir()?;
+    match fs::read_dir(attrs) {
         Ok(read_dir) => {
             for item in read_dir {
                 let item = item?;
@@ -178,11 +187,16 @@ fn read_list_cache() -> io::Result<Vec<Meta>> {
     let Some(header) = lines.next() else {
         return Err(io::Error::other("empty list cache"));
     };
-    let Some(cached_mtime) = header.strip_prefix("mtime=") else {
+    let mut parts = header.split_whitespace();
+    let Some(cached_data) = parts.next().and_then(|s| s.strip_prefix("data_mtime=")) else {
         return Err(io::Error::other("invalid list cache header"));
     };
-    let current_mtime = entries_mtime_key()?;
-    if cached_mtime != current_mtime {
+    let Some(cached_attr) = parts.next().and_then(|s| s.strip_prefix("attr_mtime=")) else {
+        return Err(io::Error::other("invalid list cache header"));
+    };
+    let current_data = dir_mtime_key(data_dir()?)?;
+    let current_attr = dir_mtime_key(attr_dir()?)?;
+    if cached_data != current_data || cached_attr != current_attr {
         return Err(io::Error::other("stale list cache"));
     }
     let mut items = Vec::new();
@@ -201,8 +215,11 @@ fn write_list_cache(items: &[Meta]) -> io::Result<()> {
     init()?;
     let path = list_cache_path()?;
     let mut out = String::new();
-    out.push_str("mtime=");
-    out.push_str(&entries_mtime_key()?);
+    out.push_str("data_mtime=");
+    out.push_str(&dir_mtime_key(data_dir()?)?);
+    out.push(' ');
+    out.push_str("attr_mtime=");
+    out.push_str(&dir_mtime_key(attr_dir()?)?);
     out.push('\n');
     for item in items {
         out.push_str(&item.to_json_compact());
@@ -245,29 +262,29 @@ pub fn resolve(input: &str) -> io::Result<String> {
         let n = rest.parse::<usize>().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid stack ref"))?;
         return nth_newest(n).map(|m| m.id);
     }
-    let upper = raw.to_ascii_uppercase();
-    if upper.chars().all(|c| c.is_ascii_digit()) {
-        let n = upper.parse::<usize>().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid index"))?;
+    let lower = raw.to_ascii_lowercase();
+    if lower.chars().all(|c| c.is_ascii_digit()) {
+        let n = lower.parse::<usize>().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid index"))?;
         return nth_newest(n).map(|m| m.id);
     }
-    if upper.len() < MIN_ID_LEN {
+    if lower.len() < MIN_ID_LEN {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "id too short"));
     }
     let ids = list_entry_ids()?;
     if ids.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "stash is empty"));
     }
-    if let Some(id) = ids.iter().find(|id| **id == upper) {
+    if let Some(id) = ids.iter().find(|id| **id == lower) {
         return Ok(id.clone());
     }
-    let prefix: Vec<_> = ids.iter().filter(|id| id.starts_with(&upper)).cloned().collect();
+    let prefix: Vec<_> = ids.iter().filter(|id| id.starts_with(&lower)).cloned().collect();
     if prefix.len() == 1 {
         return Ok(prefix[0].clone());
     }
     if prefix.len() > 1 {
         return Err(io::Error::other("ambiguous id"));
     }
-    let suffix: Vec<_> = ids.iter().filter(|id| id.ends_with(&upper)).cloned().collect();
+    let suffix: Vec<_> = ids.iter().filter(|id| id.ends_with(&lower)).cloned().collect();
     if suffix.len() == 1 {
         return Ok(suffix[0].clone());
     }
@@ -278,13 +295,13 @@ pub fn resolve(input: &str) -> io::Result<String> {
 }
 
 pub fn get_meta(id: &str) -> io::Result<Meta> {
-    let path = entry_dir(id)?.join("attr");
+    let path = entry_attr_path(id)?;
     let data = fs::read_to_string(path)?;
     parse_attr_file(&data).map_err(io::Error::other)
 }
 
 pub fn write_meta(id: &str, meta: &Meta) -> io::Result<()> {
-    let result = fs::write(entry_dir(id)?.join("attr"), encode_attr(meta));
+    let result = fs::write(entry_attr_path(id)?, encode_attr(meta));
     if result.is_ok() {
         invalidate_list_cache();
     }
@@ -314,19 +331,23 @@ pub fn cat_to_writer<W: Write>(id: &str, mut writer: W) -> io::Result<()> {
 }
 
 pub fn remove(id: &str) -> io::Result<()> {
-    let result = fs::remove_dir_all(entry_dir(id)?);
-    if result.is_ok() {
-        invalidate_list_cache();
+    let data_result = fs::remove_file(entry_data_path(id)?);
+    if data_result.is_err() && data_result.as_ref().err().is_some_and(|e| e.kind() != io::ErrorKind::NotFound) {
+        return data_result;
     }
-    result
+    let attr_result = fs::remove_file(entry_attr_path(id)?);
+    if attr_result.is_err() && attr_result.as_ref().err().is_some_and(|e| e.kind() != io::ErrorKind::NotFound) {
+        return attr_result;
+    }
+    invalidate_list_cache();
+    Ok(())
 }
 
 pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>) -> io::Result<String> {
     init()?;
     let id = new_ulid()?;
-    let tmp = tmp_dir()?.join(&id);
-    fs::create_dir_all(&tmp)?;
-    let data_path = tmp.join("data");
+    let tmp = tmp_dir()?;
+    let data_path = tmp.join(format!("{id}.data"));
     let mut data = File::create(&data_path)?;
     let mut sample = Vec::new();
     let mut total = 0i64;
@@ -352,8 +373,10 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
         preview: build_preview_data(&sample, sample.len()),
         attrs,
     };
-    fs::write(tmp.join("attr"), encode_attr(&meta))?;
-    fs::rename(tmp, entry_dir(&id)?)?;
+    let attr_path = tmp.join(format!("{id}.attr"));
+    fs::write(&attr_path, encode_attr(&meta))?;
+    fs::rename(&data_path, entry_data_path(&id)?)?;
+    fs::rename(&attr_path, entry_attr_path(&id)?)?;
     invalidate_list_cache();
     Ok(id)
 }
@@ -366,9 +389,9 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
 ) -> io::Result<String> {
     init()?;
     let id = new_ulid()?;
-    let tmp = tmp_dir()?.join(&id);
-    fs::create_dir_all(&tmp)?;
-    let mut data = File::create(tmp.join("data"))?;
+    let tmp = tmp_dir()?;
+    let data_path = tmp.join(format!("{id}.data"));
+    let mut data = File::create(&data_path)?;
     let mut sample = Vec::new();
     let mut total = 0i64;
     let mut buf = [0u8; 8192];
@@ -377,7 +400,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
             Ok(n) => n,
             Err(err) => {
                 if !partial || total == 0 {
-                    let _ = fs::remove_dir_all(&tmp);
+                    let _ = fs::remove_file(&data_path);
                     return Err(err);
                 }
                 attrs.insert("partial".into(), "true".into());
@@ -388,8 +411,10 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                     preview: build_preview_data(&sample, sample.len()),
                     attrs,
                 };
-                fs::write(tmp.join("attr"), encode_attr(&meta))?;
-                fs::rename(&tmp, entry_dir(&id)?)?;
+                let attr_path = tmp.join(format!("{id}.attr"));
+                fs::write(&attr_path, encode_attr(&meta))?;
+                fs::rename(&data_path, entry_data_path(&id)?)?;
+                fs::rename(&attr_path, entry_attr_path(&id)?)?;
                 invalidate_list_cache();
                 return Err(io::Error::other(PartialSavedError { id, cause: err }));
             }
@@ -402,12 +427,12 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
             sample.extend_from_slice(&buf[..need]);
         }
         if let Err(err) = data.write_all(&buf[..n]) {
-            let _ = fs::remove_dir_all(&tmp);
+            let _ = fs::remove_file(&data_path);
             return Err(err);
         }
         if let Err(err) = stdout.write_all(&buf[..n]) {
             if !partial || total == 0 {
-                let _ = fs::remove_dir_all(&tmp);
+                let _ = fs::remove_file(&data_path);
                 return Err(err);
             }
             attrs.insert("partial".into(), "true".into());
@@ -418,8 +443,10 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                 preview: build_preview_data(&sample, sample.len()),
                 attrs,
             };
-            fs::write(tmp.join("attr"), encode_attr(&meta))?;
-            fs::rename(&tmp, entry_dir(&id)?)?;
+            let attr_path = tmp.join(format!("{id}.attr"));
+            fs::write(&attr_path, encode_attr(&meta))?;
+            fs::rename(&data_path, entry_data_path(&id)?)?;
+            fs::rename(&attr_path, entry_attr_path(&id)?)?;
             invalidate_list_cache();
             return Err(io::Error::other(PartialSavedError { id, cause: err }));
         }
@@ -434,8 +461,10 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
         preview: build_preview_data(&sample, sample.len()),
         attrs,
     };
-    fs::write(tmp.join("attr"), encode_attr(&meta))?;
-    fs::rename(tmp, entry_dir(&id)?)?;
+    let attr_path = tmp.join(format!("{id}.attr"));
+    fs::write(&attr_path, encode_attr(&meta))?;
+    fs::rename(&data_path, entry_data_path(&id)?)?;
+    fs::rename(&attr_path, entry_attr_path(&id)?)?;
     invalidate_list_cache();
     Ok(id)
 }
@@ -496,7 +525,7 @@ fn new_ulid() -> io::Result<String> {
     }
     let mut rand = File::open("/dev/urandom")?;
     rand.read_exact(&mut bytes[6..])?;
-    Ok(encode_ulid(bytes))
+    Ok(encode_ulid(bytes).to_ascii_lowercase())
 }
 
 fn encode_ulid(bytes: [u8; 16]) -> String {
