@@ -36,13 +36,11 @@ func newRmCmd() *cobra.Command {
 			if before != "" {
 				return runRmBefore(before, force)
 			}
-			return store.WithLock(func() error {
-				id, err := store.Resolve(args[0])
-				if err != nil {
-					return err
-				}
-				return store.Remove(id)
-			})
+			id, err := store.Resolve(args[0])
+			if err != nil {
+				return err
+			}
+			return store.Remove(id)
 		},
 	}
 	cmd.Flags().StringVar(&before, "before", "", "Remove entries older than the referenced entry")
@@ -51,34 +49,32 @@ func newRmCmd() *cobra.Command {
 }
 
 func runRmBefore(ref string, force bool) error {
-	return store.WithLock(func() error {
-		id, err := store.Resolve(ref)
+	id, err := store.Resolve(ref)
+	if err != nil {
+		return err
+	}
+	ids, err := store.OlderThanIDs(id)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if !force {
+		ok, err := confirmRmBefore(ref, len(ids))
 		if err != nil {
 			return err
 		}
-		ids, err := store.OlderThanIDs(id)
-		if err != nil {
-			return err
-		}
-		if len(ids) == 0 {
+		if !ok {
 			return nil
 		}
-		if !force {
-			ok, err := confirmRmBefore(ref, len(ids))
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return nil
-			}
+	}
+	for _, id := range ids {
+		if err := store.Remove(id); err != nil {
+			return err
 		}
-		for _, id := range ids {
-			if err := store.Remove(id); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func confirmRmBefore(ref string, count int) (bool, error) {

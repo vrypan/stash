@@ -22,38 +22,6 @@ func buildPreviewData(buf []byte, chars int) string {
 	return buildTextPreview(buf, limit)
 }
 
-// SmartPreview reads up to chars bytes from an entry and returns a human-readable
-// preview string built from the sampled bytes.
-func SmartPreview(id string, chars int) (string, error) {
-	buf, err := readSample(id, chars)
-	if err != nil {
-		return "", err
-	}
-	return buildPreviewData(buf, chars), nil
-}
-
-// LongPreview returns up to maxLines of preview text from an entry.
-func LongPreview(id string, charsPerLine, maxLines int) ([]string, error) {
-	buf, err := readSample(id, charsPerLine*maxLines)
-	if err != nil {
-		return nil, err
-	}
-	if len(buf) == 0 {
-		return nil, nil
-	}
-
-	raw := buildPreviewData(buf, len(buf))
-
-	var lines []string
-	for _, line := range strings.SplitN(raw, "\n", maxLines+1) {
-		if len(lines) == maxLines {
-			break
-		}
-		lines = append(lines, line)
-	}
-	return lines, nil
-}
-
 // readSample reads up to n bytes from an entry's data file.
 // Always reads at least 512 bytes so previews have enough content.
 func readSample(id string, n int) ([]byte, error) {

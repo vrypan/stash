@@ -20,9 +20,7 @@ func runMetadataSet(id string, args []string) error {
 		}
 		attrs[k] = v
 	}
-	return store.WithLock(func() error {
-		return store.SetAttrs(id, attrs)
-	})
+	return store.SetAttrs(id, attrs)
 }
 
 func runMetadataUnset(id string, args []string) error {
@@ -31,7 +29,5 @@ func runMetadataUnset(id string, args []string) error {
 	}
 	keys := append([]string(nil), args...)
 	sort.Strings(keys)
-	return store.WithLock(func() error {
-		return store.UnsetAttrs(id, keys)
-	})
+	return store.UnsetAttrs(id, keys)
 }

@@ -14,7 +14,7 @@ Behavior:
   - remote stash root uses the explicit path if provided
   - otherwise remote stash root uses STASH_DIR if set remotely, otherwise ~/.stash
   - only entries/ are copied
-  - tmp/ and lock are created locally and are not copied from the remote machine
+  - tmp/ is created locally and is not copied from the remote machine
 EOF
 }
 
@@ -56,7 +56,6 @@ local_root="${STASH_DIR:-$HOME/.stash}"
 local_entries="$local_root/entries"
 
 mkdir -p "$local_entries" "$local_root/tmp"
-touch "$local_root/lock"
 
 if [[ -z "$remote_root" ]]; then
   remote_root="$(

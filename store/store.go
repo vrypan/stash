@@ -159,14 +159,6 @@ func cacheDir() (string, error) {
 	return filepath.Join(b, "cache"), nil
 }
 
-func LockFilePath() (string, error) {
-	b, err := BaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(b, "lock"), nil
-}
-
 // Init creates the base directory structure.
 func Init() error {
 	b, err := BaseDir()
@@ -182,15 +174,6 @@ func Init() error {
 			return err
 		}
 	}
-	lp, err := LockFilePath()
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(lp, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return err
-	}
-	f.Close()
 	return nil
 }
 
@@ -687,15 +670,6 @@ func Resolve(input string) (string, error) {
 	}
 
 	return "", &ErrNotFound{Input: input}
-}
-
-// Preview reads up to n bytes from the entry and returns a sanitized preview.
-func Preview(id string, n int) (string, error) {
-	buf, err := readSample(id, n)
-	if err != nil {
-		return "", err
-	}
-	return buildPreviewData(buf, n), nil
 }
 
 // Cat writes the entry's raw data to w.

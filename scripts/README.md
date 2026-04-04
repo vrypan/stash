@@ -21,8 +21,8 @@ stash-copy user@host:/remote/stash
 - otherwise the remote stash root uses remote `STASH_DIR` if set, otherwise
   `~/.stash`
 - only `entries/` are copied
-- local `tmp/` and `lock` are created if needed
-- remote `tmp/` and `lock` are not copied
+- local `tmp/` is created if needed
+- remote `tmp/` is not copied
 - local entries are not deleted if they do not exist on the remote side
 
 ### Requirements

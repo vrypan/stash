@@ -14,16 +14,14 @@ func newPopCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return store.WithLock(func() error {
-				m, err := store.Newest()
-				if err != nil {
-					return err
-				}
-				if err := store.Cat(m.ID, os.Stdout); err != nil {
-					return err
-				}
-				return store.Remove(m.ID)
-			})
+			m, err := store.Newest()
+			if err != nil {
+				return err
+			}
+			if err := store.Cat(m.ID, os.Stdout); err != nil {
+				return err
+			}
+			return store.Remove(m.ID)
 		},
 	}
 }
