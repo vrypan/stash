@@ -58,6 +58,9 @@ pub struct PushArgs {
     #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     attr: Vec<String>,
 
+    #[arg(short = 'q', long = "quiet", help = "Do not print the generated entry ID")]
+    quiet: bool,
+
     #[arg(help = "Optional file to stash; reads stdin when omitted")]
     file: Option<PathBuf>,
 }
@@ -66,6 +69,9 @@ pub struct PushArgs {
 pub struct TeeArgs {
     #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     attr: Vec<String>,
+
+    #[arg(short = 'q', long = "quiet", help = "Do not print the generated entry ID to stderr")]
+    quiet: bool,
 
     #[arg(long, help = "Save a partial entry if the stream is interrupted")]
     partial: bool,
@@ -252,6 +258,7 @@ pub fn run() -> io::Result<()> {
             if smart_mode_uses_tee(&cli.push) {
                 tee_command(TeeArgs {
                     attr: cli.push.attr,
+                    quiet: cli.push.quiet,
                     partial: false,
                 })
             } else {
@@ -321,7 +328,9 @@ fn push_command(args: PushArgs) -> io::Result<()> {
         let mut input = stdin.lock();
         store::push_from_reader(&mut input, attrs)?
     };
-    println!("{id}");
+    if !args.quiet {
+        println!("{id}");
+    }
     Ok(())
 }
 
@@ -333,7 +342,9 @@ fn tee_command(args: TeeArgs) -> io::Result<()> {
     let mut out = stdout.lock();
     match store::tee_from_reader_partial(&mut input, &mut out, attrs, args.partial) {
         Ok(id) => {
-            eprintln!("{id}");
+            if !args.quiet {
+                eprintln!("{id}");
+            }
             Ok(())
         }
         Err(err) => {
