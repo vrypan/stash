@@ -7,13 +7,14 @@ Usage:
   stash-copy user@host
   stash-copy user@host:/remote/stash
 
-Copies stash entries from a remote machine into the local stash repository.
+Copies stash data and attribute files from a remote machine into the local
+stash repository.
 
 Behavior:
   - local stash root uses STASH_DIR if set, otherwise ~/.stash
   - remote stash root uses the explicit path if provided
   - otherwise remote stash root uses STASH_DIR if set remotely, otherwise ~/.stash
-  - only entries/ are copied
+  - only data/ and attr/ are copied
   - tmp/ is created locally and is not copied from the remote machine
 EOF
 }
@@ -53,9 +54,10 @@ if [[ -z "$remote_host" ]]; then
 fi
 
 local_root="${STASH_DIR:-$HOME/.stash}"
-local_entries="$local_root/entries"
+local_data="$local_root/data"
+local_attr="$local_root/attr"
 
-mkdir -p "$local_entries" "$local_root/tmp"
+mkdir -p "$local_data" "$local_attr" "$local_root/tmp"
 
 if [[ -z "$remote_root" ]]; then
   remote_root="$(
@@ -75,10 +77,16 @@ if [[ -z "$remote_root" ]]; then
   exit 1
 fi
 
-echo "Copying entries from $remote_host:$remote_root/entries/ to $local_entries/"
+echo "Copying data from $remote_host:$remote_root/data/ to $local_data/"
 rsync -a \
   -e ssh \
-  "$remote_host:$remote_root/entries/" \
-  "$local_entries/"
+  "$remote_host:$remote_root/data/" \
+  "$local_data/"
+
+echo "Copying attributes from $remote_host:$remote_root/attr/ to $local_attr/"
+rsync -a \
+  -e ssh \
+  "$remote_host:$remote_root/attr/" \
+  "$local_attr/"
 
 echo "Done."

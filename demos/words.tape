@@ -23,7 +23,7 @@ Sleep 0.8s
 
 Type "grep -Ei '^[a-z]{8,}$' /usr/share/dict/words | grep -Ei '(.)\1' | grep -Ei '[aeiou].*[aeiou].*[aeiou]' | awk '{ print length($0), $0 }' | sort -nr |"
 Enter
-Type "stash -m label=filtered-words"
+Type "stash -a label=filtered-words"
 Enter
 Sleep 1.4s
 
@@ -31,7 +31,7 @@ Type "# Show the stashed entry"
 Enter
 Sleep 0.8s
 
-Type "stash ls -l --meta label"
+Type "stash ls -l --attr label"
 Enter
 Sleep 1.2s
 

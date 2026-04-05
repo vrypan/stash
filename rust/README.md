@@ -1,10 +1,11 @@
-# stash-rs
-
-This is a parallel Rust implementation of `stash`.
+# stash
 
 Current status:
-- reads and writes the same `~/.stash` layout
-- supports the current core command set:
+- this is the active implementation of `stash`
+- reads and writes the current `~/.stash` layout:
+  - `data/<ulid>`
+  - `attr/<ulid>`
+- supports the current command set:
   - `push`
   - `tee`
   - `cat`
@@ -15,16 +16,19 @@ Current status:
   - `rm`
   - `pop`
   - `version`
-- matches the current attribute and preview layout
-- includes the ordered list cache used by the Go implementation
+- `completion`
+- stores flat attributes in `attr/<ulid>` and keeps the ordered list cache in
+  `cache/`
 
-Notable compatibility points:
+Notable behavior:
 - `ls` supports `-l`, `-n`, `-r`, `-p`, `--date`, `--size`, `--name`,
   `-a/--attr`, `--chars`, and `--id`
 - `log` supports `-n`, `-r`, `--json`, `--format`, `--date`,
   `-a/--attr`, `--chars`, and `--id`
 - `attr` supports `--json`, `-p/--preview`, `--separator`, and
-  `set` / `unset` with the same writable-key rules as Go
+  `set` / `unset`
+- `path` supports `-a/--attr` for the attribute file path and `-d/--dir` for
+  the containing directory
 - `tee` supports `--partial`
 
 Run it with:

@@ -16,8 +16,8 @@ stash Makefile
 stash push path/to/file.txt
 ```
 
-When stashing a file path, `stash` stores the basename in entry metadata as
-`filename`.
+When stashing a file path, `stash` stores the basename as the `filename`
+attribute.
 
 Pass data through and stash it at the same time:
 
@@ -76,8 +76,8 @@ ryacf7sz
 a3f11qka
 
 $ stash ls -l
-ryacf7sz  384.3K  Tue Apr  1 13:35:40 2026 +0300  Forest-Green.png
-a3f11qka    493B  Tue Apr  1 13:16:06 2026 +0300  docker-forgejo.yml
+ryacf7sz  384.3K  Apr  1  Forest-Green.png
+a3f11qka    493B  Apr  1  docker-forgejo.yml
 ```
 
 In that model:

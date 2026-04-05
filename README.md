@@ -4,9 +4,9 @@
 
 `stash` is a small local store for pipeline output and ad hoc file snapshots.
 
-It stores each entry as raw bytes under `~/.stash`, assigns it a stable ULID,
-and lets you retrieve entries by recency or ID later. Everything is flat files
-and directories.
+It stores each entry as raw bytes under `~/.stash/data`, stores attributes
+under `~/.stash/attr`, assigns it a stable ULID, and lets you retrieve entries
+by recency or ID later. Everything is flat files and directories.
 
 > [!TIP]
 > stash fits nicely in any workflow that would involve temporary files, or
@@ -50,8 +50,12 @@ stash attr @1
 
 ### From Source
 
-Clone the repo, and run `make build`. Copy the generated binary `stash` to a
-location in your `PATH`.
+Build the Rust binary and copy it to a location in your `PATH`:
+
+```bash
+cargo build --manifest-path rust/Cargo.toml --release
+cp rust/target/release/stash /usr/local/bin/stash
+```
 
 ### Pre-built binaries
 

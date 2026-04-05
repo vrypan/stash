@@ -4,7 +4,7 @@ This directory contains helper scripts around `stash`.
 
 ## `stash-copy`
 
-Copies stash entries from a remote machine into the local stash repository over
+Copies stash data and attribute files from a remote machine into the local stash repository over
 SSH using `rsync`.
 
 ### Usage
@@ -20,7 +20,7 @@ stash-copy user@host:/remote/stash
 - remote stash root uses the explicit path if provided
 - otherwise the remote stash root uses remote `STASH_DIR` if set, otherwise
   `~/.stash`
-- only `entries/` are copied
+- `data/` and `attr/` are copied
 - local `tmp/` is created if needed
 - remote `tmp/` is not copied
 - local entries are not deleted if they do not exist on the remote side
@@ -87,8 +87,8 @@ stash attr @1 command
 
 ## `stash-push-type`
 
-Wraps the local `stash` binary and records a `type` metadata field using the
-system `file` command after the entry is created.
+Wraps the local `stash` binary and records a `type` attribute using the system
+`file` command after the entry is created.
 
 ### Usage
 
