@@ -132,7 +132,7 @@ pub struct LogArgs {
     #[arg(long, help = "Output verbose entry history as JSON")]
     json: bool,
 
-    #[arg(long, help = "Template for custom log output")]
+    #[arg(long, help = "Format string with {field} and {attr:key} placeholders")]
     format: Option<String>,
 
     #[arg(long, default_value = "iso", help = "Date format: iso or ago")]
@@ -371,7 +371,7 @@ struct DecoratedEntry {
     filename: Option<String>,
     meta_vals: Vec<String>,
     meta_inline: String,
-    log_meta: String,
+    log_attr_lines: Vec<(String, String)>,
 }
 
 fn decorate_entries(
@@ -410,7 +410,22 @@ fn decorate_entry(
     } else {
         String::new()
     };
-    let log_meta = format_log_meta(&item.attrs, meta_sel).unwrap_or_default();
+    let log_attr_lines = if meta_sel.show_all || !meta_sel.tags.is_empty() {
+        if meta_sel.show_all {
+            item.attrs
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        } else {
+            meta_sel
+                .tags
+                .iter()
+                .filter_map(|tag| item.attrs.get(tag).map(|v| (tag.clone(), v.clone())))
+                .collect()
+        }
+    } else {
+        Vec::new()
+    };
     let preview = if item.preview.is_empty() {
         String::new()
     } else {
@@ -425,7 +440,7 @@ fn decorate_entry(
         filename,
         meta_vals,
         meta_inline,
-        log_meta,
+        log_attr_lines,
     }
 }
 
@@ -464,7 +479,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
     {
         let stdout = io::stdout();
         let mut out = stdout.lock();
-        let rows = decorate_entries(&items, &args.id, ls_date_mode, effective_chars, &meta_sel);
+    let rows = decorate_entries(&items, &args.id, ls_date_mode, effective_chars, &meta_sel);
         for row in rows {
             write_colored(&mut out, &row.id, "1;33", color)?;
             writeln!(out)?;
@@ -494,7 +509,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
             filename,
             meta_vals,
             meta_inline,
-            log_meta: _,
+            log_attr_lines: _,
         } = row;
         rows.push(LsRow {
             id: id.clone(),
@@ -587,7 +602,7 @@ fn log_command(args: LogArgs) -> io::Result<()> {
         return Ok(());
     }
     if let Some(format) = args.format.as_deref() {
-        return print_log_template(&items, date_mode, args.chars, format);
+        return print_log_template(&items, date_mode, args.chars, format, color);
     }
 
     let stdout = io::stdout();
@@ -600,12 +615,14 @@ fn log_command(args: LogArgs) -> io::Result<()> {
         write!(out, "entry ")?;
         write_colored(&mut out, &row.id, "1;33", color)?;
         writeln!(out, " ({})", row.size_human)?;
-        write_colored(&mut out, "Date: ", "1", color)?;
+        write_colored(&mut out, "date: ", "1", color)?;
         writeln!(out, "{}", row.date)?;
-        if !row.log_meta.is_empty() {
-            write_colored(&mut out, "Meta: ", "1", color)?;
-            write_colored(&mut out, &row.log_meta, "35", color)?;
-            writeln!(out)?;
+        if !row.log_attr_lines.is_empty() {
+            for (key, value) in row.log_attr_lines {
+                write_colored(&mut out, &format!("{key}: "), "1", color)?;
+                write_colored(&mut out, &value, "35", color)?;
+                writeln!(out)?;
+            }
         }
         if !row.preview.is_empty() {
             writeln!(out)?;
@@ -1069,22 +1086,6 @@ fn format_ls_date(ts: &str) -> Option<String> {
     }
 }
 
-fn format_log_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> Option<String> {
-    let mut parts = Vec::new();
-    if sel.show_all {
-        for (k, v) in attrs {
-            parts.push(format!("{k}={v}"));
-        }
-    } else {
-        for tag in &sel.tags {
-            if let Some(v) = attrs.get(tag) {
-                parts.push(format!("{tag}={v}"));
-            }
-        }
-    }
-    (!parts.is_empty()).then(|| parts.join("  "))
-}
-
 fn print_log_json(items: &[Meta], date_mode: &str, chars: usize) {
     #[derive(Serialize)]
     struct LogJsonEntry {
@@ -1175,17 +1176,25 @@ fn is_writable_attr_key(key: &str) -> bool {
 
 fn log_template_value(item: &Meta, idx: usize, date_mode: &str, chars: usize, key: &str) -> Option<String> {
     match key {
-        "ID" => Some(item.display_id()),
-        "ShortID" => Some(item.short_id()),
-        "StackRef" => Some((idx + 1).to_string()),
-        "TS" => Some(item.ts.clone()),
-        "Date" => Some(format_date(&item.ts, date_mode)),
-        "Size" => Some(item.size.to_string()),
-        "SizeHuman" => Some(store::human_size(item.size)),
-        "Preview" => {
+        "id" => Some(item.display_id()),
+        "short_id" => Some(item.short_id()),
+        "stack_ref" => Some((idx + 1).to_string()),
+        "ts" => Some(item.ts.clone()),
+        "date" => Some(format_date(&item.ts, date_mode)),
+        "size" => Some(item.size.to_string()),
+        "size_human" => Some(store::human_size(item.size)),
+        "preview" => {
             let preview = preview_snippet(&item.preview, chars);
             (!preview.is_empty()).then_some(preview)
         }
+        _ => None,
+    }
+}
+
+fn placeholder_color_code(expr: &str) -> Option<&'static str> {
+    match expr {
+        "id" | "short_id" | "stack_ref" => Some("1;33"),
+        s if s.starts_with("attr:") => Some("35"),
         _ => None,
     }
 }
@@ -1196,44 +1205,43 @@ fn render_log_template(
     date_mode: &str,
     chars: usize,
     format: &str,
+    color: bool,
 ) -> String {
     let mut out = String::new();
     let mut rest = format;
-    while let Some(start) = rest.find("{{") {
+    while let Some(start) = rest.find('{') {
         out.push_str(&rest[..start]);
-        let after = &rest[start + 2..];
-        let Some(end) = after.find("}}") else {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('}') else {
             out.push_str(&rest[start..]);
             return out;
         };
         let expr = after[..end].trim();
-        if let Some(key) = expr.strip_prefix('.') {
-            if let Some(value) = log_template_value(item, idx, date_mode, chars, key) {
+        let value = if let Some(key) = expr.strip_prefix("attr:") {
+            item.attrs.get(key).cloned()
+        } else {
+            log_template_value(item, idx, date_mode, chars, expr)
+        };
+        if let Some(value) = value {
+            if let Some(code) = placeholder_color_code(expr) {
+                push_colorized(&mut out, &value, code, color);
+            } else {
                 out.push_str(&value);
             }
-        } else if let Some(key) = parse_index_meta_expr(expr) {
-            if let Some(value) = item.attrs.get(key) {
-                out.push_str(value);
-            }
+        } else {
+            out.push('{');
+            out.push_str(expr);
+            out.push('}');
         }
-        rest = &after[end + 2..];
+        rest = &after[end + 1..];
     }
     out.push_str(rest);
     out
 }
 
-fn parse_index_meta_expr(expr: &str) -> Option<&str> {
-    let rest = expr.strip_prefix("index .Meta ")?;
-    let rest = rest.trim();
-    if !rest.starts_with('"') || !rest.ends_with('"') || rest.len() < 2 {
-        return None;
-    }
-    Some(&rest[1..rest.len() - 1])
-}
-
-fn print_log_template(items: &[Meta], date_mode: &str, chars: usize, format: &str) -> io::Result<()> {
+fn print_log_template(items: &[Meta], date_mode: &str, chars: usize, format: &str, color: bool) -> io::Result<()> {
     for (idx, item) in items.iter().enumerate() {
-        println!("{}", render_log_template(item, idx, date_mode, chars, format));
+        println!("{}", render_log_template(item, idx, date_mode, chars, format, color));
     }
     Ok(())
 }
