@@ -3,23 +3,23 @@
 set -euo pipefail
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
-  echo "usage: $0 <go-binary> <rust-binary> [setup-binary]" >&2
+  echo "usage: $0 <baseline-binary> <candidate-binary> [setup-binary]" >&2
   exit 2
 fi
 
-GO_BIN=$1
-RUST_BIN=$2
-SETUP_BIN=${3:-$GO_BIN}
+BASELINE_BIN=$1
+CANDIDATE_BIN=$2
+SETUP_BIN=${3:-$BASELINE_BIN}
 
 COUNT=${COUNT:-1000}
 REPEAT=${REPEAT:-20}
 
-if [[ ! -x "$GO_BIN" ]]; then
-  echo "go binary is not executable: $GO_BIN" >&2
+if [[ ! -x "$BASELINE_BIN" ]]; then
+  echo "baseline binary is not executable: $BASELINE_BIN" >&2
   exit 2
 fi
-if [[ ! -x "$RUST_BIN" ]]; then
-  echo "rust binary is not executable: $RUST_BIN" >&2
+if [[ ! -x "$CANDIDATE_BIN" ]]; then
+  echo "candidate binary is not executable: $CANDIDATE_BIN" >&2
   exit 2
 fi
 if [[ ! -x "$SETUP_BIN" ]]; then
@@ -111,22 +111,22 @@ measure_avg() {
 
 print_row() {
   local label=$1
-  local go_cmd=$2
-  local rust_cmd=$3
-  local go_avg rust_avg
+  local baseline_cmd=$2
+  local candidate_cmd=$3
+  local baseline_avg candidate_avg
 
   # shellcheck disable=SC2206
-  local go_args=($go_cmd)
+  local baseline_args=($baseline_cmd)
   # shellcheck disable=SC2206
-  local rust_args=($rust_cmd)
+  local candidate_args=($candidate_cmd)
 
-  go_avg=$(measure_avg "$GO_BIN" "${go_args[@]}")
-  rust_avg=$(measure_avg "$RUST_BIN" "${rust_args[@]}")
+  baseline_avg=$(measure_avg "$BASELINE_BIN" "${baseline_args[@]}")
+  candidate_avg=$(measure_avg "$CANDIDATE_BIN" "${candidate_args[@]}")
 
-  printf '%-24s  go=%8.3f ms  rust=%8.3f ms\n' \
+  printf '%-24s  base=%8.3f ms  cand=%8.3f ms\n' \
     "$label" \
-    "$(awk -v s="$go_avg" 'BEGIN { print s * 1000 }')" \
-    "$(awk -v s="$rust_avg" 'BEGIN { print s * 1000 }')"
+    "$(awk -v s="$baseline_avg" 'BEGIN { print s * 1000 }')" \
+    "$(awk -v s="$candidate_avg" 'BEGIN { print s * 1000 }')"
 }
 
 echo
