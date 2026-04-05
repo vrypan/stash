@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use stash::store;
+use stash_cli::store;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Cursor;
