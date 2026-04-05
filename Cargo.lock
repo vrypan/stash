@@ -524,7 +524,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stash-rs"
+name = "stash"
 version = "0.1.0"
 dependencies = [
  "bincode",

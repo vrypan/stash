@@ -74,8 +74,8 @@ n5pwa78h  99B  Thu Apr  2 22:03:41 2026 +0300  01kn7s8wd35es5txscn5pwa78h  gcc-1
 aczsve56  99B  Thu Apr  2 21:58:35 2026 +0300  01kn7rzhew4tghsh4aaczsve56  gcc-15.2.0
 
 # if you create entries from various jobs, you can set an attribute when the entry is created
-cargo build --manifest-path rust/Cargo.toml --release 2>&1 | stash tee -a type=build.log
-cargo test --manifest-path rust/Cargo.toml 2>&1 | stash tee -a type=tests.log
+cargo build --release 2>&1 | stash tee -a type=build.log
+cargo test 2>&1 | stash tee -a type=tests.log
 
 # deleting old entries is easy
 stash rm --before n5pwa78h

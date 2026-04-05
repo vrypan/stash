@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use stash_rs::store;
+use stash::store;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Cursor;
@@ -30,7 +30,7 @@ fn temp_stash_dir(name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("stash-rs-bench-{name}-{nanos}"));
+    let dir = std::env::temp_dir().join(format!("stash-bench-{name}-{nanos}"));
     fs::create_dir_all(&dir).unwrap();
     dir
 }

@@ -244,7 +244,7 @@ pub fn run() -> io::Result<()> {
         Some(Command::Rm(args)) => rm_command(args),
         Some(Command::Pop) => pop_command(),
         Some(Command::Version) => {
-            println!("stash-rs {}", env!("CARGO_PKG_VERSION"));
+            println!("stash {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         Some(Command::Completion(args)) => completion_command(args),

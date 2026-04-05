@@ -53,8 +53,8 @@ stash attr @1
 Build the Rust binary and copy it to a location in your `PATH`:
 
 ```bash
-cargo build --manifest-path rust/Cargo.toml --release
-cp rust/target/release/stash /usr/local/bin/stash
+cargo build --release
+cp target/release/stash /usr/local/bin/stash
 ```
 
 ### Pre-built binaries
