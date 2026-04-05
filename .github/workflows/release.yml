@@ -62,12 +62,12 @@ jobs:
         shell: bash
         run: |
           VERSION=$(python3 - <<'PY'
-import tomllib
-from pathlib import Path
+          import tomllib
+          from pathlib import Path
 
-data = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))
-print(data["package"]["version"])
-PY
+          data = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))
+          print(data["package"]["version"])
+          PY
           )
           TAG="v$VERSION"
 
