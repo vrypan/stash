@@ -99,14 +99,21 @@ class Stash < Formula
   def install
     if which("stash")
       installed = Utils.safe_popen_read("stash", "version").strip
-      if installed =~ /\Astash (\S+)\z/
-        existing_version = Version.new(Regexp.last_match(1))
+      version_text =
+        if installed =~ /\Astash (\S+)\z/
+          Regexp.last_match(1)
+        elsif installed =~ /\A\d+\.\d+\.\d+(?:[-+][^\s]+)?\z/
+          installed
+        end
+
+      if version_text
+        existing_version = Version.new(version_text)
         if existing_version < Version.new("0.5.0")
           odie <<~EOS
             stash #{existing_version} is installed.
             Automatic upgrade from versions older than 0.5.0 is not supported.
             Visit https://github.com/vrypan/stash for more info.
-            To force the upgrade: `brew uninstall stash` first, then install again.
+            To force the upgrade: brew uninstall stash first, then install again.
           EOS
         end
       end

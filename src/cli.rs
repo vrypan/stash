@@ -49,8 +49,6 @@ enum Command {
     Rm(RmArgs),
     #[command(about = "Print the newest entry and remove it")]
     Pop,
-    #[command(about = "Print version information")]
-    Version,
     #[command(about = "Generate shell completion scripts")]
     Completion(CompletionArgs),
 }
@@ -243,10 +241,6 @@ pub fn run() -> io::Result<()> {
         Some(Command::Path(args)) => path_command(args),
         Some(Command::Rm(args)) => rm_command(args),
         Some(Command::Pop) => pop_command(),
-        Some(Command::Version) => {
-            println!("stash {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
         Some(Command::Completion(args)) => completion_command(args),
         None => push_command(cli.push),
     }

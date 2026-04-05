@@ -15,7 +15,6 @@ stash pop
 stash rm <id>
 stash rm --before <id|@n>
 stash completion <bash|zsh|fish>
-stash version
 ```
 
 `stash list` is an alias for `stash log`.
