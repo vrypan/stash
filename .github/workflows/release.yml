@@ -61,14 +61,11 @@ jobs:
         name: Derive and push release tag
         shell: bash
         run: |
-          VERSION=$(python3 - <<'PY'
-          import tomllib
-          from pathlib import Path
-
-          data = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))
-          print(data["package"]["version"])
-          PY
-          )
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          if [[ -z "$VERSION" ]]; then
+            echo "could not read version from Cargo.toml" >&2
+            exit 1
+          fi
           TAG="v$VERSION"
 
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
