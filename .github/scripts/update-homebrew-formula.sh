@@ -8,6 +8,7 @@ repo="stash"
 tap_repo="homebrew-tap"
 tap_branch="main"
 formula_name="stash"
+package_name="stash-cli"
 homepage="https://github.com/${owner}/${repo}"
 description="A local store for pipeline output and ad hoc file snapshots."
 license_name="MIT"
@@ -35,7 +36,7 @@ asset_name() {
       exit 1
       ;;
   esac
-  printf "%s-%s.tar.xz" "${formula_name}" "${target}"
+  printf "%s-%s.tar.xz" "${package_name}" "${target}"
 }
 
 asset_url() {
