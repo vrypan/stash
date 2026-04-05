@@ -97,16 +97,18 @@ class Stash < Formula
   end
 
   def install
-    cellar = HOMEBREW_CELLAR/"stash"
-    if cellar.exist?
-      installed = cellar.subdirs.map { |d| Version.new(d.basename.to_s) }.max
-      if installed && installed < Version.new("0.5.0")
-        odie <<~EOS
-          stash #{installed} is installed.
-          Automatic upgrade from versions older than 0.5.0 is not supported.
-          Visit https://github.com/vrypan/stash for more info.
-          To force the upgrade: `brew uninstall stash` first, then install again.
-        EOS
+    if (existing = which("stash"))
+      installed = Utils.safe_popen_read(existing, "version").strip
+      if installed =~ /\Astash (\S+)\z/
+        existing_version = Version.new(Regexp.last_match(1))
+        if existing_version < Version.new("0.5.0")
+          odie <<~EOS
+            stash #{existing_version} is installed.
+            Automatic upgrade from versions older than 0.5.0 is not supported.
+            Visit https://github.com/vrypan/stash for more info.
+            To force the upgrade: `brew uninstall stash` first, then install again.
+          EOS
+        end
       end
     end
 
