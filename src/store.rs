@@ -2,7 +2,6 @@ use crate::preview::build_preview_data;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
-use signal_hook::flag as signal_flag;
 use signal_hook::low_level;
 use signal_hook::SigId;
 use std::collections::BTreeMap;
@@ -11,7 +10,7 @@ use std::fs::{self, File};
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const SHORT_ID_LEN: usize = 8;
@@ -22,6 +21,7 @@ const LIST_CACHE_VERSION: u32 = 1;
 pub struct PartialSavedError {
     pub id: String,
     pub cause: io::Error,
+    pub signal: Option<i32>,
 }
 
 impl std::fmt::Display for PartialSavedError {
@@ -357,7 +357,8 @@ pub fn remove(id: &str) -> io::Result<()> {
 pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>) -> io::Result<String> {
     init()?;
     let interrupted = Arc::new(AtomicBool::new(false));
-    let _signal_guard = SignalGuard::new(&interrupted)?;
+    let signal = Arc::new(AtomicI32::new(0));
+    let _signal_guard = SignalGuard::new(&interrupted, &signal)?;
     let id = new_ulid()?;
     let tmp = tmp_dir()?;
     let data_path = tmp.join(format!("{id}.data"));
@@ -375,12 +376,26 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
                 total,
                 attrs,
                 true,
-                io::Error::new(io::ErrorKind::Interrupted, "interrupted by signal"),
+                true,
+                signal_error(&signal),
+                Some(signal.load(Ordering::Relaxed)),
             );
         }
         let n = match reader.read(&mut buf) {
             Ok(n) => n,
-            Err(err) => return save_or_abort_partial(id, data_path, &sample, total, attrs, true, err),
+            Err(err) => {
+                return save_or_abort_partial(
+                    id,
+                    data_path,
+                    &sample,
+                    total,
+                    attrs,
+                    true,
+                    false,
+                    err,
+                    None,
+                )
+            }
         };
         if n == 0 {
             if interrupted.load(Ordering::Relaxed) {
@@ -391,7 +406,9 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
                     total,
                     attrs,
                     true,
-                    io::Error::new(io::ErrorKind::Interrupted, "interrupted by signal"),
+                    true,
+                    signal_error(&signal),
+                    Some(signal.load(Ordering::Relaxed)),
                 );
             }
             break;
@@ -426,12 +443,13 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
 pub fn tee_from_reader_partial<R: Read, W: Write>(
     reader: &mut R,
     stdout: &mut W,
-    attrs: BTreeMap<String, String>,
+    mut attrs: BTreeMap<String, String>,
     save_on_error: bool,
 ) -> io::Result<String> {
     init()?;
     let interrupted = Arc::new(AtomicBool::new(false));
-    let _signal_guard = SignalGuard::new(&interrupted)?;
+    let signal = Arc::new(AtomicI32::new(0));
+    let _signal_guard = SignalGuard::new(&interrupted, &signal)?;
     let id = new_ulid()?;
     let tmp = tmp_dir()?;
     let data_path = tmp.join(format!("{id}.data"));
@@ -448,12 +466,26 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                 total,
                 attrs,
                 save_on_error,
-                io::Error::new(io::ErrorKind::Interrupted, "interrupted by signal"),
+                true,
+                signal_error(&signal),
+                Some(signal.load(Ordering::Relaxed)),
             );
         }
         let n = match reader.read(&mut buf) {
             Ok(n) => n,
-            Err(err) => return save_or_abort_partial(id, data_path, &sample, total, attrs, save_on_error, err),
+            Err(err) => {
+                return save_or_abort_partial(
+                    id,
+                    data_path,
+                    &sample,
+                    total,
+                    attrs,
+                    save_on_error,
+                    false,
+                    err,
+                    None,
+                )
+            }
         };
         if n == 0 {
             if interrupted.load(Ordering::Relaxed) {
@@ -464,7 +496,9 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                     total,
                     attrs,
                     save_on_error,
-                    io::Error::new(io::ErrorKind::Interrupted, "interrupted by signal"),
+                    true,
+                    signal_error(&signal),
+                    Some(signal.load(Ordering::Relaxed)),
                 );
             }
             break;
@@ -477,30 +511,29 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
             let _ = fs::remove_file(&data_path);
             return Err(err);
         }
-        if let Err(err) = stdout.write_all(&buf[..n]) {
-            if err.kind() == io::ErrorKind::BrokenPipe || !save_on_error || total == 0 {
-                let _ = fs::remove_file(&data_path);
-                return Err(err);
-            }
-            return save_or_abort_partial(id, data_path, &sample, total, attrs, save_on_error, err);
-        }
         total += n as i64;
+        if let Err(err) = stdout.write_all(&buf[..n]) {
+            drop(data);
+            if err.kind() == io::ErrorKind::BrokenPipe {
+                attrs.insert("partial".into(), "true".into());
+                return finalize_saved_entry(id, data_path, &sample, total, attrs);
+            }
+            return save_or_abort_partial(
+                id,
+                data_path,
+                &sample,
+                total,
+                attrs,
+                save_on_error,
+                false,
+                err,
+                None,
+            );
+        }
     }
     drop(data);
 
-    let meta = Meta {
-        id: id.clone(),
-        ts: now_rfc3339ish()?,
-        size: total,
-        preview: build_preview_data(&sample, sample.len()),
-        attrs,
-    };
-    let attr_path = tmp.join(format!("{id}.attr"));
-    fs::write(&attr_path, encode_attr(&meta))?;
-    fs::rename(&data_path, entry_data_path(&id)?)?;
-    fs::rename(&attr_path, entry_attr_path(&id)?)?;
-    invalidate_list_cache();
-    Ok(id)
+    finalize_saved_entry(id, data_path, &sample, total, attrs)
 }
 
 fn save_or_abort_partial(
@@ -510,13 +543,26 @@ fn save_or_abort_partial(
     total: i64,
     mut attrs: BTreeMap<String, String>,
     save_on_error: bool,
+    save_empty: bool,
     err: io::Error,
+    signal: Option<i32>,
 ) -> io::Result<String> {
-    if !save_on_error || total == 0 {
+    if !save_on_error || (total == 0 && !save_empty) {
         let _ = fs::remove_file(&data_path);
         return Err(err);
     }
     attrs.insert("partial".into(), "true".into());
+    finalize_saved_entry(id.clone(), data_path, sample, total, attrs)?;
+    Err(io::Error::other(PartialSavedError { id, cause: err, signal }))
+}
+
+fn finalize_saved_entry(
+    id: String,
+    data_path: PathBuf,
+    sample: &[u8],
+    total: i64,
+    attrs: BTreeMap<String, String>,
+) -> io::Result<String> {
     let meta = Meta {
         id: id.clone(),
         ts: now_rfc3339ish()?,
@@ -530,7 +576,7 @@ fn save_or_abort_partial(
     fs::rename(&data_path, entry_data_path(&id)?)?;
     fs::rename(&attr_path, entry_attr_path(&id)?)?;
     invalidate_list_cache();
-    Err(io::Error::other(PartialSavedError { id, cause: err }))
+    Ok(id)
 }
 
 struct SignalGuard {
@@ -538,10 +584,10 @@ struct SignalGuard {
 }
 
 impl SignalGuard {
-    fn new(flag: &Arc<AtomicBool>) -> io::Result<Self> {
+    fn new(flag: &Arc<AtomicBool>, signal: &Arc<AtomicI32>) -> io::Result<Self> {
         let ids = vec![
-            signal_flag::register(SIGINT, Arc::clone(flag)).map_err(io::Error::other)?,
-            signal_flag::register(SIGTERM, Arc::clone(flag)).map_err(io::Error::other)?,
+            register_signal(SIGINT, flag, signal)?,
+            register_signal(SIGTERM, flag, signal)?,
         ];
         Ok(Self { ids })
     }
@@ -553,6 +599,31 @@ impl Drop for SignalGuard {
             low_level::unregister(id);
         }
     }
+}
+
+fn register_signal(
+    signo: i32,
+    flag: &Arc<AtomicBool>,
+    signal: &Arc<AtomicI32>,
+) -> io::Result<SigId> {
+    let flag = Arc::clone(flag);
+    let signal = Arc::clone(signal);
+    unsafe {
+        low_level::register(signo, move || {
+            signal.store(signo, Ordering::Relaxed);
+            flag.store(true, Ordering::Relaxed);
+        })
+    }
+    .map_err(io::Error::other)
+}
+
+fn signal_error(signal: &Arc<AtomicI32>) -> io::Error {
+    let signo = signal.load(Ordering::Relaxed);
+    let msg = match signo {
+        SIGTERM => "terminated by signal",
+        _ => "interrupted by signal",
+    };
+    io::Error::new(io::ErrorKind::Interrupted, msg)
 }
 
 pub fn human_size(n: i64) -> String {

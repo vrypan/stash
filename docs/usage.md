@@ -41,8 +41,9 @@ control where the ID is emitted explicitly. `--print` by itself means
 `--save-on-error=true` (the default), an interrupted input stream is saved if
 any bytes were captured, including `Ctrl-C` interruption, and `stash tee`
 exits non-zero. Use
-`--save-on-error=false` to disable that behavior. Downstream broken pipes are
-still treated as normal exits and are not saved as partial entries.
+`--save-on-error=false` to disable that behavior. Downstream broken pipes still
+exit successfully; if any input was already captured, `stash tee` keeps the
+saved entry and marks it with `partial=true`.
 
 Retrieve data:
 

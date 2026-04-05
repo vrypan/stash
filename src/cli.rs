@@ -1,6 +1,7 @@
 use clap::{ArgAction, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
 use serde::Serialize;
+use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use std::collections::BTreeMap;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
@@ -235,11 +236,12 @@ pub fn main_entry() {
             .get_ref()
             .and_then(|e| e.downcast_ref::<store::PartialSavedError>())
         {
-            eprintln!(
-                "saved partial entry: {}",
-                partial_err.id.to_ascii_lowercase()
-            );
-            std::process::exit(4);
+            let code = match partial_err.signal {
+                Some(SIGINT) => 130,
+                Some(SIGTERM) => 143,
+                _ => 1,
+            };
+            std::process::exit(code);
         }
         eprintln!("error: {err}");
         std::process::exit(1);

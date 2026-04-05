@@ -7,8 +7,8 @@ All notable changes to `stash` are documented in this file.
 - Replace the earlier quiet flag with `--print=stdout|stderr|null` for
   `stash`, `stash push`, and `stash tee`, with numeric aliases `1`, `2`,
   and `0`.
-- Rename `--partial` to `--save-on-error`, default it to `true`, and keep
-  downstream broken pipes out of the saved-on-error path.
+- Rename `--partial` to `--save-on-error`, default it to `true`, and preserve
+  captured entries on downstream broken pipes while still exiting successfully.
 - Save captured input on `Ctrl-C` in both `stash tee` and stdin-driven
   `stash` when `--save-on-error=true` applies.
 - Treat broken pipes as normal exits in pipeline use.
