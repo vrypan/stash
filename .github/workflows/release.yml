@@ -283,3 +283,13 @@ PY
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
           gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+
+  update-homebrew-formula:
+    needs:
+      - plan
+      - host
+    if: ${{ needs.host.result == 'success' }}
+    uses: ./.github/workflows/update-homebrew-formula.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+    secrets: inherit

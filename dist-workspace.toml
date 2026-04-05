@@ -8,9 +8,13 @@ cargo-dist-version = "0.31.0"
 # CI backends to support
 ci = "github"
 # Keep the existing release workflow instead of cargo-dist's generated one
-# allow-dirty = ["ci"]
+allow-dirty = ["ci"]
+# Generate manual releases instead of tag-push releases
+dispatch-releases = true
+# Skip release-shape checks on pull requests
+pr-run-mode = "skip"
 # The installers to generate for each app
-installers = ["shell", "homebrew"]
+installers = ["shell"]
 # Extra files and directories to include in archives and installers
 include = ["docs", "scripts"]
 # Target platforms to build apps for (Rust target-triple syntax)
