@@ -2,6 +2,10 @@
 name = "stash"
 version = "0.1.0"
 edition = "2024"
+description = "A local store for pipeline output and ad hoc file snapshots"
+license = "MIT"
+repository = "https://github.com/vrypan/stash"
+homepage = "https://github.com/vrypan/stash"
 
 [[bin]]
 name = "stash"
@@ -20,3 +24,8 @@ criterion = "0.5.1"
 [[bench]]
 name = "cli"
 harness = false
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
