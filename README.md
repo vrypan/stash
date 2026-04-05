@@ -62,6 +62,12 @@ cargo build --release
 cp target/release/stash /usr/local/bin/stash
 ```
 
+### With Cargo
+
+```bash
+cargo install stash-cli
+```
+
 ### Pre-built binaries
 
 Available under [releases](/releases).

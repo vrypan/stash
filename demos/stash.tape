@@ -1,4 +1,4 @@
-Output "demos/stash.gif"
+Output "stash.gif"
 
 Set Shell "bash"
 Set FontSize 18

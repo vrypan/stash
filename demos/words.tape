@@ -1,4 +1,4 @@
-Output "demos/words.gif"
+Output "words.gif"
 
 Set Shell "bash"
 Set FontSize 18
