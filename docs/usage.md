@@ -9,6 +9,10 @@ git diff | stash
 printf 'hello\n' | stash
 ```
 
+Without a subcommand, `stash` uses smart mode:
+- in the middle of a pipeline, it behaves like `stash tee`
+- otherwise, it behaves like `stash push`
+
 Stash a file directly:
 
 ```bash
@@ -23,6 +27,7 @@ Pass data through and stash it at the same time:
 
 ```bash
 some-command | stash tee | next-command
+some-command | stash | next-command
 some-command | stash tee -a job=nightly | next-command
 some-command | stash tee --partial | next-command
 ```
@@ -97,6 +102,7 @@ Commands that accept an entry ID also accept stack references:
 stash cat @1
 stash cat @2
 stash attr @1
+stash attr @1 filename
 stash rm @3
 ```
 

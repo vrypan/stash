@@ -17,7 +17,7 @@ use crate::store::Meta;
     name = "stash",
     version,
     about = "A local store for pipeline output and ad hoc file snapshots",
-    long_about = None,
+    long_about = "A local store for pipeline output and ad hoc file snapshots.\n\nWhen used without a subcommand, stash picks a mode automatically:\n  - in the middle of a pipeline, it behaves like `stash tee`\n  - otherwise, it behaves like `stash push`",
     disable_help_subcommand = true
 )]
 struct Cli {
@@ -30,9 +30,9 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    #[command(about = "Stash stdin or a file")]
+    #[command(about = "Store and return the entry key")]
     Push(PushArgs),
-    #[command(about = "Stream stdin to stdout and stash it at the same time")]
+    #[command(about = "Store and forward to stdout")]
     Tee(TeeArgs),
     #[command(about = "Print an entry's raw data to stdout")]
     Cat(CatArgs),
@@ -55,7 +55,7 @@ enum Command {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct PushArgs {
-    #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Attribute key=value (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     attr: Vec<String>,
 
     #[arg(help = "Optional file to stash; reads stdin when omitted")]
@@ -64,7 +64,7 @@ pub struct PushArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct TeeArgs {
-    #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Attribute key=value (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     attr: Vec<String>,
 
     #[arg(long, help = "Save a partial entry if the stream is interrupted")]
@@ -82,7 +82,7 @@ pub struct LsArgs {
     #[arg(long, default_value = "short", help = "ID display: short, full, or pos")]
     id: String,
 
-    #[arg(short = 'a', long = "attr", value_name = "name|@", action = ArgAction::Append, help = "Show attributes with @, or filter by attribute name (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "name|@", action = ArgAction::Append, help = "Show all attributes with @, or filter by attribute name (repeatable)")]
     attr: Vec<String>,
 
     #[arg(short = 'n', long = "number", default_value_t = 0, help = "Limit number of entries shown (0 = all)")]
@@ -97,7 +97,7 @@ pub struct LsArgs {
     #[arg(long, default_missing_value = "human", num_args = 0..=1, help = "Include size column: human or bytes")]
     size: Option<String>,
 
-    #[arg(long, help = "Include filename or full ULID column")]
+    #[arg(long, help = "Include filename (attribute) if available, or else full ULID column")]
     name: bool,
 
     #[arg(short = 'p', long = "preview", help = "Append compact preview text")]
@@ -118,7 +118,7 @@ pub struct LogArgs {
     #[arg(long, default_value = "full", help = "ID display: short, full, or pos")]
     id: String,
 
-    #[arg(short = 'a', long = "attr", value_name = "name|@", action = ArgAction::Append, help = "Show attributes with @, or filter by attribute name (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "name|@", action = ArgAction::Append, help = "Show all attributes with @, or filter by attribute name (repeatable)")]
     attr: Vec<String>,
 
     #[arg(short = 'n', long = "number", default_value_t = 0, help = "Limit number of entries shown (0 = all)")]
@@ -139,9 +139,6 @@ pub struct LogArgs {
     #[arg(long, default_value_t = 80, help = "Preview character limit")]
     chars: usize,
 
-    #[arg(long, help = "Disable color output")]
-    no_color: bool,
-
     #[arg(long, default_value = "true", help = "Color output: true or false")]
     color: String,
 }
@@ -151,14 +148,14 @@ pub struct AttrArgs {
     #[arg(help = "Entry reference: id, n, or @n")]
     reference: String,
 
-    #[arg(help = "Attribute key, or set/unset command")]
-    key_or_cmd: Option<String>,
-
-    #[arg(help = "Extra arguments for set/unset")]
-    rest: Vec<String>,
+    #[arg(value_name = "KEY|KEY=VALUE", help = "Attribute keys to read, or key=value pairs to write")]
+    items: Vec<String>,
 
     #[arg(long, default_value = "\t", help = "Separator used between key and value")]
     separator: String,
+
+    #[arg(long = "unset", value_name = "KEY", action = ArgAction::Append, help = "Remove attribute key (repeatable)")]
+    unset: Vec<String>,
 
     #[arg(long, help = "Output attributes as JSON")]
     json: bool,
@@ -242,8 +239,21 @@ pub fn run() -> io::Result<()> {
         Some(Command::Rm(args)) => rm_command(args),
         Some(Command::Pop) => pop_command(),
         Some(Command::Completion(args)) => completion_command(args),
-        None => push_command(cli.push),
+        None => {
+            if smart_mode_uses_tee(&cli.push) {
+                tee_command(TeeArgs {
+                    attr: cli.push.attr,
+                    partial: false,
+                })
+            } else {
+                push_command(cli.push)
+            }
+        }
     }
+}
+
+fn smart_mode_uses_tee(args: &PushArgs) -> bool {
+    args.file.is_none() && !io::stdin().is_terminal() && !io::stdout().is_terminal()
 }
 
 fn parse_meta_flags(values: &[String]) -> io::Result<BTreeMap<String, String>> {
@@ -587,7 +597,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
 }
 
 fn log_command(args: LogArgs) -> io::Result<()> {
-    let color = if args.no_color { false } else { color_enabled(&args.color)? };
+    let color = color_enabled(&args.color)?;
     let date_mode = normalize_date_mode(&args.date)?;
     let meta_sel = parse_meta_selection(&args.attr)?;
     let items = collect_entries(&meta_sel, args.reverse, args.number)?;
@@ -628,57 +638,78 @@ fn log_command(args: LogArgs) -> io::Result<()> {
 
 fn attr_command(args: AttrArgs) -> io::Result<()> {
     let id = store::resolve(&args.reference)?;
-    if let Some(cmd) = args.key_or_cmd.as_deref() {
-        match cmd {
-            "set" => {
-                let mut attrs = BTreeMap::new();
-                for pair in &args.rest {
-                    let Some((k, v)) = pair.split_once('=') else {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "expected key=value",
-                        ));
-                    };
-                    if !is_writable_attr_key(k) {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            format!("only user-defined attributes are writable: {k:?}"),
-                        ));
-                    }
-                    attrs.insert(k.to_string(), v.to_string());
-                }
-                return store::set_attrs(&id, &attrs);
-            }
-            "unset" => {
-                for key in &args.rest {
-                    if !is_writable_attr_key(key) {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            format!("only user-defined attributes are writable: {key:?}"),
-                        ));
-                    }
-                }
-                return store::unset_attrs(&id, &args.rest);
-            }
-            _ if args.rest.is_empty() => {}
-            _ => {
+    if !args.unset.is_empty() {
+        if !args.items.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot combine --unset with reads or writes",
+            ));
+        }
+        for key in &args.unset {
+            if !is_writable_attr_key(key) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "attr get accepts exactly one key",
+                    format!("only user-defined attributes are writable: {key:?}"),
                 ));
             }
         }
+        return store::unset_attrs(&id, &args.unset);
+    }
+
+    let has_writes = args.items.iter().any(|item| item.contains('='));
+    let has_reads = args.items.iter().any(|item| !item.contains('='));
+    if has_writes && has_reads {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "cannot mix attribute reads and writes",
+        ));
+    }
+
+    if has_writes {
+        let mut attrs = BTreeMap::new();
+        for pair in &args.items {
+            let Some((k, v)) = pair.split_once('=') else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "expected key=value",
+                ));
+            };
+            if !is_writable_attr_key(k) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("only user-defined attributes are writable: {k:?}"),
+                ));
+            }
+            attrs.insert(k.to_string(), v.to_string());
+        }
+        return store::set_attrs(&id, &attrs);
     }
 
     let meta = store::get_meta(&id)?;
     if args.json {
-        serde_json::to_writer_pretty(io::stdout(), &meta.to_json_value(args.preview))
+        let value = if args.items.is_empty() {
+            meta.to_json_value(args.preview)
+        } else {
+            let mut map = serde_json::Map::new();
+            for key in &args.items {
+                let Some(value) = attr_value(&meta, key, args.preview) else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        format!("attribute not found: {key}"),
+                    ));
+                };
+                map.insert(key.clone(), serde_json::Value::String(value));
+            }
+            serde_json::Value::Object(map)
+        };
+        serde_json::to_writer_pretty(io::stdout(), &value)
             .map_err(io::Error::other)?;
         println!();
         return Ok(());
     }
 
-    if let Some(key) = args.key_or_cmd.as_deref() {
+    if args.items.len() == 1 {
+        let key = &args.items[0];
         if let Some(value) = attr_value(&meta, key, args.preview) {
             println!("{value}");
             return Ok(());
@@ -687,6 +718,19 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
             io::ErrorKind::NotFound,
             "attribute not found",
         ));
+    }
+
+    if !args.items.is_empty() {
+        for key in &args.items {
+            let Some(value) = attr_value(&meta, key, args.preview) else {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("attribute not found: {key}"),
+                ));
+            };
+            println!("{}{}{}", key, args.separator, value);
+        }
+        return Ok(());
     }
 
     println!("id{}{}", args.separator, meta.display_id());

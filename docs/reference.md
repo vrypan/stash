@@ -17,6 +17,10 @@ stash rm --before <id|@n>
 stash completion <bash|zsh|fish>
 ```
 
+Without a subcommand, `stash` uses smart mode:
+- in the middle of a pipeline, it behaves like `stash tee`
+- otherwise, it behaves like `stash push`
+
 `stash list` is an alias for `stash log`.
 
 ## Attr
@@ -37,15 +41,22 @@ Read a single field:
 stash attr @1 source
 ```
 
-Update attributes:
+Set attributes:
 
 ```bash
-stash attr @1 set source=usgs stage=raw
-stash attr @1 unset stage
+stash attr @1 source=usgs stage=raw
+stash attr @1 --unset stage
 ```
 
 Reserved fields such as `id`, `ts`, and `size` are read-only. Other
-attributes are writable with `attr set` and `attr unset`.
+attributes are writable directly with `key=value` and removable with
+`--unset`.
+
+Read multiple fields:
+
+```bash
+stash attr @1 source stage
+```
 
 Use `--json` to print the full flat attribute object:
 
@@ -129,6 +140,7 @@ Multiple `-a/--attr` flags are combined with OR.
 
 Notes:
 - `stash log` shows size, date, selected attributes, and a preview.
+- `--color=false` disables color output.
 - Use `stash ls` for one-line ID views and `stash ls -l` for file-oriented detail.
 
 ## Structured Output

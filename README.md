@@ -13,6 +13,10 @@ It stores each entry as raw bytes under `~/.stash/data`, stores attributes
 under `~/.stash/attr`, assigns it a stable ULID, and lets you retrieve entries
 by recency or ID later. Everything is flat files and directories.
 
+Without a subcommand, `stash` uses smart mode:
+- in the middle of a pipeline, it behaves like `stash tee`
+- otherwise, it behaves like `stash push`
+
 > [!TIP]
 > stash fits nicely in any workflow that would involve temporary files, or
 > expensive output that needs to be processed in more than one ways.
@@ -31,6 +35,7 @@ Keep the pipeline flowing while saving the same bytes:
 
 ```bash
 curl -s https://api.example.com/data | stash tee | jq .
+curl -s https://api.example.com/data | stash | jq .
 ```
 
 Use with diff:
