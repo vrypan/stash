@@ -97,8 +97,8 @@ class Stash < Formula
   end
 
   def install
-    if (existing = which("stash"))
-      installed = Utils.safe_popen_read(existing, "version").strip
+    if which("stash")
+      installed = Utils.safe_popen_read("stash", "version").strip
       if installed =~ /\Astash (\S+)\z/
         existing_version = Version.new(Regexp.last_match(1))
         if existing_version < Version.new("0.5.0")
