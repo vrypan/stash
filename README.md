@@ -112,7 +112,7 @@ projects, or CI runs.
 - Example workflows: [docs/examples.md](docs/examples.md)
 - Shell completion setup: [docs/bash.md](docs/bash.md), [docs/fish.md](docs/fish.md), [docs/zsh.md](docs/zsh.md)
 - Demos: [demos/](demos/)
-- Helper scripts: [scripts/README.md](scripts/README.md)
+- Helper scripts: [scripts/](scripts/)
 
 > [!NOTE]
 > What is `~{@`??? An ASCII art acorn.
