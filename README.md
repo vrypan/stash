@@ -79,7 +79,7 @@ cargo install stash-cli
 
 ### Pre-built binaries
 
-Available under [releases](/releases).
+Available under [releases](https://github.com/vrypan/stash/releases).
 
 ### Homebrew
 
