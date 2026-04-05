@@ -11,50 +11,52 @@ Set Theme "Catppuccin Mocha"
 Hide
 Type "export STASH_DIR=$(mktemp -d)"
 Enter
-Type "export SVC=api"
-Enter
 Type "export PATH=$PWD:$PATH"
 Enter
 Type "clear"
 Enter
 Show
 
-Type "jq -n '{service:env.SVC, ok:true, latency_ms:18}' | stash -a label=raw"
+Type "curl -s 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson' | "
 Enter
-Sleep 3s
+Sleep 0.1
+Type "stash -a source=usgs-earthquakes -a stage=raw --print"
+Enter
 
+Sleep 2s
 Type "stash ls -l"
 Enter
-Sleep 3s
 
+Sleep 3s
 Type "stash attr @1"
 Enter
-Sleep 3s
 
-Type "stash cat @1 | jq '{service, latency_ms}' | stash -a label=reduced"
+Sleep 3s
+Type "stash cat @1 | jq '{title: .metadata.title, count: .metadata.count}' | stash -a source=usgs-earthquakes -a stage=summary"
 Enter
-Sleep 3s
 
-Type "stash ls -l --attr label"
+Sleep 3s
+Type "stash ls -l --attr stage"
 Enter
-Sleep 3s
 
+Sleep 3s
 Type "stash cat @1 | jq ."
 Enter
-Sleep 3s
 
+Sleep 3s
 Type "printf 'alpha\nbeta\ngamma\n' | stash tee | wc -l"
 Enter
-Sleep 3s
 
+Sleep 3s
 Type "stash log -n 2"
 Enter
-Sleep 3s
 
+Sleep 4s
 Type "stash rm --before @2 -f"
 Enter
-Sleep 2s
 
+Sleep 2s
 Type "stash ls"
 Enter
-Sleep 3s
+
+Sleep 5s
