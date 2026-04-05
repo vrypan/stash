@@ -52,6 +52,7 @@ Remove data:
 
 ```bash
 stash rm wpc43xd3
+stash rm @1 @3
 stash rm --before @10
 stash rm --before 01kn2ahqhr738w84t3wpc43xd3 -f
 stash rm -a source=usgs

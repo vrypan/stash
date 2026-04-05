@@ -184,8 +184,8 @@ pub struct PathArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct RmArgs {
-    #[arg(help = "Entry reference to remove")]
-    reference: Option<String>,
+    #[arg(help = "Entry references to remove")]
+    refs: Vec<String>,
 
     #[arg(long, help = "Remove entries older than the referenced entry")]
     before: Option<String>,
@@ -811,10 +811,10 @@ fn path_command(args: PathArgs) -> io::Result<()> {
 
 fn rm_command(args: RmArgs) -> io::Result<()> {
     if !args.attr.is_empty() {
-        if args.reference.is_some() || args.before.is_some() {
+        if !args.refs.is_empty() || args.before.is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "rm accepts either <id>, --before, or --attr",
+                "rm accepts either <ref>..., --before, or --attr",
             ));
         }
         let filters = parse_rm_attr_filters(&args.attr)?;
@@ -835,10 +835,10 @@ fn rm_command(args: RmArgs) -> io::Result<()> {
     }
 
     if let Some(before_ref) = args.before.as_deref() {
-        if args.reference.is_some() {
+        if !args.refs.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "rm accepts either <id> or --before",
+                "rm accepts either <ref>... or --before",
             ));
         }
         let id = store::resolve(before_ref)?;
@@ -855,14 +855,34 @@ fn rm_command(args: RmArgs) -> io::Result<()> {
         return Ok(());
     }
 
-    let Some(reference) = args.reference.as_deref() else {
+    if args.refs.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "rm requires exactly one ref",
+            "rm requires at least one ref",
         ));
-    };
-    let id = store::resolve(reference)?;
-    store::remove(&id)
+    }
+
+    let mut seen = BTreeMap::new();
+    for reference in &args.refs {
+        let id = store::resolve(reference)?;
+        seen.entry(id.clone()).or_insert_with(|| reference.clone());
+    }
+    let ids: Vec<String> = seen.into_keys().collect();
+    if ids.len() == 1 {
+        return store::remove(&ids[0]);
+    }
+
+    let mut entries = Vec::new();
+    for id in &ids {
+        entries.push(store::get_meta(id)?);
+    }
+    if !args.force && !confirm_rm_entries("matching refs", &entries)? {
+        return Ok(());
+    }
+    for id in ids {
+        store::remove(&id)?;
+    }
+    Ok(())
 }
 
 fn pop_command() -> io::Result<()> {

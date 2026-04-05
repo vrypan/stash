@@ -12,7 +12,7 @@ stash attr <id|n|@n>
 stash cat [id|n|@n]
 stash ls
 stash pop
-stash rm <id>
+stash rm <id|n|@n>...
 stash rm --before <id|@n>
 stash rm -a <name|name=value>
 stash completion <bash|zsh|fish>
@@ -215,6 +215,7 @@ Remove one entry directly:
 ```bash
 stash rm @1
 stash rm yjvyz3sf
+stash rm @1 @3 yjvyz3sf
 ```
 
 Remove older entries:
