@@ -100,9 +100,10 @@ cat output.txt | scripts/stash-push-type
 ### Behavior
 
 - runs `stash push`
+- uses `stash push --print` to capture the generated ID
 - resolves the new entry path with `stash path`
 - runs `file -b` on the stored `data` file
-- stores the result in `type` via `stash attr set type=...`
+- stores the result in `type` via `stash attr <id> type=...`
 - prints the new entry id to stdout
 
 ### Requirements

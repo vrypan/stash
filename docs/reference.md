@@ -24,6 +24,33 @@ Without a subcommand, `stash` uses smart mode:
 
 `stash list` is an alias for `stash log`.
 
+## Push And Tee
+
+`stash push` always stores input and returns the new entry ID only if asked:
+
+```bash
+stash push file.txt
+stash push --print file.txt
+stash push --print=stderr file.txt
+```
+
+`stash tee` always stores input and forwards it to stdout:
+
+```bash
+some-command | stash tee | next-command
+some-command | stash tee --print=stderr | next-command
+```
+
+`--print` controls where the generated entry ID is emitted:
+- `--print` or `--print=stdout` or `--print=1`
+- `--print=stderr` or `--print=2`
+- `--print=null` or `--print=0`
+
+Notes:
+- default is `--print=null`
+- bare `stash` uses the same `--print` flag and passes it through to the
+  implicit `push` or `tee` mode it selects
+
 ## Attr
 
 Show all stored entry fields:

@@ -58,8 +58,8 @@ pub struct PushArgs {
     #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     attr: Vec<String>,
 
-    #[arg(short = 'q', long = "quiet", help = "Do not print the generated entry ID")]
-    quiet: bool,
+    #[arg(long, num_args = 0..=1, default_value = "null", default_missing_value = "stdout", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
+    print: String,
 
     #[arg(help = "Optional file to stash; reads stdin when omitted")]
     file: Option<PathBuf>,
@@ -70,8 +70,8 @@ pub struct TeeArgs {
     #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     attr: Vec<String>,
 
-    #[arg(short = 'q', long = "quiet", help = "Do not print the generated entry ID to stderr")]
-    quiet: bool,
+    #[arg(long, num_args = 0..=1, default_value = "null", default_missing_value = "stdout", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
+    print: String,
 
     #[arg(long, help = "Save a partial entry if the stream is interrupted")]
     partial: bool,
@@ -228,6 +228,9 @@ impl From<CompletionShell> for Shell {
 
 pub fn main_entry() {
     if let Err(err) = run() {
+        if err.kind() == io::ErrorKind::BrokenPipe {
+            std::process::exit(0);
+        }
         if err
             .get_ref()
             .and_then(|e| e.downcast_ref::<store::PartialSavedError>())
@@ -258,7 +261,7 @@ pub fn run() -> io::Result<()> {
             if smart_mode_uses_tee(&cli.push) {
                 tee_command(TeeArgs {
                     attr: cli.push.attr,
-                    quiet: cli.push.quiet,
+                    print: cli.push.print,
                     partial: false,
                 })
             } else {
@@ -284,6 +287,46 @@ fn parse_meta_flags(values: &[String]) -> io::Result<BTreeMap<String, String>> {
         attrs.insert(k.to_string(), v.to_string());
     }
     Ok(attrs)
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum PrintTarget {
+    Stdout,
+    Stderr,
+    None,
+}
+
+fn parse_print_target(value: &str) -> io::Result<PrintTarget> {
+    match value {
+        "stdout" | "1" => Ok(PrintTarget::Stdout),
+        "stderr" | "2" => Ok(PrintTarget::Stderr),
+        "null" | "0" => Ok(PrintTarget::None),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--print must be stdout, stderr, null, 1, 2, or 0",
+        )),
+    }
+}
+
+fn emit_generated_id(
+    target: PrintTarget,
+    id: &str,
+    stdout: Option<&mut dyn Write>,
+) -> io::Result<()> {
+    match target {
+        PrintTarget::Stdout => {
+            if let Some(out) = stdout {
+                writeln!(out, "{id}")?;
+            } else {
+                println!("{id}");
+            }
+        }
+        PrintTarget::Stderr => {
+            eprintln!("{id}");
+        }
+        PrintTarget::None => {}
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Default)]
@@ -319,6 +362,7 @@ fn matches_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> bool {
 
 fn push_command(args: PushArgs) -> io::Result<()> {
     let mut attrs = parse_meta_flags(&args.attr)?;
+    let print_target = parse_print_target(&args.print)?;
     let id = if let Some(path) = args.file {
         let mut file = File::open(&path)?;
         store::add_filename_attr(&path, &mut attrs);
@@ -328,23 +372,20 @@ fn push_command(args: PushArgs) -> io::Result<()> {
         let mut input = stdin.lock();
         store::push_from_reader(&mut input, attrs)?
     };
-    if !args.quiet {
-        println!("{id}");
-    }
+    emit_generated_id(print_target, &id, None)?;
     Ok(())
 }
 
 fn tee_command(args: TeeArgs) -> io::Result<()> {
     let attrs = parse_meta_flags(&args.attr)?;
+    let print_target = parse_print_target(&args.print)?;
     let stdin = io::stdin();
     let mut input = stdin.lock();
     let stdout = io::stdout();
     let mut out = stdout.lock();
     match store::tee_from_reader_partial(&mut input, &mut out, attrs, args.partial) {
         Ok(id) => {
-            if !args.quiet {
-                eprintln!("{id}");
-            }
+            emit_generated_id(print_target, &id, Some(&mut out))?;
             Ok(())
         }
         Err(err) => {

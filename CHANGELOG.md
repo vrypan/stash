@@ -14,8 +14,8 @@ All notable changes to `stash` are documented in this file.
   - `stash attr <ref> --unset key...` removes attributes
 - Add `stash rm -a` for attribute-based entry removal with confirmation.
 - Allow `stash rm` to remove multiple refs in one command.
-- Add `--quiet` for `stash`, `stash push`, and `stash tee` to suppress the
-  generated entry ID.
+- Add `--print=stdout|stderr|null` for `stash`, `stash push`, and `stash tee`,
+  with numeric aliases `1`, `2`, and `0`.
 - Refine `ls` and `log` attribute flags:
   - `-a/--attr` selects attribute filters
   - `-A/--attrs` shows all attributes

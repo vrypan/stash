@@ -32,9 +32,12 @@ some-command | stash tee -a job=nightly | next-command
 some-command | stash tee --partial | next-command
 ```
 
-`stash tee` writes the stashed entry ID to stderr so stdout remains the original
-data stream. With `--partial`, an interrupted stream is saved if any bytes were
-captured, and `stash tee` exits non-zero.
+By default, `stash tee` keeps stdout unchanged and does not print the generated
+entry ID. Use `--print`, `--print=stderr`, or `--print=null` if you want to
+control where the ID is emitted explicitly. `--print` by itself means
+`--print=stdout`. Numeric aliases `1`, `2`, and `0` are also accepted. With
+`--partial`, an interrupted stream is saved if any bytes were captured, and
+`stash tee` exits non-zero.
 
 Retrieve data:
 
