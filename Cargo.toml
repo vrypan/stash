@@ -1,6 +1,6 @@
 [package]
 name = "stash"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 description = "A local store for pipeline output and ad hoc file snapshots"
 license = "MIT"

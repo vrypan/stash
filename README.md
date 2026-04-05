@@ -1,5 +1,10 @@
 <img width="1280" height="640" alt="social-banner" src="https://github.com/user-attachments/assets/c98cfa58-2976-4b8d-9e5b-d9e5314348e6" />
 
+> [!CAUTION]
+> version >= 0.5.0 is **INCOMPATIBLE** with previous versions.
+> If you have a stash repo created with an older version, do not
+> upgrade! (Open an issue ticket and I'll help migrate data if needed)
+
 # ~{@ stash
 
 `stash` is a small local store for pipeline output and ad hoc file snapshots.
