@@ -1,7 +1,8 @@
 # Bash Completion
 
-If you installed `stash` with Homebrew, bash completion is installed
-automatically.
+> [!IMPORTANT]
+> If you installed `stash` with Homebrew, bash completion is installed
+> automatically.
 
 For a manual install, generate the completion file:
 

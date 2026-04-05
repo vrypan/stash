@@ -1,7 +1,8 @@
 # Zsh Completion
 
-If you installed `stash` with Homebrew, zsh completion is installed
-automatically.
+> [!IMPORTANT]
+> If you installed `stash` with Homebrew, zsh completion is installed
+> automatically.
 
 For a manual install, generate the completion file:
 
