@@ -2,8 +2,24 @@
 
 All notable changes to `stash` are documented in this file.
 
-## Unreleased
+## 0.5.4 - 2026-04-05
 
+- Add smart default behavior for bare `stash`:
+  - in the middle of a pipeline, it behaves like `stash tee`
+  - otherwise, it behaves like `stash push`
+- Simplify `stash attr` syntax:
+  - `stash attr <ref>` lists all attributes
+  - `stash attr <ref> key...` reads selected attributes
+  - `stash attr <ref> key=value...` writes attributes
+  - `stash attr <ref> --unset key...` removes attributes
+- Add `stash rm -a` for attribute-based entry removal with confirmation.
+- Allow `stash rm` to remove multiple refs in one command.
+- Add `--quiet` for `stash`, `stash push`, and `stash tee` to suppress the
+  generated entry ID.
+- Refine `ls` and `log` attribute flags:
+  - `-a/--attr` selects attribute filters
+  - `-A/--attrs` shows all attributes
+- Add `cargo install stash-cli` to the installation docs.
 - Use `stash-cli-*` release asset names for the custom Homebrew formula updater.
 
 ## 0.5.3 - 2026-04-05
