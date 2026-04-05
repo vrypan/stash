@@ -14,6 +14,7 @@ stash ls
 stash pop
 stash rm <id>
 stash rm --before <id|@n>
+stash rm -a <name|name=value>
 stash completion <bash|zsh|fish>
 ```
 
@@ -83,7 +84,7 @@ stash ls --id=pos
 Add columns explicitly:
 
 ```bash
-stash ls -a @
+stash ls -A
 stash ls --date
 stash ls --size
 stash ls --name
@@ -103,11 +104,11 @@ Notes:
 - `--size` defaults to `human` if no value is given
 - `--date` accepts `iso`, `ago`, or `ls`
 - `--size` accepts `human` or `bytes`
-- `-a @` or `--attr @` shows attributes where available without filtering
+- `-A` or `--attrs` shows attributes where available without filtering
 - `-a name` filters to entries where the attribute is set
 - multiple `-a/--attr` flags use OR semantics
 - `stash ls` renders one column per requested tag when explicit tags are used
-- `stash ls -a @` shows attribute values inline
+- `stash ls -A` shows attribute values inline
 - `--id=short|full|pos` controls the first column in all modes
 
 ## Log Output
@@ -120,7 +121,7 @@ stash log -n 10
 stash log -r
 stash log --id=short
 stash log --id=pos
-stash log -a @
+stash log -A
 ```
 
 `stash log` defaults to full IDs and ISO dates.
@@ -129,12 +130,12 @@ Use `--id=short`, `--id=full`, or `--id=pos` to override the display mode.
 Show or filter entry attributes:
 
 ```bash
-stash log -a @
+stash log -A
 stash log -a job
 stash log -a job -a owner
 ```
 
-`-a @` shows attributes where available without filtering.
+`-A` shows attributes where available without filtering.
 `-a name` matches entries that contain the attribute with any value.
 Multiple `-a/--attr` flags are combined with OR.
 
@@ -206,6 +207,35 @@ Notes:
   - default: `STASH_DIR/data`
   - `-a`: `STASH_DIR/attr`
   - `-d`: `STASH_DIR`
+
+## Remove
+
+Remove one entry directly:
+
+```bash
+stash rm @1
+stash rm yjvyz3sf
+```
+
+Remove older entries:
+
+```bash
+stash rm --before @10
+```
+
+Remove entries by attribute match:
+
+```bash
+stash rm -a source
+stash rm -a source=usgs
+stash rm -a source=usgs -a stage=raw
+```
+
+Notes:
+- `-a name` matches entries where the attribute is set
+- `-a name=value` matches entries where the attribute equals that value
+- multiple `-a/--attr` filters use AND semantics
+- `stash rm -a ...` shows the matching entries and asks for confirmation unless `-f` is used
 
 ## Storage
 

@@ -54,11 +54,17 @@ Remove data:
 stash rm wpc43xd3
 stash rm --before @10
 stash rm --before 01kn2ahqhr738w84t3wpc43xd3 -f
+stash rm -a source=usgs
 ```
 
 `stash rm --before <ref>` removes entries older than the referenced entry.
 The referenced entry itself is kept. By default, `stash` asks for
 confirmation; use `-f` to skip the prompt.
+
+`stash rm -a <name>` removes entries where the attribute is set.
+`stash rm -a <name=value>` removes entries where the attribute matches exactly.
+When attribute filters are used, `stash` shows the matching entries and asks
+for confirmation unless `-f` is set.
 
 ## File-Oriented Use
 
@@ -167,7 +173,7 @@ And if you want to find the right snapshots first:
 
 ```bash
 stash log -a label
-stash ls -a @
+stash ls -A
 ```
 
 ### As a rolling scratch stack during shell work

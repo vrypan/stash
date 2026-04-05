@@ -82,8 +82,11 @@ pub struct LsArgs {
     #[arg(long, default_value = "short", help = "ID display: short, full, or pos")]
     id: String,
 
-    #[arg(short = 'a', long = "attr", value_name = "name|@", action = ArgAction::Append, help = "Show all attributes with @, or filter by attribute name (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "name", action = ArgAction::Append, help = "Filter by attribute name (repeatable)")]
     attr: Vec<String>,
+
+    #[arg(short = 'A', long = "attrs", help = "Show all attributes where available")]
+    attrs: bool,
 
     #[arg(short = 'n', long = "number", default_value_t = 0, help = "Limit number of entries shown (0 = all)")]
     number: usize,
@@ -118,8 +121,11 @@ pub struct LogArgs {
     #[arg(long, default_value = "full", help = "ID display: short, full, or pos")]
     id: String,
 
-    #[arg(short = 'a', long = "attr", value_name = "name|@", action = ArgAction::Append, help = "Show all attributes with @, or filter by attribute name (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "name", action = ArgAction::Append, help = "Filter by attribute name (repeatable)")]
     attr: Vec<String>,
+
+    #[arg(short = 'A', long = "attrs", help = "Show all attributes where available")]
+    attrs: bool,
 
     #[arg(short = 'n', long = "number", default_value_t = 0, help = "Limit number of entries shown (0 = all)")]
     number: usize,
@@ -183,6 +189,9 @@ pub struct RmArgs {
 
     #[arg(long, help = "Remove entries older than the referenced entry")]
     before: Option<String>,
+
+    #[arg(short = 'a', long = "attr", value_name = "name|name=value", action = ArgAction::Append, help = "Remove entries where an attribute is set, or equals a value (repeatable)")]
+    attr: Vec<String>,
 
     #[arg(short = 'f', long = "force", help = "Do not prompt for confirmation")]
     force: bool,
@@ -276,15 +285,16 @@ struct MetaSelection {
     tags: Vec<String>,
 }
 
-fn parse_meta_selection(values: &[String]) -> io::Result<MetaSelection> {
-    let mut out = MetaSelection::default();
+fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<MetaSelection> {
+    let mut out = MetaSelection {
+        show_all,
+        tags: Vec::new(),
+    };
     for value in values {
-        if value == "@" {
-            out.show_all = true;
-        } else if value.contains(',') || value.contains('=') || value.trim().is_empty() {
+        if value.contains(',') || value.contains('=') || value.trim().is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "--attr accepts names or @ and is repeatable",
+                "--attr accepts attribute names and is repeatable",
             ));
         } else if !out.tags.contains(value) {
             out.tags.push(value.clone());
@@ -458,7 +468,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
     if let Some(mode) = args.date.as_deref() {
         args.date = Some(normalize_date_mode(mode)?.to_string());
     }
-    let meta_sel = parse_meta_selection(&args.attr)?;
+    let meta_sel = parse_meta_selection(&args.attr, args.attrs)?;
     let items = collect_entries(&meta_sel, args.reverse, args.number)?;
     let ls_date_mode = args.date.as_deref().unwrap_or("ls");
     let effective_chars = if args.preview && args.chars == 80 {
@@ -599,7 +609,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
 fn log_command(args: LogArgs) -> io::Result<()> {
     let color = color_enabled(&args.color)?;
     let date_mode = normalize_date_mode(&args.date)?;
-    let meta_sel = parse_meta_selection(&args.attr)?;
+    let meta_sel = parse_meta_selection(&args.attr, args.attrs)?;
     let items = collect_entries(&meta_sel, args.reverse, args.number)?;
     if args.json {
         print_log_json(&items, date_mode, args.chars);
@@ -800,6 +810,30 @@ fn path_command(args: PathArgs) -> io::Result<()> {
 }
 
 fn rm_command(args: RmArgs) -> io::Result<()> {
+    if !args.attr.is_empty() {
+        if args.reference.is_some() || args.before.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "rm accepts either <id>, --before, or --attr",
+            ));
+        }
+        let filters = parse_rm_attr_filters(&args.attr)?;
+        let matches: Vec<Meta> = store::list()?
+            .into_iter()
+            .filter(|meta| matches_rm_attr_filters(&meta.attrs, &filters))
+            .collect();
+        if matches.is_empty() {
+            return Ok(());
+        }
+        if !args.force && !confirm_rm_entries("matching attributes", &matches)? {
+            return Ok(());
+        }
+        for meta in matches {
+            store::remove(&meta.id)?;
+        }
+        return Ok(());
+    }
+
     if let Some(before_ref) = args.before.as_deref() {
         if args.reference.is_some() {
             return Err(io::Error::new(
@@ -862,6 +896,63 @@ fn confirm_rm_before(reference: &str, count: usize) -> io::Result<bool> {
     io::stdin().read_line(&mut reply)?;
     let reply = reply.trim().to_ascii_lowercase();
     Ok(reply == "y" || reply == "yes")
+}
+
+#[derive(Clone, Debug)]
+struct RmAttrFilter {
+    key: String,
+    value: Option<String>,
+}
+
+fn parse_rm_attr_filters(values: &[String]) -> io::Result<Vec<RmAttrFilter>> {
+    let mut filters = Vec::new();
+    for value in values {
+        if value.trim().is_empty() || value.contains(',') {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "--attr accepts name or name=value and is repeatable",
+            ));
+        }
+        if let Some((key, attr_value)) = value.split_once('=') {
+            filters.push(RmAttrFilter {
+                key: key.to_string(),
+                value: Some(attr_value.to_string()),
+            });
+        } else {
+            filters.push(RmAttrFilter {
+                key: value.to_string(),
+                value: None,
+            });
+        }
+    }
+    Ok(filters)
+}
+
+fn matches_rm_attr_filters(
+    attrs: &BTreeMap<String, String>,
+    filters: &[RmAttrFilter],
+) -> bool {
+    filters.iter().all(|filter| match &filter.value {
+        Some(value) => attrs.get(&filter.key) == Some(value),
+        None => attrs.contains_key(&filter.key),
+    })
+}
+
+fn confirm_rm_entries(reason: &str, entries: &[Meta]) -> io::Result<bool> {
+    eprintln!("Remove {} entr{} {}:", entries.len(), if entries.len() == 1 { "y" } else { "ies" }, reason);
+    for entry in entries {
+        if let Some(name) = entry.attrs.get("filename") {
+            eprintln!("  {}  {}  {}", entry.short_id(), entry.ts, name);
+        } else {
+            eprintln!("  {}  {}", entry.short_id(), entry.ts);
+        }
+    }
+    eprint!("Continue? [y/N] ");
+    io::stderr().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let answer = input.trim().to_ascii_lowercase();
+    Ok(answer == "y" || answer == "yes")
 }
 
 fn display_id(item: &Meta, idx: usize, mode: &str) -> String {
