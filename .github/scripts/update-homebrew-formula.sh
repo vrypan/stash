@@ -24,7 +24,18 @@ version="${tag#v}"
 asset_name() {
   local os="$1"
   local arch="$2"
-  printf "%s_%s_%s_%s.tar.gz" "${formula_name}" "${version}" "${os}" "${arch}"
+  local target=""
+  case "${os}/${arch}" in
+    darwin/arm64) target="aarch64-apple-darwin" ;;
+    darwin/x86_64) target="x86_64-apple-darwin" ;;
+    linux/arm64) target="aarch64-unknown-linux-gnu" ;;
+    linux/x86_64) target="x86_64-unknown-linux-gnu" ;;
+    *)
+      echo "unsupported os/arch: ${os}/${arch}" >&2
+      exit 1
+      ;;
+  esac
+  printf "%s-%s.tar.xz" "${formula_name}" "${target}"
 }
 
 asset_url() {
