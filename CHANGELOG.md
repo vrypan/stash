@@ -9,6 +9,8 @@ All notable changes to `stash` are documented in this file.
   and `0`.
 - Rename `--partial` to `--save-on-error`, default it to `true`, and keep
   downstream broken pipes out of the saved-on-error path.
+- Save captured input on `Ctrl-C` in both `stash tee` and stdin-driven
+  `stash` when `--save-on-error=true` applies.
 - Treat broken pipes as normal exits in pipeline use.
 
 ## 0.5.4

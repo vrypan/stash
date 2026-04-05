@@ -13,6 +13,8 @@ Without a subcommand, `stash` uses smart mode:
 - in the middle of a pipeline, it behaves like `stash tee`
 - otherwise, it behaves like `stash push`
 
+When `stash` is reading from stdin, `Ctrl-C` saves captured input before exit.
+
 Stash a file directly:
 
 ```bash
@@ -37,7 +39,8 @@ entry ID. Use `--print`, `--print=stderr`, or `--print=null` if you want to
 control where the ID is emitted explicitly. `--print` by itself means
 `--print=stdout`. Numeric aliases `1`, `2`, and `0` are also accepted. With
 `--save-on-error=true` (the default), an interrupted input stream is saved if
-any bytes were captured, and `stash tee` exits non-zero. Use
+any bytes were captured, including `Ctrl-C` interruption, and `stash tee`
+exits non-zero. Use
 `--save-on-error=false` to disable that behavior. Downstream broken pipes are
 still treated as normal exits and are not saved as partial entries.
 

@@ -231,12 +231,14 @@ pub fn main_entry() {
         if err.kind() == io::ErrorKind::BrokenPipe {
             std::process::exit(0);
         }
-        if err
+        if let Some(partial_err) = err
             .get_ref()
             .and_then(|e| e.downcast_ref::<store::PartialSavedError>())
-            .is_some()
         {
-            eprintln!("error: {err}");
+            eprintln!(
+                "saved partial entry: {}",
+                partial_err.id.to_ascii_lowercase()
+            );
             std::process::exit(4);
         }
         eprintln!("error: {err}");
@@ -388,18 +390,7 @@ fn tee_command(args: TeeArgs) -> io::Result<()> {
             emit_generated_id(print_target, &id, Some(&mut out))?;
             Ok(())
         }
-        Err(err) => {
-            if let Some(partial_err) = err
-                .get_ref()
-                .and_then(|e| e.downcast_ref::<store::PartialSavedError>())
-            {
-                eprintln!(
-                    "stash saved on error: {}",
-                    partial_err.id.to_ascii_lowercase()
-                );
-            }
-            Err(err)
-        }
+        Err(err) => Err(err),
     }
 }
 

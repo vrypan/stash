@@ -52,7 +52,7 @@ Notes:
 - bare `stash` uses the same `--print` flag and passes it through to the
   implicit `push` or `tee` mode it selects
 - `stash tee` defaults to `--save-on-error=true`
-- `--save-on-error=false` disables saving interrupted input
+- `--save-on-error=false` disables saving interrupted input such as `Ctrl-C`
 - downstream broken pipes are treated as normal exits and are never saved as
   partial entries
 
