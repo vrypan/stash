@@ -73,8 +73,8 @@ pub struct TeeArgs {
     #[arg(long, num_args = 0..=1, default_value = "null", default_missing_value = "stdout", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
     print: String,
 
-    #[arg(long, help = "Save a partial entry if the stream is interrupted")]
-    partial: bool,
+    #[arg(long, num_args = 0..=1, default_value_t = true, default_missing_value = "true", help = "Save captured input when an upstream or processing error happens: true or false")]
+    save_on_error: bool,
 }
 
 #[derive(Args, Debug, Clone, Default)]
@@ -262,7 +262,7 @@ pub fn run() -> io::Result<()> {
                 tee_command(TeeArgs {
                     attr: cli.push.attr,
                     print: cli.push.print,
-                    partial: false,
+                    save_on_error: true,
                 })
             } else {
                 push_command(cli.push)
@@ -383,7 +383,7 @@ fn tee_command(args: TeeArgs) -> io::Result<()> {
     let mut input = stdin.lock();
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    match store::tee_from_reader_partial(&mut input, &mut out, attrs, args.partial) {
+    match store::tee_from_reader_partial(&mut input, &mut out, attrs, args.save_on_error) {
         Ok(id) => {
             emit_generated_id(print_target, &id, Some(&mut out))?;
             Ok(())
@@ -394,7 +394,7 @@ fn tee_command(args: TeeArgs) -> io::Result<()> {
                 .and_then(|e| e.downcast_ref::<store::PartialSavedError>())
             {
                 eprintln!(
-                    "partial stash saved: {}",
+                    "stash saved on error: {}",
                     partial_err.id.to_ascii_lowercase()
                 );
             }

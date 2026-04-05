@@ -39,6 +39,7 @@ stash push --print=stderr file.txt
 ```bash
 some-command | stash tee | next-command
 some-command | stash tee --print=stderr | next-command
+some-command | stash tee --save-on-error=false | next-command
 ```
 
 `--print` controls where the generated entry ID is emitted:
@@ -50,6 +51,10 @@ Notes:
 - default is `--print=null`
 - bare `stash` uses the same `--print` flag and passes it through to the
   implicit `push` or `tee` mode it selects
+- `stash tee` defaults to `--save-on-error=true`
+- `--save-on-error=false` disables saving interrupted input
+- downstream broken pipes are treated as normal exits and are never saved as
+  partial entries
 
 ## Attr
 

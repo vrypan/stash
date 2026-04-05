@@ -390,7 +390,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
     reader: &mut R,
     stdout: &mut W,
     mut attrs: BTreeMap<String, String>,
-    partial: bool,
+    save_on_error: bool,
 ) -> io::Result<String> {
     init()?;
     let id = new_ulid()?;
@@ -404,7 +404,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
         let n = match reader.read(&mut buf) {
             Ok(n) => n,
             Err(err) => {
-                if !partial || total == 0 {
+                if !save_on_error || total == 0 {
                     let _ = fs::remove_file(&data_path);
                     return Err(err);
                 }
@@ -436,7 +436,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
             return Err(err);
         }
         if let Err(err) = stdout.write_all(&buf[..n]) {
-            if !partial || total == 0 {
+            if err.kind() == io::ErrorKind::BrokenPipe || !save_on_error || total == 0 {
                 let _ = fs::remove_file(&data_path);
                 return Err(err);
             }

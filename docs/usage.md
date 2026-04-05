@@ -29,15 +29,17 @@ Pass data through and stash it at the same time:
 some-command | stash tee | next-command
 some-command | stash | next-command
 some-command | stash tee -a job=nightly | next-command
-some-command | stash tee --partial | next-command
+some-command | stash tee --save-on-error=false | next-command
 ```
 
 By default, `stash tee` keeps stdout unchanged and does not print the generated
 entry ID. Use `--print`, `--print=stderr`, or `--print=null` if you want to
 control where the ID is emitted explicitly. `--print` by itself means
 `--print=stdout`. Numeric aliases `1`, `2`, and `0` are also accepted. With
-`--partial`, an interrupted stream is saved if any bytes were captured, and
-`stash tee` exits non-zero.
+`--save-on-error=true` (the default), an interrupted input stream is saved if
+any bytes were captured, and `stash tee` exits non-zero. Use
+`--save-on-error=false` to disable that behavior. Downstream broken pipes are
+still treated as normal exits and are not saved as partial entries.
 
 Retrieve data:
 

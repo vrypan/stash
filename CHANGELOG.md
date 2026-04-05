@@ -2,7 +2,16 @@
 
 All notable changes to `stash` are documented in this file.
 
-## 0.5.4 - 2026-04-05
+## 0.5.5
+
+- Replace the earlier quiet flag with `--print=stdout|stderr|null` for
+  `stash`, `stash push`, and `stash tee`, with numeric aliases `1`, `2`,
+  and `0`.
+- Rename `--partial` to `--save-on-error`, default it to `true`, and keep
+  downstream broken pipes out of the saved-on-error path.
+- Treat broken pipes as normal exits in pipeline use.
+
+## 0.5.4
 
 - Add smart default behavior for bare `stash`:
   - in the middle of a pipeline, it behaves like `stash tee`
@@ -14,8 +23,6 @@ All notable changes to `stash` are documented in this file.
   - `stash attr <ref> --unset key...` removes attributes
 - Add `stash rm -a` for attribute-based entry removal with confirmation.
 - Allow `stash rm` to remove multiple refs in one command.
-- Add `--print=stdout|stderr|null` for `stash`, `stash push`, and `stash tee`,
-  with numeric aliases `1`, `2`, and `0`.
 - Refine `ls` and `log` attribute flags:
   - `-a/--attr` selects attribute filters
   - `-A/--attrs` shows all attributes
