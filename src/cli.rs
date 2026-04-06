@@ -86,16 +86,29 @@ pub struct CatArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct LsArgs {
-    #[arg(long, default_value = "short", help = "ID display: short, full, or pos")]
+    #[arg(
+        long,
+        default_value = "short",
+        help = "ID display: short, full, or pos"
+    )]
     id: String,
 
     #[arg(short = 'a', long = "attr", value_name = "name", action = ArgAction::Append, help = "Filter by attribute name (repeatable)")]
     attr: Vec<String>,
 
-    #[arg(short = 'A', long = "attrs", help = "Show all attributes where available")]
+    #[arg(
+        short = 'A',
+        long = "attrs",
+        help = "Show all attributes where available"
+    )]
     attrs: bool,
 
-    #[arg(short = 'n', long = "number", default_value_t = 0, help = "Limit number of entries shown (0 = all)")]
+    #[arg(
+        short = 'n',
+        long = "number",
+        default_value_t = 0,
+        help = "Limit number of entries shown (0 = all)"
+    )]
     number: usize,
 
     #[arg(short = 'r', long = "reverse", help = "Show oldest first")]
@@ -107,7 +120,10 @@ pub struct LsArgs {
     #[arg(long, default_missing_value = "human", num_args = 0..=1, help = "Include size column: human or bytes")]
     size: Option<String>,
 
-    #[arg(long, help = "Include filename (attribute) if available, or else full ULID column")]
+    #[arg(
+        long,
+        help = "Include filename (attribute) if available, or else full ULID column"
+    )]
     name: bool,
 
     #[arg(short = 'p', long = "preview", help = "Append compact preview text")]
@@ -131,10 +147,19 @@ pub struct LogArgs {
     #[arg(short = 'a', long = "attr", value_name = "name", action = ArgAction::Append, help = "Filter by attribute name (repeatable)")]
     attr: Vec<String>,
 
-    #[arg(short = 'A', long = "attrs", help = "Show all attributes where available")]
+    #[arg(
+        short = 'A',
+        long = "attrs",
+        help = "Show all attributes where available"
+    )]
     attrs: bool,
 
-    #[arg(short = 'n', long = "number", default_value_t = 0, help = "Limit number of entries shown (0 = all)")]
+    #[arg(
+        short = 'n',
+        long = "number",
+        default_value_t = 0,
+        help = "Limit number of entries shown (0 = all)"
+    )]
     number: usize,
 
     #[arg(short = 'r', long = "reverse", help = "Show oldest first")]
@@ -161,10 +186,17 @@ pub struct AttrArgs {
     #[arg(help = "Entry reference: id, n, or @n")]
     reference: String,
 
-    #[arg(value_name = "KEY|KEY=VALUE", help = "Attribute keys to read, or key=value pairs to write")]
+    #[arg(
+        value_name = "KEY|KEY=VALUE",
+        help = "Attribute keys to read, or key=value pairs to write"
+    )]
     items: Vec<String>,
 
-    #[arg(long, default_value = "\t", help = "Separator used between key and value")]
+    #[arg(
+        long,
+        default_value = "\t",
+        help = "Separator used between key and value"
+    )]
     separator: String,
 
     #[arg(long = "unset", value_name = "KEY", action = ArgAction::Append, help = "Remove attribute key (repeatable)")]
@@ -173,16 +205,28 @@ pub struct AttrArgs {
     #[arg(long, help = "Output attributes as JSON")]
     json: bool,
 
-    #[arg(short = 'p', long = "preview", help = "Include preview pseudo-property when available")]
+    #[arg(
+        short = 'p',
+        long = "preview",
+        help = "Include preview pseudo-property when available"
+    )]
     preview: bool,
 }
 
 #[derive(Args, Debug, Clone)]
 pub struct PathArgs {
-    #[arg(short = 'd', long = "dir", help = "Print container directories instead of file paths")]
+    #[arg(
+        short = 'd',
+        long = "dir",
+        help = "Print container directories instead of file paths"
+    )]
     dir: bool,
 
-    #[arg(short = 'a', long = "attr", help = "Print attribute file paths instead of data file paths")]
+    #[arg(
+        short = 'a',
+        long = "attr",
+        help = "Print attribute file paths instead of data file paths"
+    )]
     attr: bool,
 
     #[arg(help = "Entry refs read from arguments or stdin")]
@@ -440,7 +484,8 @@ fn decorate_entries(
     preview_chars: usize,
     meta_sel: &MetaSelection,
 ) -> Vec<DecoratedEntry> {
-    items.iter()
+    items
+        .iter()
         .enumerate()
         .map(|(idx, item)| decorate_entry(item, idx, id_mode, date_mode, preview_chars, meta_sel))
         .collect()
@@ -538,7 +583,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
     {
         let stdout = io::stdout();
         let mut out = stdout.lock();
-    let rows = decorate_entries(&items, &args.id, ls_date_mode, effective_chars, &meta_sel);
+        let rows = decorate_entries(&items, &args.id, ls_date_mode, effective_chars, &meta_sel);
         for row in rows {
             write_colored(&mut out, &row.id, "1;33", color)?;
             writeln!(out)?;
@@ -575,9 +620,19 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
             size: args
                 .size
                 .as_deref()
-                .map(|mode| if mode == "bytes" { size_bytes.clone() } else { size_human.clone() })
+                .map(|mode| {
+                    if mode == "bytes" {
+                        size_bytes.clone()
+                    } else {
+                        size_human.clone()
+                    }
+                })
                 .unwrap_or_default(),
-            date: if args.date.is_some() { date } else { String::new() },
+            date: if args.date.is_some() {
+                date
+            } else {
+                String::new()
+            },
             name: if args.name {
                 filename.unwrap_or_else(|| id.clone())
             } else {
@@ -635,7 +690,12 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
         if !row.meta_inline.is_empty() {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(&row.meta_inline, max_inline_meta), "35", color);
+            push_colorized(
+                &mut line,
+                &pad_right(&row.meta_inline, max_inline_meta),
+                "35",
+                color,
+            );
         }
         if !row.preview.is_empty() {
             line.push_str("  ");
@@ -757,8 +817,7 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
             }
             serde_json::Value::Object(map)
         };
-        serde_json::to_writer_pretty(io::stdout(), &value)
-            .map_err(io::Error::other)?;
+        serde_json::to_writer_pretty(io::stdout(), &value).map_err(io::Error::other)?;
         println!();
         return Ok(());
     }
@@ -941,12 +1000,7 @@ fn pop_command() -> io::Result<()> {
 fn completion_command(args: CompletionArgs) -> io::Result<()> {
     let mut cmd = Cli::command();
     let name = cmd.get_name().to_string();
-    generate(
-        Shell::from(args.shell),
-        &mut cmd,
-        name,
-        &mut io::stdout(),
-    );
+    generate(Shell::from(args.shell), &mut cmd, name, &mut io::stdout());
     Ok(())
 }
 
@@ -993,10 +1047,7 @@ fn parse_rm_attr_filters(values: &[String]) -> io::Result<Vec<RmAttrFilter>> {
     Ok(filters)
 }
 
-fn matches_rm_attr_filters(
-    attrs: &BTreeMap<String, String>,
-    filters: &[RmAttrFilter],
-) -> bool {
+fn matches_rm_attr_filters(attrs: &BTreeMap<String, String>, filters: &[RmAttrFilter]) -> bool {
     filters.iter().all(|filter| match &filter.value {
         Some(value) => attrs.get(&filter.key) == Some(value),
         None => attrs.contains_key(&filter.key),
@@ -1004,7 +1055,12 @@ fn matches_rm_attr_filters(
 }
 
 fn confirm_rm_entries(reason: &str, entries: &[Meta]) -> io::Result<bool> {
-    eprintln!("Remove {} entr{} {}:", entries.len(), if entries.len() == 1 { "y" } else { "ies" }, reason);
+    eprintln!(
+        "Remove {} entr{} {}:",
+        entries.len(),
+        if entries.len() == 1 { "y" } else { "ies" },
+        reason
+    );
     for entry in entries {
         if let Some(name) = entry.attrs.get("filename") {
             eprintln!("  {}  {}  {}", entry.short_id(), entry.ts, name);
@@ -1368,7 +1424,13 @@ fn is_writable_attr_key(key: &str) -> bool {
     }
 }
 
-fn log_template_value(item: &Meta, idx: usize, date_mode: &str, chars: usize, key: &str) -> Option<String> {
+fn log_template_value(
+    item: &Meta,
+    idx: usize,
+    date_mode: &str,
+    chars: usize,
+    key: &str,
+) -> Option<String> {
     match key {
         "id" => Some(item.display_id()),
         "short_id" => Some(item.short_id()),
@@ -1433,16 +1495,30 @@ fn render_log_template(
     out
 }
 
-fn print_log_template(items: &[Meta], date_mode: &str, chars: usize, format: &str, color: bool) -> io::Result<()> {
+fn print_log_template(
+    items: &[Meta],
+    date_mode: &str,
+    chars: usize,
+    format: &str,
+    color: bool,
+) -> io::Result<()> {
     for (idx, item) in items.iter().enumerate() {
-        println!("{}", render_log_template(item, idx, date_mode, chars, format, color));
+        println!(
+            "{}",
+            render_log_template(item, idx, date_mode, chars, format, color)
+        );
     }
     Ok(())
 }
 
 fn parse_ts_seconds(ts: &str) -> Option<i64> {
     let (year, month, day, hour, minute, second) = parse_ts_parts(ts)?;
-    Some(civil_to_days(year, month, day) * 86_400 + hour as i64 * 3600 + minute as i64 * 60 + second as i64)
+    Some(
+        civil_to_days(year, month, day) * 86_400
+            + hour as i64 * 3600
+            + minute as i64 * 60
+            + second as i64,
+    )
 }
 
 fn parse_ts_parts(ts: &str) -> Option<(i32, u32, u32, u32, u32, u32)> {

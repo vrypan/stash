@@ -1,9 +1,9 @@
 use crate::preview::build_preview_data;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use signal_hook::SigId;
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::low_level;
-use signal_hook::SigId;
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fs::{self, File};
@@ -24,9 +24,20 @@ pub struct PartialSavedError {
     pub signal: Option<i32>,
 }
 
+struct PartialSaveOptions {
+    save_on_error: bool,
+    save_empty: bool,
+    signal: Option<i32>,
+}
+
 impl std::fmt::Display for PartialSavedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "partial entry saved as \"{}\": {}", self.id.to_ascii_lowercase(), self.cause)
+        write!(
+            f,
+            "partial entry saved as \"{}\": {}",
+            self.id.to_ascii_lowercase(),
+            self.cause
+        )
     }
 }
 
@@ -108,7 +119,6 @@ impl Meta {
         }
         Value::Object(map)
     }
-
 }
 
 pub fn base_dir() -> io::Result<PathBuf> {
@@ -166,8 +176,14 @@ pub fn init() -> io::Result<()> {
 
 fn dir_mtime_key(path: PathBuf) -> io::Result<String> {
     let modified = fs::metadata(path)?.modified()?;
-    let duration = modified.duration_since(UNIX_EPOCH).map_err(io::Error::other)?;
-    Ok(format!("{}.{:09}", duration.as_secs(), duration.subsec_nanos()))
+    let duration = modified
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?;
+    Ok(format!(
+        "{}.{:09}",
+        duration.as_secs(),
+        duration.subsec_nanos()
+    ))
 }
 
 fn invalidate_list_cache() {
@@ -240,12 +256,18 @@ fn write_list_cache(items: &[Meta]) -> io::Result<()> {
 }
 
 pub fn newest() -> io::Result<Meta> {
-    list()?.into_iter().next().ok_or_else(|| io::Error::other("stash is empty"))
+    list()?
+        .into_iter()
+        .next()
+        .ok_or_else(|| io::Error::other("stash is empty"))
 }
 
 pub fn nth_newest(n: usize) -> io::Result<Meta> {
     if n == 0 {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "n must be >= 1"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "n must be >= 1",
+        ));
     }
     let items = list()?;
     items
@@ -270,12 +292,16 @@ pub fn resolve(input: &str) -> io::Result<String> {
         return newest().map(|m| m.id);
     }
     if let Some(rest) = raw.strip_prefix('@') {
-        let n = rest.parse::<usize>().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid stack ref"))?;
+        let n = rest
+            .parse::<usize>()
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid stack ref"))?;
         return nth_newest(n).map(|m| m.id);
     }
     let lower = raw.to_ascii_lowercase();
     if lower.chars().all(|c| c.is_ascii_digit()) {
-        let n = lower.parse::<usize>().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid index"))?;
+        let n = lower
+            .parse::<usize>()
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid index"))?;
         return nth_newest(n).map(|m| m.id);
     }
     if lower.len() < MIN_ID_LEN {
@@ -288,14 +314,22 @@ pub fn resolve(input: &str) -> io::Result<String> {
     if let Some(id) = ids.iter().find(|id| **id == lower) {
         return Ok(id.clone());
     }
-    let prefix: Vec<_> = ids.iter().filter(|id| id.starts_with(&lower)).cloned().collect();
+    let prefix: Vec<_> = ids
+        .iter()
+        .filter(|id| id.starts_with(&lower))
+        .cloned()
+        .collect();
     if prefix.len() == 1 {
         return Ok(prefix[0].clone());
     }
     if prefix.len() > 1 {
         return Err(io::Error::other("ambiguous id"));
     }
-    let suffix: Vec<_> = ids.iter().filter(|id| id.ends_with(&lower)).cloned().collect();
+    let suffix: Vec<_> = ids
+        .iter()
+        .filter(|id| id.ends_with(&lower))
+        .cloned()
+        .collect();
     if suffix.len() == 1 {
         return Ok(suffix[0].clone());
     }
@@ -343,18 +377,31 @@ pub fn cat_to_writer<W: Write>(id: &str, mut writer: W) -> io::Result<()> {
 
 pub fn remove(id: &str) -> io::Result<()> {
     let data_result = fs::remove_file(entry_data_path(id)?);
-    if data_result.is_err() && data_result.as_ref().err().is_some_and(|e| e.kind() != io::ErrorKind::NotFound) {
+    if data_result.is_err()
+        && data_result
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.kind() != io::ErrorKind::NotFound)
+    {
         return data_result;
     }
     let attr_result = fs::remove_file(entry_attr_path(id)?);
-    if attr_result.is_err() && attr_result.as_ref().err().is_some_and(|e| e.kind() != io::ErrorKind::NotFound) {
+    if attr_result.is_err()
+        && attr_result
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.kind() != io::ErrorKind::NotFound)
+    {
         return attr_result;
     }
     invalidate_list_cache();
     Ok(())
 }
 
-pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>) -> io::Result<String> {
+pub fn push_from_reader<R: Read>(
+    reader: &mut R,
+    attrs: BTreeMap<String, String>,
+) -> io::Result<String> {
     init()?;
     let interrupted = Arc::new(AtomicBool::new(false));
     let signal = Arc::new(AtomicI32::new(0));
@@ -366,7 +413,6 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
     let mut sample = Vec::new();
     let mut total = 0i64;
     let mut buf = [0u8; 8192];
-    let attrs = attrs;
     loop {
         if interrupted.load(Ordering::Relaxed) {
             return save_or_abort_partial(
@@ -375,10 +421,12 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
                 &sample,
                 total,
                 attrs,
-                true,
-                true,
                 signal_error(&signal),
-                Some(signal.load(Ordering::Relaxed)),
+                PartialSaveOptions {
+                    save_on_error: true,
+                    save_empty: true,
+                    signal: Some(signal.load(Ordering::Relaxed)),
+                },
             );
         }
         let n = match reader.read(&mut buf) {
@@ -390,11 +438,13 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
                     &sample,
                     total,
                     attrs,
-                    true,
-                    false,
                     err,
-                    None,
-                )
+                    PartialSaveOptions {
+                        save_on_error: true,
+                        save_empty: false,
+                        signal: None,
+                    },
+                );
             }
         };
         if n == 0 {
@@ -405,10 +455,12 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
                     &sample,
                     total,
                     attrs,
-                    true,
-                    true,
                     signal_error(&signal),
-                    Some(signal.load(Ordering::Relaxed)),
+                    PartialSaveOptions {
+                        save_on_error: true,
+                        save_empty: true,
+                        signal: Some(signal.load(Ordering::Relaxed)),
+                    },
                 );
             }
             break;
@@ -465,10 +517,12 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                 &sample,
                 total,
                 attrs,
-                save_on_error,
-                true,
                 signal_error(&signal),
-                Some(signal.load(Ordering::Relaxed)),
+                PartialSaveOptions {
+                    save_on_error,
+                    save_empty: true,
+                    signal: Some(signal.load(Ordering::Relaxed)),
+                },
             );
         }
         let n = match reader.read(&mut buf) {
@@ -480,11 +534,13 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                     &sample,
                     total,
                     attrs,
-                    save_on_error,
-                    false,
                     err,
-                    None,
-                )
+                    PartialSaveOptions {
+                        save_on_error,
+                        save_empty: false,
+                        signal: None,
+                    },
+                );
             }
         };
         if n == 0 {
@@ -495,10 +551,12 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                     &sample,
                     total,
                     attrs,
-                    save_on_error,
-                    true,
                     signal_error(&signal),
-                    Some(signal.load(Ordering::Relaxed)),
+                    PartialSaveOptions {
+                        save_on_error,
+                        save_empty: true,
+                        signal: Some(signal.load(Ordering::Relaxed)),
+                    },
                 );
             }
             break;
@@ -523,10 +581,12 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                 &sample,
                 total,
                 attrs,
-                save_on_error,
-                false,
                 err,
-                None,
+                PartialSaveOptions {
+                    save_on_error,
+                    save_empty: false,
+                    signal: None,
+                },
             );
         }
     }
@@ -541,18 +601,20 @@ fn save_or_abort_partial(
     sample: &[u8],
     total: i64,
     mut attrs: BTreeMap<String, String>,
-    save_on_error: bool,
-    save_empty: bool,
     err: io::Error,
-    signal: Option<i32>,
+    options: PartialSaveOptions,
 ) -> io::Result<String> {
-    if !save_on_error || (total == 0 && !save_empty) {
+    if !options.save_on_error || (total == 0 && !options.save_empty) {
         let _ = fs::remove_file(&data_path);
         return Err(err);
     }
     attrs.insert("partial".into(), "true".into());
     finalize_saved_entry(id.clone(), data_path, sample, total, attrs)?;
-    Err(io::Error::other(PartialSavedError { id, cause: err, signal }))
+    Err(io::Error::other(PartialSavedError {
+        id,
+        cause: err,
+        signal: options.signal,
+    }))
 }
 
 fn finalize_saved_entry(
@@ -676,8 +738,8 @@ fn new_ulid() -> io::Result<String> {
         .map_err(io::Error::other)?
         .as_millis() as u64;
     let mut bytes = [0u8; 16];
-    for i in 0..6 {
-        bytes[i] = ((now >> (8 * (5 - i))) & 0xff) as u8;
+    for (i, byte) in bytes.iter_mut().enumerate().take(6) {
+        *byte = ((now >> (8 * (5 - i))) & 0xff) as u8;
     }
     let mut rand = File::open("/dev/urandom")?;
     rand.read_exact(&mut bytes[6..])?;

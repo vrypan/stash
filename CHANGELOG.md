@@ -2,16 +2,25 @@
 
 All notable changes to `stash` are documented in this file.
 
+## Unreleased
+
+- Save captured input on `Ctrl-C` in both `stash tee` and stdin-driven
+  `stash` when `--save-on-error=true` applies.
+- Align interruption handling more closely with `tee`:
+  - `SIGINT` returns `130`
+  - `SIGTERM` returns `143`
+  - non-signal partial saves return `1`
+- Treat downstream broken pipes as successful exits while still keeping any
+  captured output.
+- Keep `partial=true` only for input interruption/failure, not downstream
+  output closure.
+
 ## 0.5.5
 
 - Replace the earlier quiet flag with `--print=stdout|stderr|null` for
   `stash`, `stash push`, and `stash tee`, with numeric aliases `1`, `2`,
   and `0`.
-- Rename `--partial` to `--save-on-error`, default it to `true`, and preserve
-  captured entries on downstream broken pipes while still exiting successfully.
-- Save captured input on `Ctrl-C` in both `stash tee` and stdin-driven
-  `stash` when `--save-on-error=true` applies.
-- Treat broken pipes as normal exits in pipeline use.
+- Rename `--partial` to `--save-on-error` and default it to `true`.
 
 ## 0.5.4
 
