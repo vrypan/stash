@@ -443,7 +443,7 @@ pub fn push_from_reader<R: Read>(reader: &mut R, attrs: BTreeMap<String, String>
 pub fn tee_from_reader_partial<R: Read, W: Write>(
     reader: &mut R,
     stdout: &mut W,
-    mut attrs: BTreeMap<String, String>,
+    attrs: BTreeMap<String, String>,
     save_on_error: bool,
 ) -> io::Result<String> {
     init()?;
@@ -515,7 +515,6 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
         if let Err(err) = stdout.write_all(&buf[..n]) {
             drop(data);
             if err.kind() == io::ErrorKind::BrokenPipe {
-                attrs.insert("partial".into(), "true".into());
                 return finalize_saved_entry(id, data_path, &sample, total, attrs);
             }
             return save_or_abort_partial(

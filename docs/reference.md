@@ -55,7 +55,7 @@ Notes:
 - `--save-on-error=false` disables saving interrupted input such as `Ctrl-C`
 - downstream broken pipes are treated as normal exits
 - when a broken pipe happens after input was captured, `stash tee` keeps the
-  saved entry and marks it with `partial=true`
+  saved entry
 
 ## Attr
 

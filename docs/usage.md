@@ -43,7 +43,7 @@ any bytes were captured, including `Ctrl-C` interruption, and `stash tee`
 exits non-zero. Use
 `--save-on-error=false` to disable that behavior. Downstream broken pipes still
 exit successfully; if any input was already captured, `stash tee` keeps the
-saved entry and marks it with `partial=true`.
+saved entry.
 
 Retrieve data:
 

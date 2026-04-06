@@ -92,3 +92,39 @@ n5pwa78h  99B  Thu Apr  2 22:03:41 2026 +0300  01kn7s8wd35es5txscn5pwa78h  gcc-1
 
 **`tee` writes to a file.**   
 **`stash tee` writes to history.**
+
+## Return Codes
+
+`stash tee` is intentionally close to `tee` as a pipeline component, but it can
+also preserve captured output in the stash when something interrupts the
+stream.
+
+| Situation | `tee` | `stash tee` |
+| --- | --- | --- |
+| Normal completion | `0` | `0` |
+| Downstream closes early (`head`, `column`, etc.) | typically `0` in common pipeline use | `0` |
+| `Ctrl-C` / `SIGINT` | `130` | `130` |
+| `SIGTERM` | `143` | `143` |
+| Non-signal I/O or processing error | usually non-zero | `1` |
+
+### `--save-on-error`
+
+`stash tee` accepts `--save-on-error=true|false` and defaults to `true`.
+
+When `--save-on-error=true`:
+- `SIGINT` / `Ctrl-C`: if bytes were already captured, `stash tee` saves a
+  partial entry, marks it with `partial=true`, and exits `130`
+- `SIGTERM`: if bytes were already captured, `stash tee` saves a partial
+  entry, marks it with `partial=true`, and exits `143`
+- non-signal read or processing error: if bytes were already captured,
+  `stash tee` saves a partial entry, marks it with `partial=true`, and exits
+  `1`
+
+When `--save-on-error=false`:
+- `SIGINT`, `SIGTERM`, or non-signal read/processing errors do not keep a
+  partial entry
+
+Broken pipe is separate from `--save-on-error`:
+- if the downstream consumer closes early (`head`, `column`, etc.), `stash tee`
+  still exits `0`
+- if any input was already captured, the saved entry is kept
