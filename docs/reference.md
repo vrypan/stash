@@ -30,7 +30,7 @@ Without a subcommand, `stash` uses smart mode:
 
 ```bash
 stash push file.txt
-stash push --print file.txt
+stash push --print=stdout file.txt
 stash push --print=stderr file.txt
 ```
 
@@ -43,7 +43,7 @@ some-command | stash tee --save-on-error=false | next-command
 ```
 
 `--print` controls where the generated entry ID is emitted:
-- `--print` or `--print=stdout` or `--print=1`
+- `--print=stdout` or `--print=1`
 - `--print=stderr` or `--print=2`
 - `--print=null` or `--print=0`
 

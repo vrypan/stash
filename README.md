@@ -39,8 +39,8 @@ curl -s https://api.example.com/data | stash | jq .
 ```
 
 By default, `stash`, `stash push`, and `stash tee` do not print the generated
-entry ID. Use `--print`, `--print=stderr`, or `--print=null` to control where
-the ID is emitted.
+entry ID. Use `--print=stdout`, `--print=stderr`, or `--print=null` to control
+where the ID is emitted.
 
 Use with diff:
 

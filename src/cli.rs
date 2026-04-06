@@ -60,7 +60,7 @@ pub struct PushArgs {
     #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     attr: Vec<String>,
 
-    #[arg(long, num_args = 0..=1, default_value = "null", default_missing_value = "stdout", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
+    #[arg(long, default_value = "null", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
     print: String,
 
     #[arg(help = "Optional file to stash; reads stdin when omitted")]
@@ -72,7 +72,7 @@ pub struct TeeArgs {
     #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     attr: Vec<String>,
 
-    #[arg(long, num_args = 0..=1, default_value = "null", default_missing_value = "stdout", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
+    #[arg(long, default_value = "null", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
     print: String,
 
     #[arg(long, num_args = 0..=1, default_value_t = true, default_missing_value = "true", help = "Save captured input when an upstream or processing error happens: true or false")]

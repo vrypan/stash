@@ -35,9 +35,9 @@ some-command | stash tee --save-on-error=false | next-command
 ```
 
 By default, `stash tee` keeps stdout unchanged and does not print the generated
-entry ID. Use `--print`, `--print=stderr`, or `--print=null` if you want to
-control where the ID is emitted explicitly. `--print` by itself means
-`--print=stdout`. Numeric aliases `1`, `2`, and `0` are also accepted. With
+entry ID. Use `--print=stdout`, `--print=stderr`, or `--print=null` if you
+want to control where the ID is emitted explicitly. Numeric aliases `1`, `2`,
+and `0` are also accepted. With
 `--save-on-error=true` (the default), an interrupted input stream is saved if
 any bytes were captured, including `Ctrl-C` interruption, and `stash tee`
 exits non-zero. Use

@@ -2,8 +2,10 @@
 
 All notable changes to `stash` are documented in this file.
 
-## Unreleased
+## 0.5.6
 
+- Make `--print` require an explicit value to avoid ambiguity with
+  `stash push [file]`.
 - Save captured input on `Ctrl-C` in both `stash tee` and stdin-driven
   `stash` when `--save-on-error=true` applies.
 - Align interruption handling more closely with `tee`:
