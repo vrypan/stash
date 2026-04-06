@@ -19,6 +19,7 @@ use crate::store::Meta;
     version,
     about = "A local store for pipeline output and ad hoc file snapshots",
     long_about = "A local store for pipeline output and ad hoc file snapshots.\n\nWhen used without a subcommand, stash picks a mode automatically:\n  - in the middle of a pipeline, it behaves like `stash tee`\n  - otherwise, it behaves like `stash push`",
+    after_help = "Links:\n  Docs: https://github.com/vrypan/stash/tree/main/docs\n  Reference: https://github.com/vrypan/stash/blob/main/docs/reference.md\n  Issues: https://github.com/vrypan/stash/issues",
     disable_help_subcommand = true
 )]
 struct Cli {

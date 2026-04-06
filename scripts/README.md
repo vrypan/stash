@@ -85,6 +85,46 @@ du -sh * | sstash -a label=nightly
 stash attr @1 command
 ```
 
+## `stash-fzf.zsh`
+
+Adds `fzf`-powered ref completion for selected `stash` commands in zsh.
+
+### Setup
+
+First load the normal `stash` zsh completion, then source this helper from your
+`~/.zshrc`:
+
+```zsh
+source /path/to/stash/scripts/stash-fzf.zsh
+```
+
+### Behavior
+
+- only activates if `fzf` is available
+- wraps the generated `_stash` completion rather than replacing it entirely
+- if the generated `_stash` completion is not installed, it still provides the
+  `fzf` ref picker but does not try to emulate the rest of the completion
+- uses `fzf` to select refs for:
+  - `stash cat`
+  - `stash attr`
+  - `stash path`
+  - `stash rm`
+- falls back to the normal completion for all other positions
+
+### Example
+
+Type:
+
+```zsh
+stash cat <TAB>
+```
+
+and pick an entry from an `fzf` list built from:
+
+```bash
+stash ls --id=full --name --preview --color=false
+```
+
 ## `stash-push-type`
 
 Wraps the local `stash` binary and records a `type` attribute using the system
