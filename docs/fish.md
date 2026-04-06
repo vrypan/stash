@@ -12,3 +12,6 @@ stash completion fish > ~/.config/fish/completions/stash.fish
 ```
 
 Fish loads completions from that directory automatically.
+
+> [!NOTE]
+> Check [scripts](../scripts/) for other integrations.

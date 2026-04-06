@@ -11,7 +11,7 @@ if ! command -v stash >/dev/null 2>&1; then
   exit 1
 fi
 
-id="$(stash push --print "$@")"
+id="$(stash push --print=stdout "$@")"
 data_path="$(stash path "${id}")"
 type="$(file -b --mime-type "${data_path}")"
 stash attr "${id}" "type=${type}" >/dev/null

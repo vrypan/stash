@@ -1,20 +1,16 @@
 # Scripts
 
-This directory contains helper scripts around `stash`.
+Helper scripts around `stash`.
 
 ## `stash-copy`
 
 Copies stash data and attribute files from a remote machine into the local stash repository over
 SSH using `rsync`.
 
-### Usage
-
 ```bash
 stash-copy user@host
-stash-copy user@host:/remote/stash
+stash-copy user@host:/remote/path/to/stash
 ```
-
-### Behavior
 
 - local stash root uses `STASH_DIR` if set, otherwise `~/.stash`
 - remote stash root uses the explicit path if provided
@@ -25,21 +21,29 @@ stash-copy user@host:/remote/stash
 - remote `tmp/` is not copied
 - local entries are not deleted if they do not exist on the remote side
 
-### Requirements
+> [!NOTE]
+> brew installs it in `$(brew --prefix)/share/stash/scripts/stash-copy`
 
-- `ssh`
-- `rsync`
+## `stash-push-type`
 
-### Example
+Wraps the local `stash` binary and records a `type` attribute using the system
+`file` command after the entry is created.
+
+> [!NOTE]
+> brew installs it in `$(brew --prefix)/share/stash/scripts/stash-push-type.zsh`
+
+After you add it to your path:
 
 ```bash
-stash-copy vrypan@srv2.local
-```
+$ ./scripts/stash-push-type demos/words.gif
+01knj60kt6mxyjvehm647y0yb8
 
-Copy from a non-default remote stash path:
-
-```bash
-stash-copy vrypan@srv2.local:/srv/stash
+$ stash attr @1
+id      01knj60kt6mxyjvehm647y0yb8
+ts      2026-04-06T19:58:46.600732000Z
+size    299145
+filename        words.gif
+type    image/gif
 ```
 
 ## `sstash.zsh`
@@ -47,106 +51,39 @@ stash-copy vrypan@srv2.local:/srv/stash
 Adds a zsh helper function named `sstash` that captures the full interactive
 command line into `command` when you pipe output into `stash`.
 
-### Setup
-
 Source it from your `~/.zshrc`:
 
 ```zsh
 source /path/to/sstash.zsh
+# or, if you installed stash using brew:
+# source "$(brew --prefix)/share/stash/scripts/sstash.zsh"
 ```
 
-It installs a zsh `preexec` hook using `add-zsh-hook` and defines `sstash()`.
+This installs a zsh `preexec` hook using `add-zsh-hook` and defines `sstash()`.
 The hook only records command lines that contain `sstash`.
 
-### Usage
+```zsh
+$ du -sh * | sstash --attr label=test
 
-```bash
-du -sh * | sstash
-find . -type f | sort | sstash
-```
-
-Pass additional `stash` flags as usual:
-
-```bash
-du -sh * | sstash -a label=ci
-find . -type f | sort | sstash -a source=find -a stage=raw
-```
-
-### Behavior
-
-- stores the full interactive command line in `command`
-- keeps any extra `stash` flags you pass to `sstash`
-- if no matching command line was captured, falls back to plain `stash`
-
-### Example
-
-```bash
-du -sh * | sstash -a label=nightly
-stash attr @1 command
+$ stash attr @1
+id      01knj5c3zd0tnsdn5ac5fekbtx
+ts      2026-04-06T19:47:35.252875000Z
+size    220
+command du -sh * | sstash --attr label=test
+label   test
 ```
 
 ## `stash-fzf.zsh`
 
-Adds `fzf`-powered ref completion for selected `stash` commands in zsh.
+Adds `fzf`-powered ref completion for selected `stash cat/attr/path/rm` commands in zsh.
 
-### Setup
+Just type `stash cat <tab>` and you'll get a picker to select the entry id.
 
-First load the normal `stash` zsh completion, then source this helper from your
+To enable, source this helper from your
 `~/.zshrc`:
 
 ```zsh
 source /path/to/stash/scripts/stash-fzf.zsh
+# or, if you installed stash using brew:
+# source "$(brew --prefix)/share/stash/scripts/stash-fzf.zsh"
 ```
-
-### Behavior
-
-- only activates if `fzf` is available
-- wraps the generated `_stash` completion rather than replacing it entirely
-- if the generated `_stash` completion is not installed, it still provides the
-  `fzf` ref picker but does not try to emulate the rest of the completion
-- uses `fzf` to select refs for:
-  - `stash cat`
-  - `stash attr`
-  - `stash path`
-  - `stash rm`
-- falls back to the normal completion for all other positions
-
-### Example
-
-Type:
-
-```zsh
-stash cat <TAB>
-```
-
-and pick an entry from an `fzf` list built from:
-
-```bash
-stash ls --id=full --name --preview --color=false
-```
-
-## `stash-push-type`
-
-Wraps the local `stash` binary and records a `type` attribute using the system
-`file` command after the entry is created.
-
-### Usage
-
-```bash
-scripts/stash-push-type path/to/file
-cat output.txt | scripts/stash-push-type
-```
-
-### Behavior
-
-- runs `stash push`
-- uses `stash push --print` to capture the generated ID
-- resolves the new entry path with `stash path`
-- runs `file -b` on the stored `data` file
-- stores the result in `type` via `stash attr <id> type=...`
-- prints the new entry id to stdout
-
-### Requirements
-
-- `stash` available in `PATH`
-- `/usr/bin/file`

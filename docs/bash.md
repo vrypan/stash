@@ -13,3 +13,6 @@ stash completion bash > ~/.local/share/bash-completion/completions/stash
 
 Make sure your shell loads `bash-completion`. On many systems this already
 happens automatically for interactive shells.
+
+> [!NOTE]
+> Check [scripts](../scripts/) for other integrations.
