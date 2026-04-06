@@ -505,13 +505,22 @@ fn decorate_entry(
         meta_sel
             .tags
             .iter()
-            .map(|tag| item.attrs.get(tag).cloned().unwrap_or_else(|| " ".into()))
+            .map(|tag| {
+                item.attrs
+                    .get(tag)
+                    .map(|value| escape_attr_output(value))
+                    .unwrap_or_else(|| " ".into())
+            })
             .collect()
     } else {
         Vec::new()
     };
     let meta_inline = if meta_sel.show_all && !item.attrs.is_empty() {
-        item.attrs.values().cloned().collect::<Vec<_>>().join("  ")
+        item.attrs
+            .values()
+            .map(|value| escape_attr_output(value))
+            .collect::<Vec<_>>()
+            .join("  ")
     } else {
         String::new()
     };
@@ -519,13 +528,13 @@ fn decorate_entry(
         if meta_sel.show_all {
             item.attrs
                 .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
+                .map(|(k, v)| (k.clone(), escape_attr_output(v)))
                 .collect()
         } else {
             meta_sel
                 .tags
                 .iter()
-                .filter_map(|tag| item.attrs.get(tag).map(|v| (tag.clone(), v.clone())))
+                .filter_map(|tag| item.attrs.get(tag).map(|v| (tag.clone(), escape_attr_output(v))))
                 .collect()
         }
     } else {
@@ -826,7 +835,7 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
     if args.items.len() == 1 {
         let key = &args.items[0];
         if let Some(value) = attr_value(&meta, key, args.preview) {
-            println!("{value}");
+            println!("{}", escape_attr_output(&value));
             return Ok(());
         }
         return Err(io::Error::new(
@@ -843,7 +852,7 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
                     format!("attribute not found: {key}"),
                 ));
             };
-            println!("{}{}{}", key, args.separator, value);
+            println!("{}{}{}", key, args.separator, escape_attr_output(&value));
         }
         return Ok(());
     }
@@ -852,12 +861,26 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
     println!("ts{}{}", args.separator, meta.ts);
     println!("size{}{}", args.separator, meta.size);
     for (k, v) in &meta.attrs {
-        println!("{}{}{}", k, args.separator, v);
+        println!("{}{}{}", k, args.separator, escape_attr_output(v));
     }
     if args.preview && !meta.preview.is_empty() {
-        println!("preview{}{}", args.separator, meta.preview);
+        println!("preview{}{}", args.separator, escape_attr_output(&meta.preview));
     }
     Ok(())
+}
+
+fn escape_attr_output(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 fn path_command(args: PathArgs) -> io::Result<()> {
