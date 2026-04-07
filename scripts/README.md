@@ -45,8 +45,36 @@ size    299145
 filename        words.gif
 type    image/gif
 ```
+## `stash-rg`
 
-## `sstash.zsh`
+Searches both attribute output and entry contents across the whole stash using
+`rg`.
+
+> [!NOTE]
+> brew installs it in `$(brew --prefix)/share/stash/scripts/stash-rg`
+
+```bash
+stash-rg TODO
+stash-rg 'error|warning'
+stash-rg '^filename'
+```
+
+Output format:
+
+```text
+37733x4x attr 1: command du -sh * | sstash\nstash attr @1 command
+37733x4x data 2: stash attr @1 command
+```
+
+It prints:
+- the short stash ID
+- whether the match came from `attr` or `data`
+- the `rg` line number
+- the matched line with color preserved
+
+## zsh-specific
+
+### `sstash.zsh`
 
 Adds a zsh helper function named `sstash` that captures the full interactive
 command line into `command` when you pipe output into `stash`.
@@ -73,7 +101,7 @@ command du -sh * | sstash --attr label=test
 label   test
 ```
 
-## `stash-fzf.zsh`
+### `stash-fzf.zsh`
 
 Adds `fzf`-powered ref completion for selected `stash cat/attr/path/rm` commands in zsh.
 

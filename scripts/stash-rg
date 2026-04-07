@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v stash >/dev/null 2>&1; then
+  echo "stash binary not found in PATH" >&2
+  exit 1
+fi
+
+if ! command -v rg >/dev/null 2>&1; then
+  echo "rg binary not found in PATH" >&2
+  exit 1
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "usage: stash-rg <pattern> [rg args...]" >&2
+  exit 2
+fi
+
+pattern="$1"
+shift
+
+format_match() {
+  local kind="$1"
+  local id="$2"
+  local line="$3"
+  local lineno text
+
+  lineno="${line%%:*}"
+  text="${line#*:}"
+  printf '%s %s %s: %b\n' "$kind" "${id: -8}" "$lineno" "$text"
+}
+
+stash ls --id=full | while read -r id; do
+  stash attr "$id" 2>/dev/null \
+    | rg -n --color=always -- "$pattern" "$@" \
+    | while IFS= read -r line; do
+        format_match attr "$id" "$line"
+      done
+
+  stash cat "$id" 2>/dev/null \
+    | rg -n --color=always -- "$pattern" "$@" \
+    | while IFS= read -r line; do
+        format_match data "$id" "$line"
+      done
+done
