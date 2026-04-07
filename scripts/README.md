@@ -2,6 +2,9 @@
 
 Helper scripts around `stash`.
 
+You can use these as-is, but they are also meant to serve as examples and
+inspiration for integrating `stash` into your own workflows and shell setup.
+
 ## `stash-copy`
 
 Copies stash data and attribute files from a remote machine into the local stash repository over
@@ -71,6 +74,29 @@ It prints:
 - whether the match came from `attr` or `data`
 - the `rg` line number
 - the matched line with color preserved
+
+## `rstash`
+
+Stores stdin or a local file into a remote stash over SSH using `stash push`.
+
+`stash` must be available on the remote, but is not required on the local
+host.
+
+> [!NOTE]
+> brew installs it in `$(brew --prefix)/share/stash/scripts/rstash`
+
+```bash
+rstash user@host README.md
+printf 'hello\n' | rstash user@host --attr source=local
+rstash user@host --print=stdout --attr label=docs README.md
+```
+
+Behavior:
+- first argument is the SSH target
+- forwards arguments to remote `stash push`
+- when the last argument is a local file, it is streamed over SSH
+- adds `filename=<basename>` automatically for local files unless you already
+  passed a `filename=...` attribute explicitly
 
 ## zsh-specific
 

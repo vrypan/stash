@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  rstash user@host [stash-push-args...] [file]
+
+Stores stdin or a local file into a remote stash over SSH using `stash push`.
+
+Behavior:
+  - the first argument is the SSH target
+  - forwards all arguments to remote `stash push`
+  - if the last argument is an existing local file, it is streamed over stdin
+  - when a local file is used, `filename=<basename>` is added automatically
+    unless you already passed a filename attribute explicitly
+
+Examples:
+  rstash user@host README.md
+  printf 'hello\n' | rstash user@host --attr source=local
+  rstash user@host --print=stdout --attr label=docs README.md
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if ! command -v ssh >/dev/null 2>&1; then
+  echo "error: ssh is required" >&2
+  exit 1
+fi
+
+if [[ $# -lt 1 ]]; then
+  usage >&2
+  exit 1
+fi
+
+remote="$1"
+shift
+
+if [[ -z "$remote" ]]; then
+  echo "error: remote host is required" >&2
+  exit 1
+fi
+
+args=("$@")
+file_path=""
+if (( ${#args[@]} > 0 )); then
+  last_index=$((${#args[@]} - 1))
+  last_arg="${args[$last_index]}"
+  if [[ "$last_arg" != -* && -f "$last_arg" ]]; then
+    file_path="$last_arg"
+    unset 'args[$last_index]'
+    args=("${args[@]}")
+  fi
+fi
+
+filename_attr_set=0
+for (( i = 0; i < ${#args[@]}; i++ )); do
+  case "${args[$i]}" in
+    --attr=filename=*)
+      filename_attr_set=1
+      ;;
+    -a|--attr)
+      if (( i + 1 < ${#args[@]} )) && [[ "${args[$((i + 1))]}" == filename=* ]]; then
+        filename_attr_set=1
+      fi
+      ;;
+  esac
+done
+
+if [[ -n "$file_path" && $filename_attr_set -eq 0 ]]; then
+  args+=(--attr "filename=$(basename "$file_path")")
+fi
+
+quote_arg() {
+  printf '%q' "$1"
+}
+
+remote_cmd="stash push"
+for arg in "${args[@]}"; do
+  remote_cmd+=" $(quote_arg "$arg")"
+done
+
+if [[ -n "$file_path" ]]; then
+  ssh "$remote" "$remote_cmd" < "$file_path"
+else
+  ssh "$remote" "$remote_cmd"
+fi
