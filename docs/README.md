@@ -18,11 +18,9 @@ This directory contains the main `stash` documentation.
 - [stash-vs-tee.md](stash-vs-tee.md)
   How `stash tee` compares to standard `tee`, including return-code behavior.
 
-## Shell Setup
+## Shell Setup and other scripts
 
-- [zsh.md](zsh.md)
-  Zsh completion, `sstash`, and optional `fzf` ref selection.
-- [bash.md](bash.md)
-  Bash completion setup.
-- [fish.md](fish.md)
-  Fish completion setup.
+Check [scripts/](../scripts/) for instructions and examples on how to integrate
+`stash` with various command line workflows and tools.
+
+Completion setup: [zsh.md](zsh.md), [bash.md](bash.md), [fish.md](fish.md)
