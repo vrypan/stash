@@ -5,6 +5,28 @@ Helper scripts around `stash`.
 You can use these as-is, but they are also meant to serve as examples and
 inspiration for integrating `stash` into your own workflows and shell setup.
 
+## Starship
+
+If you use [Starship](https://starship.rs/), you can add a custom prompt module
+that shows the number of items currently stored in your stash.
+
+Add this to `~/.config/starship.toml`:
+
+```toml
+[custom.stash_count]
+description = "Show stash item count"
+command = '''
+count=$(find "${STASH_DIR:-$HOME/.stash}/attr" -type f 2>/dev/null | wc -l | tr -d ' ')
+printf '~{@ %s' "$count"
+'''
+when = 'test -d "${STASH_DIR:-$HOME/.stash}/attr"'
+shell = ["bash", "--noprofile", "--norc"]
+style = "bold cyan"
+format = "[$output]($style)"
+```
+
+Then add `${custom.stash_count}` to your main Starship `format`.
+
 ## `stash-copy`
 
 Copies stash data and attribute files from a remote machine into the local stash repository over
