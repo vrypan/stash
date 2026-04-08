@@ -13,6 +13,8 @@ This directory contains the main `stash` documentation.
 
 - [examples.md](examples.md)
   Longer end-to-end examples.
+- [stash-config-files.md](stash-config-files.md)
+  Snapshot config files before editing them, compare them later, and restore them if needed.
 - [stash-vs-tee.md](stash-vs-tee.md)
   How `stash tee` compares to standard `tee`, including return-code behavior.
 
