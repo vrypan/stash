@@ -1,10 +1,5 @@
 <img width="1280" height="640" alt="social-banner" src="https://github.com/user-attachments/assets/c98cfa58-2976-4b8d-9e5b-d9e5314348e6" />
 
-> [!CAUTION]
-> version >= 0.5.0 is **INCOMPATIBLE** with previous versions.
-> If you have a stash repo created with an older version, do not
-> upgrade! (Open an issue ticket and I'll help migrate data if needed)
-
 # ~{@ stash
 
 `stash` is a small local store for pipeline output and ad hoc file snapshots.
@@ -20,6 +15,9 @@ Without a subcommand, `stash` uses smart mode:
 > [!TIP]
 > stash fits nicely in any workflow that would involve temporary files, or
 > expensive output that needs to be processed in more than one ways.
+
+> [!NOTE]
+> What is `~{@`??? An ASCII art acorn.
 
 ## Quick Start
 
@@ -117,6 +115,3 @@ projects, or CI runs.
 - Shell completion setup: [docs/bash.md](docs/bash.md), [docs/fish.md](docs/fish.md), [docs/zsh.md](docs/zsh.md)
 - Demos: [demos/](demos/)
 - Helper scripts: [scripts/](scripts/)
-
-> [!NOTE]
-> What is `~{@`??? An ASCII art acorn.
