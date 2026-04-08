@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v stash >/dev/null 2>&1; then
-  echo "stash binary not found in PATH" >&2
-  exit 1
-fi
-
 if ! command -v rg >/dev/null 2>&1; then
   echo "rg binary not found in PATH" >&2
   exit 1
@@ -18,28 +13,80 @@ fi
 
 pattern="$1"
 shift
+rg_args=("$@")
+
+stash_dir="${STASH_DIR:-$HOME/.stash}"
+data_dir="$stash_dir/data"
+attr_dir="$stash_dir/attr"
+
+if [[ ! -d "$data_dir" || ! -d "$attr_dir" ]]; then
+  echo "stash directories not found under $stash_dir" >&2
+  exit 1
+fi
+
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  c_reset=$'\033[0m'
+  c_kind=$'\033[1;36m'
+  c_id=$'\033[1;33m'
+  c_lineno=$'\033[32m'
+else
+  c_reset=''
+  c_kind=''
+  c_id=''
+  c_lineno=''
+fi
 
 format_match() {
   local kind="$1"
-  local id="$2"
-  local line="$3"
-  local lineno text
+  local match="$2"
+  local path rest id lineno text
 
-  lineno="${line%%:*}"
-  text="${line#*:}"
-  printf '%s %s %s: %b\n' "$kind" "${id: -8}" "$lineno" "$text"
+  path="${match%%:*}"
+  rest="${match#*:}"
+  id="${path##*/}"
+  lineno="${rest%%:*}"
+  text="${rest#*:}"
+
+  id="$(strip_ansi "$id")"
+  lineno="$(strip_ansi "$lineno")"
+  printf '%s%s%s %s%s%s %s%s%s: %b\n' \
+    "$c_kind" "$kind" "$c_reset" \
+    "$c_id" "${id: -8}" "$c_reset" \
+    "$c_lineno" "$lineno" "$c_reset" \
+    "$text"
 }
 
-stash ls --id=full | while read -r id; do
-  stash attr "$id" 2>/dev/null \
-    | rg -n --color=always -- "$pattern" "$@" \
-    | while IFS= read -r line; do
-        format_match attr "$id" "$line"
-      done
+scan_dir() {
+  local kind="$1"
+  local dir="$2"
+  local line
 
-  stash cat "$id" 2>/dev/null \
-    | rg -n --color=always -- "$pattern" "$@" \
-    | while IFS= read -r line; do
-        format_match data "$id" "$line"
-      done
-done
+  while IFS= read -r line; do
+    format_match "$kind" "$line"
+  done < <(run_rg "$dir")
+}
+
+run_rg() {
+  local dir="$1"
+
+  if (( ${#rg_args[@]} == 0 )); then
+    rg -n -H --color=always \
+      --colors 'path:none' \
+      --colors 'line:none' \
+      --colors 'column:none' \
+      -- "$pattern" "$dir" || true
+  else
+    rg -n -H --color=always \
+      --colors 'path:none' \
+      --colors 'line:none' \
+      --colors 'column:none' \
+      -- "$pattern" "$dir" "${rg_args[@]}" || true
+  fi
+}
+
+strip_ansi() {
+  printf '%s' "$1" | sed -E $'s/\x1B\\[[0-9;]*m//g'
+}
+
+scan_dir attr "$attr_dir"
+scan_dir data "$data_dir"
