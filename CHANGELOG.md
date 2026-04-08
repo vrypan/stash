@@ -2,6 +2,15 @@
 
 All notable changes to `stash` are documented in this file.
 
+## 0.5.7
+
+- Escape control characters like `\n` in plain-text attribute output for
+  `stash attr`, `stash ls`, and `stash log`.
+- Add `stash-rg`, a helper script for searching across stashed attributes and
+  data with `rg`.
+- Add `rstash`, a helper script for pushing stdin or files to a remote stash
+  host over `ssh`.
+
 ## 0.5.6
 
 - Make `--print` require an explicit value to avoid ambiguity with
