@@ -706,7 +706,8 @@ fn encode_ulid(bytes: [u8; 16]) -> String {
         out[i] = ALPHABET[(value & 0x1f) as usize];
         value >>= 5;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    // SAFETY: out contains only bytes from ALPHABET, which is ASCII-only
+    unsafe { String::from_utf8_unchecked(out.to_vec()) }
 }
 
 pub fn add_filename_attr(path: &Path, attrs: &mut BTreeMap<String, String>) {
