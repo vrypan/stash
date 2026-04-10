@@ -7,7 +7,7 @@ use signal_hook::low_level;
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fs::{self, File};
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -760,8 +760,7 @@ fn parse_attr_file(input: &str) -> Result<Meta, String> {
         preview: String::new(),
         attrs: BTreeMap::new(),
     };
-    for line in io::Cursor::new(input).lines() {
-        let line = line.map_err(|e| e.to_string())?;
+    for line in input.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
