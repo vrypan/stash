@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const SHORT_ID_LEN: usize = 8;
 pub const MIN_ID_LEN: usize = 6;
-const LIST_CACHE_VERSION: u32 = 1;
+const LIST_CACHE_VERSION: u32 = 2;
 
 #[derive(Debug)]
 pub struct PartialSavedError {
@@ -62,6 +62,7 @@ struct ListCacheFile {
     data_mtime: String,
     attr_mtime: String,
     items: Vec<CachedMeta>,
+    attr_keys: BTreeMap<String, usize>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -225,6 +226,11 @@ pub fn list() -> io::Result<Vec<Meta>> {
 }
 
 fn read_list_cache() -> io::Result<Vec<Meta>> {
+    let cache = read_list_cache_file()?;
+    Ok(cache.items.into_iter().map(Into::into).collect())
+}
+
+fn read_list_cache_file() -> io::Result<ListCacheFile> {
     let path = list_cache_path()?;
     let data = fs::read(path)?;
     let cfg = bincode::config::standard();
@@ -238,7 +244,7 @@ fn read_list_cache() -> io::Result<Vec<Meta>> {
     if cache.data_mtime != current_data || cache.attr_mtime != current_attr {
         return Err(io::Error::other("stale list cache"));
     }
-    Ok(cache.items.into_iter().map(Into::into).collect())
+    Ok(cache)
 }
 
 fn write_list_cache(items: &[Meta]) -> io::Result<()> {
@@ -249,10 +255,39 @@ fn write_list_cache(items: &[Meta]) -> io::Result<()> {
         data_mtime: dir_mtime_key(data_dir()?)?,
         attr_mtime: dir_mtime_key(attr_dir()?)?,
         items: items.iter().cloned().map(Into::into).collect(),
+        attr_keys: build_attr_key_index(items),
     };
     let cfg = bincode::config::standard();
     let encoded = bincode::serde::encode_to_vec(&cache, cfg).map_err(io::Error::other)?;
     fs::write(path, encoded)
+}
+
+fn build_attr_key_index(items: &[Meta]) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    for item in items {
+        for key in item.attrs.keys() {
+            *out.entry(key.clone()).or_insert(0) += 1;
+        }
+    }
+    out
+}
+
+pub fn all_attr_keys() -> io::Result<Vec<String>> {
+    if let Ok(cache) = read_list_cache_file() {
+        return Ok(cache.attr_keys.into_keys().collect());
+    }
+    let items = list()?;
+    let keys = build_attr_key_index(&items).into_keys().collect();
+    Ok(keys)
+}
+
+pub fn attr_count_for_key(key: &str) -> io::Result<usize> {
+    if let Ok(cache) = read_list_cache_file() {
+        return Ok(cache.attr_keys.get(key).copied().unwrap_or(0));
+    }
+    let items = list()?;
+    let count = build_attr_key_index(&items).remove(key).unwrap_or(0);
+    Ok(count)
 }
 
 pub fn newest() -> io::Result<Meta> {

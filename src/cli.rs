@@ -45,6 +45,8 @@ enum Command {
     Log(LogArgs),
     #[command(about = "Show or update entry attributes")]
     Attr(AttrArgs),
+    #[command(about = "List attribute keys across the stash")]
+    Attrs(AttrsArgs),
     #[command(about = "Print stash paths")]
     Path(PathArgs),
     #[command(about = "Remove entries")]
@@ -215,6 +217,12 @@ pub struct AttrArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct AttrsArgs {
+    #[arg(long, help = "Include entry count")]
+    count: bool,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct PathArgs {
     #[arg(
         short = 'd',
@@ -302,6 +310,7 @@ pub fn run() -> io::Result<()> {
         Some(Command::Ls(args)) => ls_command(args),
         Some(Command::Log(args)) => log_command(args),
         Some(Command::Attr(args)) => attr_command(args),
+        Some(Command::Attrs(args)) => attrs_command(args),
         Some(Command::Path(args)) => path_command(args),
         Some(Command::Rm(args)) => rm_command(args),
         Some(Command::Pop) => pop_command(),
@@ -865,6 +874,19 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
     }
     if args.preview && !meta.preview.is_empty() {
         println!("preview{}{}", args.separator, escape_attr_output(&meta.preview));
+    }
+    Ok(())
+}
+
+fn attrs_command(args: AttrsArgs) -> io::Result<()> {
+    let keys = store::all_attr_keys()?;
+    for key in keys {
+        if args.count {
+            let count = store::attr_count_for_key(&key)?;
+            println!("{key}\t{count}");
+        } else {
+            println!("{key}");
+        }
     }
     Ok(())
 }
