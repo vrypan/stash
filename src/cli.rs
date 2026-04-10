@@ -907,19 +907,25 @@ fn escape_attr_output(input: &str) -> String {
     out
 }
 
+fn path_base_dir(dir: bool, attr: bool) -> io::Result<PathBuf> {
+    if dir {
+        store::base_dir()
+    } else if attr {
+        store::attr_dir()
+    } else {
+        store::data_dir()
+    }
+}
+
 fn path_command(args: PathArgs) -> io::Result<()> {
+    let dir = args.dir;
+    let attr = args.attr;
     let mut refs = args.refs;
 
     if refs.is_empty() {
         let stdin = io::stdin();
         if stdin.is_terminal() {
-            let path = if args.dir {
-                store::base_dir()?
-            } else if args.attr {
-                store::attr_dir()?
-            } else {
-                store::data_dir()?
-            };
+            let path = path_base_dir(dir, attr)?;
             println!("{}", path.canonicalize().unwrap_or(path).display());
             return Ok(());
         }
@@ -931,13 +937,7 @@ fn path_command(args: PathArgs) -> io::Result<()> {
             }
         }
         if refs.is_empty() {
-            let path = if args.dir {
-                store::base_dir()?
-            } else if args.attr {
-                store::attr_dir()?
-            } else {
-                store::data_dir()?
-            };
+            let path = path_base_dir(dir, attr)?;
             println!("{}", path.canonicalize().unwrap_or(path).display());
             return Ok(());
         }
@@ -945,13 +945,13 @@ fn path_command(args: PathArgs) -> io::Result<()> {
 
     for reference in refs {
         let id = store::resolve(&reference)?;
-        let path = if args.dir {
-            if args.attr {
+        let path = if dir {
+            if attr {
                 store::attr_dir()?
             } else {
                 store::data_dir()?
             }
-        } else if args.attr {
+        } else if attr {
             store::entry_attr_path(&id)?
         } else {
             store::entry_data_path(&id)?
