@@ -398,13 +398,14 @@ fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<MetaSel
         show_all,
         tags: Vec::new(),
     };
+    let mut seen = std::collections::HashSet::new();
     for value in values {
         if value.contains(',') || value.contains('=') || value.trim().is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "--attr accepts attribute names and is repeatable",
             ));
-        } else if !out.tags.contains(value) {
+        } else if seen.insert(value.as_str()) {
             out.tags.push(value.clone());
         }
     }
