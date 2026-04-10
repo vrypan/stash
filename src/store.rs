@@ -272,29 +272,20 @@ fn build_attr_key_index(items: &[Meta]) -> BTreeMap<String, usize> {
     out
 }
 
-pub fn all_attr_keys() -> io::Result<Vec<String>> {
+pub fn all_attr_keys() -> io::Result<Vec<(String, usize)>> {
     if let Ok(cache) = read_list_cache_file() {
-        return Ok(cache.attr_keys.into_keys().collect());
+        return Ok(cache.attr_keys.into_iter().collect());
     }
     let items = list()?;
-    let keys = build_attr_key_index(&items).into_keys().collect();
-    Ok(keys)
-}
-
-pub fn attr_count_for_key(key: &str) -> io::Result<usize> {
-    if let Ok(cache) = read_list_cache_file() {
-        return Ok(cache.attr_keys.get(key).copied().unwrap_or(0));
-    }
-    let items = list()?;
-    let count = build_attr_key_index(&items).remove(key).unwrap_or(0);
-    Ok(count)
+    Ok(build_attr_key_index(&items).into_iter().collect())
 }
 
 pub fn newest() -> io::Result<Meta> {
-    list()?
+    let id = list_entry_ids()?
         .into_iter()
         .next()
-        .ok_or_else(|| io::Error::other("stash is empty"))
+        .ok_or_else(|| io::Error::other("stash is empty"))?;
+    get_meta(&id)
 }
 
 pub fn nth_newest(n: usize) -> io::Result<Meta> {

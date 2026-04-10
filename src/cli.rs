@@ -879,10 +879,8 @@ fn attr_command(args: AttrArgs) -> io::Result<()> {
 }
 
 fn attrs_command(args: AttrsArgs) -> io::Result<()> {
-    let keys = store::all_attr_keys()?;
-    for key in keys {
+    for (key, count) in store::all_attr_keys()? {
         if args.count {
-            let count = store::attr_count_for_key(&key)?;
             println!("{key}\t{count}");
         } else {
             println!("{key}");
