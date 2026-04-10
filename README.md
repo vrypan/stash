@@ -55,6 +55,7 @@ File-oriented view:
 ```bash
 stash ls
 stash log
+stash attrs --count
 stash attr @1
 ```
 

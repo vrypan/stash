@@ -84,6 +84,7 @@ You can also use `stash` like a small flat file store:
 stash ls
 stash ls -l
 stash ls --date --size --name
+stash attrs --count
 stash cat @1
 stash cat yjvyz3sf
 stash rm @2
@@ -104,6 +105,7 @@ a3f11qka    493B  Apr  1  docker-forgejo.yml
 In that model:
 - `stash ls` lists entry IDs only
 - `stash ls -l` expands that into a file-oriented view
+- `stash attrs --count` shows which user-defined attributes exist across the stash
 - `stash cat` reads an entry by stack ref or ID
 - `stash rm` deletes an entry by stack ref or ID, or removes older entries with `--before`
 
@@ -182,6 +184,7 @@ diff -u <(stash cat @2) <(stash cat @1)
 And if you want to find the right snapshots first:
 
 ```bash
+stash attrs --count
 stash log -a label
 stash ls -A
 ```

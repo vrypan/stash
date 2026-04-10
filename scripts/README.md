@@ -87,13 +87,13 @@ stash-rg '^filename'
 Output format:
 
 ```text
-37733x4x attr 1: command du -sh * | sstash\nstash attr @1 command
-37733x4x data 2: stash attr @1 command
+attr 37733x4x 1: command du -sh * | sstash\nstash attr @1 command
+data 37733x4x 2: stash attr @1 command
 ```
 
 It prints:
-- the short stash ID
 - whether the match came from `attr` or `data`
+- the short stash ID
 - the `rg` line number
 - the matched line with color preserved
 
