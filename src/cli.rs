@@ -1216,29 +1216,25 @@ fn trim_ansi_to_width(s: &str, width: usize) -> String {
     let bytes = s.as_bytes();
     let mut out = String::new();
     let mut visible = 0usize;
-    let mut i = 0usize;
-    while i < bytes.len() {
-        if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
-            let mut j = i + 2;
-            while j < bytes.len() {
-                let c = bytes[j];
-                if (0x40..=0x7e).contains(&c) {
-                    j += 1;
-                    break;
-                }
-                j += 1;
+    let mut chars = s.char_indices().peekable();
+    while let Some((i, ch)) = chars.next() {
+        if ch == '\x1b' && bytes.get(i + 1) == Some(&b'[') {
+            let end = bytes[i + 2..]
+                .iter()
+                .position(|&b| (0x40..=0x7e).contains(&b))
+                .map(|p| i + 2 + p + 1)
+                .unwrap_or(bytes.len());
+            out.push_str(&s[i..end]);
+            while chars.peek().map(|(j, _)| *j < end).unwrap_or(false) {
+                chars.next();
             }
-            out.push_str(&s[i..j]);
-            i = j;
             continue;
         }
-        let ch = s[i..].chars().next().unwrap();
         if visible >= width {
             break;
         }
         out.push(ch);
         visible += 1;
-        i += ch.len_utf8();
     }
     if visible >= width {
         out.push_str("\x1b[0m");
@@ -1268,27 +1264,28 @@ fn auto_ls_preview_chars(
     for (idx, item) in items.iter().enumerate() {
         max_id = max_id.max(display_id(item, idx, id_mode).len());
         if let Some(mode) = size_mode {
-            max_size = max_size.max(format_size(item.size, mode).len());
+            max_size = max_size.max(measure_size_width(item.size, mode));
         }
         if let Some(mode) = date_mode {
-            max_date = max_date.max(format_date(&item.ts, mode).len());
+            max_date = max_date.max(measure_date_width(&item.ts, mode));
         }
         if show_name {
-            let name = item
+            let name_len = item
                 .attrs
                 .get("filename")
-                .cloned()
-                .unwrap_or_else(|| item.display_id());
-            max_name = max_name.max(name.len());
+                .map(|s| s.len())
+                .unwrap_or_else(|| item.id.len());
+            max_name = max_name.max(name_len);
         }
         if !meta_sel.tags.is_empty() {
             for (i, tag) in meta_sel.tags.iter().enumerate() {
-                let value = item.attrs.get(tag).cloned().unwrap_or_else(|| " ".into());
-                meta_widths[i] = meta_widths[i].max(value.len());
+                let len = item.attrs.get(tag).map(|v| v.len()).unwrap_or(1);
+                meta_widths[i] = meta_widths[i].max(len);
             }
         } else if meta_sel.show_all && !item.attrs.is_empty() {
-            let joined = item.attrs.values().cloned().collect::<Vec<_>>().join("  ");
-            max_inline_meta = max_inline_meta.max(joined.len());
+            let len = item.attrs.values().map(|v| v.len()).sum::<usize>()
+                + item.attrs.len().saturating_sub(1) * 2;
+            max_inline_meta = max_inline_meta.max(len);
         }
     }
 
@@ -1312,11 +1309,28 @@ fn auto_ls_preview_chars(
     chars.max(20)
 }
 
-fn format_size(size: i64, mode: &str) -> String {
+fn measure_size_width(size: i64, mode: &str) -> usize {
     if mode == "bytes" {
-        size.to_string()
+        if size == 0 {
+            return 1;
+        }
+        let mut n = size.unsigned_abs();
+        let mut digits = 0usize;
+        while n > 0 {
+            n /= 10;
+            digits += 1;
+        }
+        digits
     } else {
-        store::human_size(size)
+        store::human_size(size).len()
+    }
+}
+
+fn measure_date_width(ts: &str, mode: &str) -> usize {
+    match normalize_date_mode(mode).unwrap_or("iso") {
+        "iso" => ts.len(),
+        "ls" => 12, // format_ls_date always yields a 12-char string
+        _ => format_date(ts, mode).len(),
     }
 }
 
@@ -1427,15 +1441,15 @@ fn preview_snippet(preview: &str, chars: usize) -> String {
     if chars == 0 {
         return String::new();
     }
-    let total = preview.chars().count();
     let mut out = String::new();
-    for (idx, ch) in preview.chars().enumerate() {
-        if idx >= chars {
-            break;
+    let mut it = preview.chars();
+    for _ in 0..chars {
+        match it.next() {
+            Some(ch) => out.push(ch),
+            None => return out,
         }
-        out.push(ch);
     }
-    if total > chars && chars > 3 {
+    if it.next().is_some() && chars > 3 {
         out.push_str("...");
     }
     out
