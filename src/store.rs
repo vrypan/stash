@@ -399,89 +399,9 @@ pub fn push_from_reader<R: Read>(
     let signal = Arc::new(AtomicI32::new(0));
     let _signal_guard = SignalGuard::new(&interrupted, &signal)?;
     let id = new_ulid()?;
-    let tmp = tmp_dir()?;
-    let data_path = tmp.join(format!("{id}.data"));
-    let mut data = File::create(&data_path)?;
-    let mut sample = Vec::new();
-    let mut total = 0i64;
-    let mut buf = [0u8; 8192];
-    loop {
-        if interrupted.load(Ordering::Relaxed) {
-            return save_or_abort_partial(
-                id,
-                data_path,
-                &sample,
-                total,
-                attrs,
-                signal_error(&signal),
-                PartialSaveOptions {
-                    save_on_error: true,
-                    save_empty: true,
-                    signal: Some(signal.load(Ordering::Relaxed)),
-                },
-            );
-        }
-        let n = match reader.read(&mut buf) {
-            Ok(n) => n,
-            Err(err) => {
-                return save_or_abort_partial(
-                    id,
-                    data_path,
-                    &sample,
-                    total,
-                    attrs,
-                    err,
-                    PartialSaveOptions {
-                        save_on_error: true,
-                        save_empty: false,
-                        signal: None,
-                    },
-                );
-            }
-        };
-        if n == 0 {
-            if interrupted.load(Ordering::Relaxed) {
-                return save_or_abort_partial(
-                    id,
-                    data_path,
-                    &sample,
-                    total,
-                    attrs,
-                    signal_error(&signal),
-                    PartialSaveOptions {
-                        save_on_error: true,
-                        save_empty: true,
-                        signal: Some(signal.load(Ordering::Relaxed)),
-                    },
-                );
-            }
-            break;
-        }
-        if sample.len() < 512 {
-            let need = (512 - sample.len()).min(n);
-            sample.extend_from_slice(&buf[..need]);
-        }
-        if let Err(err) = data.write_all(&buf[..n]) {
-            let _ = fs::remove_file(&data_path);
-            return Err(err);
-        }
-        total += n as i64;
-    }
-    drop(data);
-
-    let meta = Meta {
-        id: id.clone(),
-        ts: now_rfc3339ish()?,
-        size: total,
-        preview: build_preview_data(&sample, sample.len()),
-        attrs,
-    };
-    let attr_path = tmp.join(format!("{id}.attr"));
-    fs::write(&attr_path, encode_attr(&meta))?;
-    fs::rename(&data_path, entry_data_path(&id)?)?;
-    fs::rename(&attr_path, entry_attr_path(&id)?)?;
-    invalidate_list_cache();
-    Ok(id)
+    let data_path = tmp_dir()?.join(format!("{id}.data"));
+    let data = File::create(&data_path)?;
+    run_read_loop(reader, None, data, data_path, id, attrs, &interrupted, &signal, true)
 }
 
 pub fn tee_from_reader_partial<R: Read, W: Write>(
@@ -495,9 +415,32 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
     let signal = Arc::new(AtomicI32::new(0));
     let _signal_guard = SignalGuard::new(&interrupted, &signal)?;
     let id = new_ulid()?;
-    let tmp = tmp_dir()?;
-    let data_path = tmp.join(format!("{id}.data"));
-    let mut data = File::create(&data_path)?;
+    let data_path = tmp_dir()?.join(format!("{id}.data"));
+    let data = File::create(&data_path)?;
+    run_read_loop(
+        reader,
+        Some(stdout as &mut dyn Write),
+        data,
+        data_path,
+        id,
+        attrs,
+        &interrupted,
+        &signal,
+        save_on_error,
+    )
+}
+
+fn run_read_loop<R: Read>(
+    reader: &mut R,
+    mut tee: Option<&mut dyn Write>,
+    mut data: File,
+    data_path: PathBuf,
+    id: String,
+    attrs: BTreeMap<String, String>,
+    interrupted: &Arc<AtomicBool>,
+    signal: &Arc<AtomicI32>,
+    save_on_error: bool,
+) -> io::Result<String> {
     let mut sample = Vec::new();
     let mut total = 0i64;
     let mut buf = [0u8; 8192];
@@ -509,7 +452,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                 &sample,
                 total,
                 attrs,
-                signal_error(&signal),
+                signal_error(signal),
                 PartialSaveOptions {
                     save_on_error,
                     save_empty: true,
@@ -543,7 +486,7 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
                     &sample,
                     total,
                     attrs,
-                    signal_error(&signal),
+                    signal_error(signal),
                     PartialSaveOptions {
                         save_on_error,
                         save_empty: true,
@@ -562,28 +505,29 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
             return Err(err);
         }
         total += n as i64;
-        if let Err(err) = stdout.write_all(&buf[..n]) {
-            drop(data);
-            if err.kind() == io::ErrorKind::BrokenPipe {
-                return finalize_saved_entry(id, data_path, &sample, total, attrs);
+        if let Some(ref mut out) = tee {
+            if let Err(err) = out.write_all(&buf[..n]) {
+                drop(data);
+                if err.kind() == io::ErrorKind::BrokenPipe {
+                    return finalize_saved_entry(id, data_path, &sample, total, attrs);
+                }
+                return save_or_abort_partial(
+                    id,
+                    data_path,
+                    &sample,
+                    total,
+                    attrs,
+                    err,
+                    PartialSaveOptions {
+                        save_on_error,
+                        save_empty: false,
+                        signal: None,
+                    },
+                );
             }
-            return save_or_abort_partial(
-                id,
-                data_path,
-                &sample,
-                total,
-                attrs,
-                err,
-                PartialSaveOptions {
-                    save_on_error,
-                    save_empty: false,
-                    signal: None,
-                },
-            );
         }
     }
     drop(data);
-
     finalize_saved_entry(id, data_path, &sample, total, attrs)
 }
 
