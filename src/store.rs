@@ -256,11 +256,10 @@ pub fn all_attr_keys() -> io::Result<Vec<(String, usize)>> {
 }
 
 pub fn newest() -> io::Result<Meta> {
-    let id = list_entry_ids()?
+    list()?
         .into_iter()
         .next()
-        .ok_or_else(|| io::Error::other("stash is empty"))?;
-    get_meta(&id)
+        .ok_or_else(|| io::Error::other("stash is empty"))
 }
 
 pub fn nth_newest(n: usize) -> io::Result<Meta> {
