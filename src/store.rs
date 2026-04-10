@@ -737,6 +737,9 @@ fn write_attr_line(out: &mut String, key: &str, value: &str) {
     out.push('\n');
 }
 
+// Escapes a value for storage in the attr file format.
+// '=' must be escaped here because it is the key=value delimiter.
+// See also: escape_attr_output in cli.rs, which intentionally omits '='.
 fn escape_attr(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for ch in value.chars() {

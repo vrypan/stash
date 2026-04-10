@@ -890,6 +890,9 @@ fn attrs_command(args: AttrsArgs) -> io::Result<()> {
     Ok(())
 }
 
+// Escapes a value for human-readable display output.
+// '=' is intentionally NOT escaped here (unlike escape_attr in store.rs)
+// because it has no special meaning outside the storage format.
 fn escape_attr_output(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
