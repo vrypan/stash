@@ -3,7 +3,7 @@ use clap_complete::{Shell, generate};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use std::io::{self, IsTerminal};
 
-use crate::display::{matches_meta, MetaSelection};
+use crate::store::{matches_meta, MetaSelection};
 use crate::store;
 use crate::store::Meta;
 

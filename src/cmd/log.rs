@@ -2,6 +2,7 @@ use clap::{ArgAction, Args};
 use std::io::{self, Write};
 
 use crate::display::*;
+use crate::store::parse_meta_selection;
 
 #[derive(Args, Debug, Clone)]
 pub(crate) struct LogArgs {

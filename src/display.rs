@@ -1,49 +1,10 @@
-use crate::store::{self, Meta};
+use crate::store::{self, Meta, MetaSelection};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as FmtWrite;
 use std::io::{self, IsTerminal, Write};
 use std::mem::MaybeUninit;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-// ---------------------------------------------------------------------------
-// Meta selection (filtering / display column selection)
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct MetaSelection {
-    pub(crate) show_all: bool,
-    pub(crate) tags: Vec<String>,
-}
-
-pub(crate) fn parse_meta_selection(
-    values: &[String],
-    show_all: bool,
-) -> io::Result<MetaSelection> {
-    let mut out = MetaSelection {
-        show_all,
-        tags: Vec::new(),
-    };
-    let mut seen = std::collections::HashSet::new();
-    for value in values {
-        if value.contains(',') || value.contains('=') || value.trim().is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "--attr accepts attribute names and is repeatable",
-            ));
-        } else if seen.insert(value.as_str()) {
-            out.tags.push(value.clone());
-        }
-    }
-    Ok(out)
-}
-
-pub(crate) fn matches_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> bool {
-    if sel.show_all || sel.tags.is_empty() {
-        return true;
-    }
-    sel.tags.iter().any(|tag| attrs.contains_key(tag))
-}
 
 // ---------------------------------------------------------------------------
 // Decorated entries (display-ready representations)
