@@ -1,3 +1,3 @@
 fn main() {
-    stash_cli::cli::main_entry();
+    stash_cli::cmd::main_entry();
 }
