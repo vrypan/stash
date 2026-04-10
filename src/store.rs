@@ -47,7 +47,7 @@ impl StdError for PartialSavedError {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Meta {
     pub id: String,
     pub ts: String,
@@ -61,41 +61,8 @@ struct ListCacheFile {
     version: u32,
     data_mtime: String,
     attr_mtime: String,
-    items: Vec<CachedMeta>,
+    items: Vec<Meta>,
     attr_keys: BTreeMap<String, usize>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct CachedMeta {
-    id: String,
-    ts: String,
-    size: i64,
-    preview: String,
-    attrs: BTreeMap<String, String>,
-}
-
-impl From<Meta> for CachedMeta {
-    fn from(value: Meta) -> Self {
-        Self {
-            id: value.id,
-            ts: value.ts,
-            size: value.size,
-            preview: value.preview,
-            attrs: value.attrs,
-        }
-    }
-}
-
-impl From<CachedMeta> for Meta {
-    fn from(value: CachedMeta) -> Self {
-        Self {
-            id: value.id,
-            ts: value.ts,
-            size: value.size,
-            preview: value.preview,
-            attrs: value.attrs,
-        }
-    }
 }
 
 impl Meta {
@@ -226,8 +193,7 @@ pub fn list() -> io::Result<Vec<Meta>> {
 }
 
 fn read_list_cache() -> io::Result<Vec<Meta>> {
-    let cache = read_list_cache_file()?;
-    Ok(cache.items.into_iter().map(Into::into).collect())
+    Ok(read_list_cache_file()?.items)
 }
 
 fn read_list_cache_file() -> io::Result<ListCacheFile> {
@@ -254,7 +220,7 @@ fn write_list_cache(items: &[Meta]) -> io::Result<()> {
         version: LIST_CACHE_VERSION,
         data_mtime: dir_mtime_key(data_dir()?)?,
         attr_mtime: dir_mtime_key(attr_dir()?)?,
-        items: items.iter().cloned().map(Into::into).collect(),
+        items: items.to_vec(),
         attr_keys: build_attr_key_index(items),
     };
     let cfg = bincode::config::standard();
