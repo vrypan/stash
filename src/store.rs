@@ -47,6 +47,15 @@ impl StdError for PartialSavedError {
     }
 }
 
+pub struct UtcDateTime {
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub min: u32,
+    pub sec: u32,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Meta {
     pub id: String,
@@ -638,20 +647,25 @@ fn now_rfc3339ish() -> io::Result<String> {
         .map_err(io::Error::other)?;
     let secs = now.as_secs() as i64;
     let nanos = now.subsec_nanos();
-    let (year, month, day, hour, min, sec) = unix_to_utc(secs);
+    let dt = unix_to_utc(secs);
     Ok(format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{min:02}:{sec:02}.{nanos:09}Z"
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{nanos:09}Z",
+        dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec,
     ))
 }
 
-fn unix_to_utc(secs: i64) -> (i32, u32, u32, u32, u32, u32) {
+pub fn unix_to_utc(secs: i64) -> UtcDateTime {
     let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);
-    let hour = (rem / 3600) as u32;
-    let min = ((rem % 3600) / 60) as u32;
-    let sec = (rem % 60) as u32;
     let (year, month, day) = civil_from_days(days);
-    (year, month, day, hour, min, sec)
+    UtcDateTime {
+        year,
+        month,
+        day,
+        hour: (rem / 3600) as u32,
+        min: ((rem % 3600) / 60) as u32,
+        sec: (rem % 60) as u32,
+    }
 }
 
 fn civil_from_days(days: i64) -> (i32, u32, u32) {
