@@ -2,6 +2,33 @@
 
 All notable changes to `stash` are documented in this file.
 
+## 0.6.0
+
+This is a major code refactor with small perf improvements and significant
+code quality improvements.
+
+- Add `stash attrs` for listing attribute keys across the stash, with optional
+  per-key counts.
+- Improve `stash-rg`, the helper script for searching through stashed
+  attributes and data.
+- Refactor the Rust codebase into smaller modules:
+  - split the old `cli.rs` monolith into per-command modules under `cmd/`
+  - split `store.rs` into a `store/` module
+  - extract shared display/rendering code into a `display` module
+- Simplify and tighten the store/cache implementation:
+  - store `Meta` directly in the list cache
+  - move `MetaSelection` into store-related code
+  - keep `newest()` on the cache-based path
+- Improve performance in several hot paths:
+  - avoid extra item passes in `ls --preview`
+  - fix N+1 cache reads in `stash attrs`
+  - reduce allocations in preview and ANSI-trimming helpers
+  - speed up attr parsing and ULID encoding
+- General internal cleanup and deduplication:
+  - deduplicate the push/tee read loop
+  - consolidate UTC date conversion helpers
+  - simplify path handling and attribute-selection internals
+
 ## 0.5.7
 
 - Escape control characters like `\n` in plain-text attribute output for
