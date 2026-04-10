@@ -581,19 +581,6 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
     let meta_sel = parse_meta_selection(&args.attr, args.attrs)?;
     let items = collect_entries(&meta_sel, args.reverse, args.number)?;
     let ls_date_mode = args.date.as_deref().unwrap_or("ls");
-    let effective_chars = if args.preview && args.chars == 80 {
-        auto_ls_preview_chars(
-            &items,
-            &args.id,
-            args.date.as_deref(),
-            args.size.as_deref(),
-            args.name,
-            &meta_sel,
-        )
-    } else {
-        args.chars
-    };
-
     if args.date.is_none()
         && args.size.is_none()
         && !args.name
@@ -603,7 +590,7 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
     {
         let stdout = io::stdout();
         let mut out = stdout.lock();
-        let rows = decorate_entries(&items, &args.id, ls_date_mode, effective_chars, &meta_sel);
+        let rows = decorate_entries(&items, &args.id, ls_date_mode, args.chars, &meta_sel);
         for row in rows {
             write_colored(&mut out, &row.id, "1;33", color)?;
             writeln!(out)?;
@@ -621,7 +608,10 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
         preview: String,
     }
 
-    let decorated = decorate_entries(&items, &args.id, ls_date_mode, effective_chars, &meta_sel);
+    // When auto-computing preview width, build entries with empty previews first;
+    // effective_chars will be derived from the column measurement loop below.
+    let initial_chars = if args.preview && args.chars == 80 { 0 } else { args.chars };
+    let decorated = decorate_entries(&items, &args.id, ls_date_mode, initial_chars, &meta_sel);
     let mut rows = Vec::with_capacity(decorated.len());
     for row in decorated {
         let DecoratedEntry {
@@ -681,9 +671,25 @@ fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
     }
 
+    let width = terminal_width();
+    if args.preview && args.chars == 80 {
+        let term_width = width.unwrap_or(80);
+        let mut fixed = max_id;
+        if max_size > 0 { fixed += 2 + max_size; }
+        if max_date > 0 { fixed += 2 + max_date; }
+        if max_name > 0 { fixed += 2 + max_name; }
+        for &mw in &meta_widths { fixed += 2 + mw; }
+        if max_inline_meta > 0 { fixed += 2 + max_inline_meta; }
+        let effective_chars = term_width.saturating_sub(fixed + 2).max(20);
+        for (row, item) in rows.iter_mut().zip(items.iter()) {
+            if !item.preview.is_empty() {
+                row.preview = preview_snippet(&item.preview, effective_chars);
+            }
+        }
+    }
+
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    let width = terminal_width();
     for row in rows {
         let mut line = String::new();
         push_colorized(&mut line, &pad_right(&row.id, max_id), "1;33", color);
@@ -1244,98 +1250,6 @@ fn trim_ansi_to_width(s: &str, width: usize) -> String {
         out.push_str("\x1b[0m");
     }
     out
-}
-
-fn auto_ls_preview_chars(
-    items: &[Meta],
-    id_mode: &str,
-    date_mode: Option<&str>,
-    size_mode: Option<&str>,
-    show_name: bool,
-    meta_sel: &MetaSelection,
-) -> usize {
-    let Some(width) = terminal_width() else {
-        return 80;
-    };
-
-    let mut max_id = 0usize;
-    let mut max_size = 0usize;
-    let mut max_date = 0usize;
-    let mut max_name = 0usize;
-    let mut max_inline_meta = 0usize;
-    let mut meta_widths = vec![0usize; meta_sel.tags.len()];
-
-    for (idx, item) in items.iter().enumerate() {
-        max_id = max_id.max(display_id(item, idx, id_mode).len());
-        if let Some(mode) = size_mode {
-            max_size = max_size.max(measure_size_width(item.size, mode));
-        }
-        if let Some(mode) = date_mode {
-            max_date = max_date.max(measure_date_width(&item.ts, mode));
-        }
-        if show_name {
-            let name_len = item
-                .attrs
-                .get("filename")
-                .map(|s| s.len())
-                .unwrap_or_else(|| item.id.len());
-            max_name = max_name.max(name_len);
-        }
-        if !meta_sel.tags.is_empty() {
-            for (i, tag) in meta_sel.tags.iter().enumerate() {
-                let len = item.attrs.get(tag).map(|v| v.len()).unwrap_or(1);
-                meta_widths[i] = meta_widths[i].max(len);
-            }
-        } else if meta_sel.show_all && !item.attrs.is_empty() {
-            let len = item.attrs.values().map(|v| v.len()).sum::<usize>()
-                + item.attrs.len().saturating_sub(1) * 2;
-            max_inline_meta = max_inline_meta.max(len);
-        }
-    }
-
-    let mut fixed = max_id;
-    if size_mode.is_some() {
-        fixed += 2 + max_size;
-    }
-    if date_mode.is_some() {
-        fixed += 2 + max_date;
-    }
-    if show_name {
-        fixed += 2 + max_name;
-    }
-    for meta_width in meta_widths {
-        fixed += 2 + meta_width;
-    }
-    if max_inline_meta > 0 {
-        fixed += 2 + max_inline_meta;
-    }
-    let chars = width.saturating_sub(fixed + 2);
-    chars.max(20)
-}
-
-fn measure_size_width(size: i64, mode: &str) -> usize {
-    if mode == "bytes" {
-        if size == 0 {
-            return 1;
-        }
-        let mut n = size.unsigned_abs();
-        let mut digits = 0usize;
-        while n > 0 {
-            n /= 10;
-            digits += 1;
-        }
-        digits
-    } else {
-        store::human_size(size).len()
-    }
-}
-
-fn measure_date_width(ts: &str, mode: &str) -> usize {
-    match normalize_date_mode(mode).unwrap_or("iso") {
-        "iso" => ts.len(),
-        "ls" => 12, // format_ls_date always yields a 12-char string
-        _ => format_date(ts, mode).len(),
-    }
 }
 
 fn normalize_date_mode(mode: &str) -> io::Result<&str> {
