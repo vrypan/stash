@@ -27,7 +27,17 @@ pub fn push_from_reader<R: Read>(
     let id = super::new_ulid()?;
     let data_path = super::tmp_dir()?.join(format!("{id}.data"));
     let data = File::create(&data_path)?;
-    run_read_loop(reader, None, data, data_path, id, attrs, &interrupted, &signal, true)
+    run_read_loop(
+        reader,
+        None,
+        data,
+        data_path,
+        id,
+        attrs,
+        &interrupted,
+        &signal,
+        true,
+    )
 }
 
 pub fn tee_from_reader_partial<R: Read, W: Write>(
@@ -56,6 +66,20 @@ pub fn tee_from_reader_partial<R: Read, W: Write>(
     )
 }
 
+#[inline]
+fn check_interrupted(interrupted: &AtomicBool, signal: &AtomicI32) -> Option<(io::Error, i32)> {
+    if interrupted.load(Ordering::Relaxed) {
+        let signo = signal.load(Ordering::Relaxed);
+        let msg = match signo {
+            SIGTERM => "terminated by signal",
+            _ => "interrupted by signal",
+        };
+        Some((io::Error::new(io::ErrorKind::Interrupted, msg), signo))
+    } else {
+        None
+    }
+}
+
 fn run_read_loop<R: Read>(
     reader: &mut R,
     mut tee: Option<&mut dyn Write>,
@@ -67,22 +91,22 @@ fn run_read_loop<R: Read>(
     signal: &Arc<AtomicI32>,
     save_on_error: bool,
 ) -> io::Result<String> {
-    let mut sample = Vec::new();
+    let mut sample = Vec::with_capacity(512);
     let mut total = 0i64;
-    let mut buf = [0u8; 8192];
+    let mut buf = [0u8; 65536];
     loop {
-        if interrupted.load(Ordering::Relaxed) {
+        if let Some((err, signo)) = check_interrupted(interrupted, signal) {
             return save_or_abort_partial(
                 id,
                 data_path,
                 &sample,
                 total,
                 attrs,
-                signal_error(signal),
+                err,
                 PartialSaveOptions {
                     save_on_error,
                     save_empty: true,
-                    signal: Some(signal.load(Ordering::Relaxed)),
+                    signal: Some(signo),
                 },
             );
         }
@@ -105,25 +129,26 @@ fn run_read_loop<R: Read>(
             }
         };
         if n == 0 {
-            if interrupted.load(Ordering::Relaxed) {
+            if let Some((err, signo)) = check_interrupted(interrupted, signal) {
                 return save_or_abort_partial(
                     id,
                     data_path,
                     &sample,
                     total,
                     attrs,
-                    signal_error(signal),
+                    err,
                     PartialSaveOptions {
                         save_on_error,
                         save_empty: true,
-                        signal: Some(signal.load(Ordering::Relaxed)),
+                        signal: Some(signo),
                     },
                 );
             }
             break;
         }
-        if sample.len() < 512 {
-            let need = (512 - sample.len()).min(n);
+        let sample_len = sample.len();
+        if sample_len < 512 {
+            let need = (512 - sample_len).min(n);
             sample.extend_from_slice(&buf[..need]);
         }
         if let Err(err) = data.write_all(&buf[..n]) {
@@ -180,23 +205,21 @@ fn save_or_abort_partial(
 }
 
 struct SignalGuard {
-    ids: Vec<SigId>,
+    ids: [SigId; 2],
 }
 
 impl SignalGuard {
     fn new(flag: &Arc<AtomicBool>, signal: &Arc<AtomicI32>) -> io::Result<Self> {
-        let ids = vec![
-            register_signal(SIGINT, flag, signal)?,
-            register_signal(SIGTERM, flag, signal)?,
-        ];
-        Ok(Self { ids })
+        let id0 = register_signal(SIGINT, flag, signal)?;
+        let id1 = register_signal(SIGTERM, flag, signal)?;
+        Ok(Self { ids: [id0, id1] })
     }
 }
 
 impl Drop for SignalGuard {
     fn drop(&mut self) {
-        for id in self.ids.drain(..) {
-            low_level::unregister(id);
+        for id in &self.ids {
+            low_level::unregister(*id);
         }
     }
 }
@@ -215,13 +238,4 @@ fn register_signal(
         })
     }
     .map_err(io::Error::other)
-}
-
-fn signal_error(signal: &Arc<AtomicI32>) -> io::Error {
-    let signo = signal.load(Ordering::Relaxed);
-    let msg = match signo {
-        SIGTERM => "terminated by signal",
-        _ => "interrupted by signal",
-    };
-    io::Error::new(io::ErrorKind::Interrupted, msg)
 }
