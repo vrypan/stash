@@ -18,7 +18,7 @@ $ stash ls -l
 
 jhec0b9h  292.1K  Apr 11 05:15  *  GIF89a......1......... .. !..$..... ..&..#..(..%..+.....(..R...
 z70pc1xm    777B  Apr 11 05:11  *  [package] name = "stash-cli" version = "0.6.0" edition = "20...
-wve1pgsd     12B  Apr 11 05:08  *  hello world
+wve1pgsd     12B  Apr 11 05:08     hello world
 ```
 Read stash entries
 ```
