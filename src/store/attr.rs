@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Write;
 
 use super::Meta;
 
@@ -6,7 +7,7 @@ pub(super) fn encode_attr(meta: &Meta) -> String {
     let mut out = String::new();
     write_attr_line(&mut out, "id", &meta.id);
     write_attr_line(&mut out, "ts", &meta.ts);
-    write_attr_line(&mut out, "size", &meta.size.to_string());
+    let _ = write!(out, "size={}\n", meta.size);
     if !meta.preview.trim().is_empty() {
         write_attr_line(&mut out, "preview", &meta.preview);
     }
@@ -16,18 +17,28 @@ pub(super) fn encode_attr(meta: &Meta) -> String {
     out
 }
 
+#[inline]
 fn write_attr_line(out: &mut String, key: &str, value: &str) {
-    out.push_str(&escape_attr(key));
+    escape_attr_into(out, key);
     out.push('=');
-    out.push_str(&escape_attr(value));
+    escape_attr_into(out, value);
     out.push('\n');
 }
 
 // Escapes a value for storage in the attr file format.
 // '=' must be escaped here because it is the key=value delimiter.
 // See also: escape_attr_output in display.rs, which intentionally omits '='.
-fn escape_attr(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
+#[inline]
+fn escape_attr_into(out: &mut String, value: &str) {
+    // Fast path: if no special chars, just append directly
+    if !value
+        .bytes()
+        .any(|b| matches!(b, b'\\' | b'\n' | b'\r' | b'\t' | b'='))
+    {
+        out.push_str(value);
+        return;
+    }
+    out.reserve(value.len());
     for ch in value.chars() {
         match ch {
             '\\' => out.push_str("\\\\"),
@@ -38,7 +49,6 @@ fn escape_attr(value: &str) -> String {
             _ => out.push(ch),
         }
     }
-    out
 }
 
 pub(super) fn parse_attr_file(input: &str) -> Result<Meta, String> {
@@ -57,31 +67,50 @@ pub(super) fn parse_attr_file(input: &str) -> Result<Meta, String> {
         let Some((key, value)) = split_attr_line(line) else {
             return Err(format!("invalid attr line {line:?}"));
         };
-        let key = unescape_attr(key)?;
-        let value = unescape_attr(value)?;
-        match key.as_str() {
-            "id" => meta.id = value,
-            "ts" => meta.ts = value,
+        // Fast path: if key has no backslash, avoid allocation from unescape
+        let key_owned;
+        let key_str = if key.contains('\\') {
+            key_owned = unescape_attr(key)?;
+            key_owned.as_str()
+        } else {
+            key
+        };
+        match key_str {
+            "id" => meta.id = unescape_attr_or_clone(value)?,
+            "ts" => meta.ts = unescape_attr_or_clone(value)?,
             "size" => {
+                // Size values should never contain escapes; parse directly
                 meta.size = value
                     .parse::<i64>()
                     .map_err(|_| format!("invalid size {value:?}"))?
             }
-            "preview" => meta.preview = value,
+            "preview" => meta.preview = unescape_attr_or_clone(value)?,
             _ => {
-                meta.attrs.insert(key, value);
+                meta.attrs
+                    .insert(key_str.to_owned(), unescape_attr_or_clone(value)?);
             }
         }
     }
     Ok(meta)
 }
 
+/// Unescapes a value, but avoids allocation if no escape sequences are present.
+#[inline]
+fn unescape_attr_or_clone(input: &str) -> Result<String, String> {
+    if input.contains('\\') {
+        unescape_attr(input)
+    } else {
+        Ok(input.to_owned())
+    }
+}
+
 fn split_attr_line(line: &str) -> Option<(&str, &str)> {
+    let bytes = line.as_bytes();
     let mut escaped = false;
-    for (idx, ch) in line.char_indices() {
-        match ch {
-            '\\' => escaped = !escaped,
-            '=' if !escaped => return Some((&line[..idx], &line[idx + 1..])),
+    for (idx, &b) in bytes.iter().enumerate() {
+        match b {
+            b'\\' => escaped = !escaped,
+            b'=' if !escaped => return Some((&line[..idx], &line[idx + 1..])),
             _ => escaped = false,
         }
     }

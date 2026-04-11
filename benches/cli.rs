@@ -1,12 +1,12 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use stash_cli::store;
 use std::collections::BTreeMap;
-use std::fs;
 use std::io::Cursor;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use tempfile::TempDir;
 
 fn bench_binary() -> &'static Path {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
@@ -25,14 +25,14 @@ fn bench_binary() -> &'static Path {
     })
 }
 
-fn temp_stash_dir(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("stash-bench-{name}-{nanos}"));
-    fs::create_dir_all(&dir).unwrap();
-    dir
+fn bench_stash_dir() -> &'static Path {
+    static DIR: OnceLock<TempDir> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = TempDir::new().expect("create benchmark stash dir");
+        fill_stash(dir.path(), 1000);
+        dir
+    })
+    .path()
 }
 
 fn fill_stash(dir: &Path, count: usize) {
@@ -73,32 +73,95 @@ fn run_cli(dir: &Path, args: &[&str]) {
     );
 }
 
+fn run_cli_with_stdin(dir: &Path, args: &[&str], stdin: &[u8]) {
+    let mut child = Command::new(bench_binary())
+        .args(args)
+        .env("STASH_DIR", dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn stash bench command");
+    child
+        .stdin
+        .take()
+        .expect("stash stdin")
+        .write_all(stdin)
+        .expect("write stash bench stdin");
+    let output = child
+        .wait_with_output()
+        .expect("wait for stash bench command");
+    assert!(
+        output.status.success(),
+        "command failed: {:?}\nstderr: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn bench_ls(c: &mut Criterion) {
-    let dir = temp_stash_dir("ls");
-    fill_stash(&dir, 1000);
+    let dir = bench_stash_dir();
     c.bench_function("BenchmarkLs1000", |b| {
-        b.iter(|| run_cli(&dir, &["ls", "-l", "-n", "20"]))
+        b.iter(|| run_cli(dir, &["ls", "-l", "-n", "20"]))
     });
-    let _ = fs::remove_dir_all(dir);
 }
 
 fn bench_ls_json(c: &mut Criterion) {
-    let dir = temp_stash_dir("ls-json");
-    fill_stash(&dir, 1000);
+    let dir = bench_stash_dir();
     c.bench_function("BenchmarkLsJson1000", |b| {
-        b.iter(|| run_cli(&dir, &["ls", "--json", "-n", "20"]))
+        b.iter(|| run_cli(dir, &["ls", "--json", "-n", "20"]))
     });
-    let _ = fs::remove_dir_all(dir);
 }
 
 fn bench_attr(c: &mut Criterion) {
-    let dir = temp_stash_dir("attr");
-    fill_stash(&dir, 1000);
+    let dir = bench_stash_dir();
     c.bench_function("BenchmarkAttrNewest1000", |b| {
-        b.iter(|| run_cli(&dir, &["attr", "@1", "--preview"]))
+        b.iter(|| run_cli(dir, &["attr", "@1", "--preview"]))
     });
-    let _ = fs::remove_dir_all(dir);
 }
 
-criterion_group!(cli_benches, bench_ls, bench_ls_json, bench_attr);
+fn bench_push(c: &mut Criterion) {
+    let payload =
+        b"entry for push benchmark\npreview line for push benchmark\nmetadata line push\n";
+    let mut group = c.benchmark_group("push");
+    group.sample_size(60);
+    group.bench_function("BenchmarkPush", |b| {
+        b.iter_batched(
+            || TempDir::new().expect("create push benchmark stash dir"),
+            |dir| run_cli_with_stdin(dir.path(), &["push", "--print=null"], payload),
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
+fn bench_push_100(c: &mut Criterion) {
+    let payload =
+        b"entry for push benchmark\npreview line for push benchmark\nmetadata line push\n";
+    let mut group = c.benchmark_group("push-100");
+    group.sample_size(60);
+    group.measurement_time(std::time::Duration::from_secs(20));
+    group.bench_function("BenchmarkPush100", |b| {
+        b.iter_batched(
+            || TempDir::new().expect("create push-100 benchmark stash dir"),
+            |dir| {
+                for _ in 0..100 {
+                    run_cli_with_stdin(dir.path(), &["push", "--print=null"], payload);
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
+fn bench_config() -> Criterion {
+    Criterion::default().measurement_time(std::time::Duration::from_secs(10))
+}
+
+criterion_group! {
+    name = cli_benches;
+    config = bench_config();
+    targets = bench_ls, bench_ls_json, bench_attr, bench_push, bench_push_100
+}
 criterion_main!(cli_benches);

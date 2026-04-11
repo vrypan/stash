@@ -73,7 +73,9 @@ impl Meta {
     }
 
     pub fn to_json_value(&self, include_preview: bool) -> Value {
-        let mut map = serde_json::Map::new();
+        let capacity =
+            3 + self.attrs.len() + usize::from(include_preview && !self.preview.is_empty());
+        let mut map = serde_json::Map::with_capacity(capacity);
         map.insert("id".into(), Value::String(self.id.clone()));
         map.insert("ts".into(), Value::String(self.ts.clone()));
         map.insert("size".into(), Value::Number(self.size.into()));
@@ -101,11 +103,11 @@ pub struct MetaSelection {
 pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<MetaSelection> {
     let mut out = MetaSelection {
         show_all,
-        display_tags: Vec::new(),
-        filter_tags: Vec::new(),
+        display_tags: Vec::with_capacity(values.len()),
+        filter_tags: Vec::with_capacity(values.len()),
     };
-    let mut seen_display = std::collections::HashSet::new();
-    let mut seen_filter = std::collections::HashSet::new();
+    let mut seen_display = std::collections::HashSet::with_capacity(values.len());
+    let mut seen_filter = std::collections::HashSet::with_capacity(values.len());
     for value in values {
         if value.contains(',') || value.contains('=') || value.trim().is_empty() {
             return Err(io::Error::new(
@@ -141,28 +143,34 @@ pub fn matches_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> bo
 // Directory / path helpers
 // ---------------------------------------------------------------------------
 
-pub fn base_dir() -> io::Result<PathBuf> {
-    match std::env::var("STASH_DIR") {
-        Ok(dir) if !dir.trim().is_empty() => Ok(PathBuf::from(dir)),
+fn cached_base_dir() -> &'static PathBuf {
+    use std::sync::OnceLock;
+    static BASE: OnceLock<PathBuf> = OnceLock::new();
+    BASE.get_or_init(|| match std::env::var("STASH_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
         _ => {
             let home = std::env::var("HOME")
                 .map(PathBuf::from)
-                .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "HOME not set"))?;
-            Ok(home.join(".stash"))
+                .expect("HOME not set");
+            home.join(".stash")
         }
-    }
+    })
+}
+
+pub fn base_dir() -> io::Result<PathBuf> {
+    Ok(cached_base_dir().clone())
 }
 
 pub fn data_dir() -> io::Result<PathBuf> {
-    Ok(base_dir()?.join("data"))
+    Ok(cached_base_dir().join("data"))
 }
 
 pub fn attr_dir() -> io::Result<PathBuf> {
-    Ok(base_dir()?.join("attr"))
+    Ok(cached_base_dir().join("attr"))
 }
 
 fn cache_dir() -> io::Result<PathBuf> {
-    Ok(base_dir()?.join("cache"))
+    Ok(cached_base_dir().join("cache"))
 }
 
 fn list_cache_path() -> io::Result<PathBuf> {
@@ -170,7 +178,7 @@ fn list_cache_path() -> io::Result<PathBuf> {
 }
 
 pub fn entry_dir(id: &str) -> io::Result<PathBuf> {
-    Ok(base_dir()?.join(id))
+    Ok(cached_base_dir().join(id))
 }
 
 pub fn entry_data_path(id: &str) -> io::Result<PathBuf> {
@@ -182,11 +190,11 @@ pub fn entry_attr_path(id: &str) -> io::Result<PathBuf> {
 }
 
 fn tmp_dir() -> io::Result<PathBuf> {
-    Ok(base_dir()?.join("tmp"))
+    Ok(cached_base_dir().join("tmp"))
 }
 
 pub fn init() -> io::Result<()> {
-    let base = base_dir()?;
+    let base = cached_base_dir();
     fs::create_dir_all(base.join("data"))?;
     fs::create_dir_all(base.join("attr"))?;
     fs::create_dir_all(base.join("tmp"))?;
@@ -199,19 +207,17 @@ pub fn init() -> io::Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn list_entry_ids() -> io::Result<Vec<String>> {
-    let mut ids = Vec::new();
     let attrs = attr_dir()?;
-    match fs::read_dir(attrs) {
-        Ok(read_dir) => {
-            for item in read_dir {
-                let item = item?;
-                ids.push(item.file_name().to_string_lossy().into_owned());
-            }
-        }
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(ids),
+    let read_dir = match fs::read_dir(&attrs) {
+        Ok(rd) => rd,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(err) => return Err(err),
-    }
-    ids.sort();
+    };
+    let mut ids: Vec<String> = read_dir
+        .filter_map(|item| item.ok())
+        .map(|item| item.file_name().to_string_lossy().into_owned())
+        .collect();
+    ids.sort_unstable();
     ids.reverse();
     Ok(ids)
 }
@@ -220,8 +226,9 @@ pub fn list() -> io::Result<Vec<Meta>> {
     if let Ok(items) = cache::read_list_cache() {
         return Ok(items);
     }
-    let mut out = Vec::new();
-    for id in list_entry_ids()? {
+    let entry_ids = list_entry_ids()?;
+    let mut out = Vec::with_capacity(entry_ids.len());
+    for id in entry_ids {
         if let Ok(meta) = get_meta(&id) {
             out.push(meta);
         }
@@ -284,7 +291,7 @@ pub fn resolve(input: &str) -> io::Result<String> {
         return nth_newest(n).map(|m| m.id);
     }
     let lower = raw.to_ascii_lowercase();
-    if lower.chars().all(|c| c.is_ascii_digit()) {
+    if lower.bytes().all(|c| c.is_ascii_digit()) {
         let n = lower
             .parse::<usize>()
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid index"))?;
@@ -300,26 +307,36 @@ pub fn resolve(input: &str) -> io::Result<String> {
     if let Some(id) = ids.iter().find(|id| **id == lower) {
         return Ok(id.clone());
     }
-    let prefix: Vec<_> = ids
-        .iter()
-        .filter(|id| id.starts_with(&lower))
-        .cloned()
-        .collect();
-    if prefix.len() == 1 {
-        return Ok(prefix[0].clone());
+    let mut prefix_match: Option<&String> = None;
+    let mut suffix_match: Option<&String> = None;
+    let mut prefix_ambig = false;
+    let mut suffix_ambig = false;
+    for id in &ids {
+        if id.starts_with(&lower) {
+            if prefix_match.is_some() {
+                prefix_ambig = true;
+            } else {
+                prefix_match = Some(id);
+            }
+        }
+        if id.ends_with(&lower) {
+            if suffix_match.is_some() {
+                suffix_ambig = true;
+            } else {
+                suffix_match = Some(id);
+            }
+        }
     }
-    if prefix.len() > 1 {
+    if let Some(id) = prefix_match {
+        if !prefix_ambig {
+            return Ok(id.clone());
+        }
         return Err(io::Error::other("ambiguous id"));
     }
-    let suffix: Vec<_> = ids
-        .iter()
-        .filter(|id| id.ends_with(&lower))
-        .cloned()
-        .collect();
-    if suffix.len() == 1 {
-        return Ok(suffix[0].clone());
-    }
-    if suffix.len() > 1 {
+    if let Some(id) = suffix_match {
+        if !suffix_ambig {
+            return Ok(id.clone());
+        }
         return Err(io::Error::other("ambiguous id"));
     }
     Err(io::Error::new(io::ErrorKind::NotFound, "entry not found"))
@@ -363,22 +380,16 @@ pub fn cat_to_writer<W: Write>(id: &str, mut writer: W) -> io::Result<()> {
 
 pub fn remove(id: &str) -> io::Result<()> {
     let data_result = fs::remove_file(entry_data_path(id)?);
-    if data_result.is_err()
-        && data_result
-            .as_ref()
-            .err()
-            .is_some_and(|e| e.kind() != io::ErrorKind::NotFound)
-    {
-        return data_result;
+    if let Err(ref e) = data_result {
+        if e.kind() != io::ErrorKind::NotFound {
+            return data_result;
+        }
     }
     let attr_result = fs::remove_file(entry_attr_path(id)?);
-    if attr_result.is_err()
-        && attr_result
-            .as_ref()
-            .err()
-            .is_some_and(|e| e.kind() != io::ErrorKind::NotFound)
-    {
-        return attr_result;
+    if let Err(ref e) = attr_result {
+        if e.kind() != io::ErrorKind::NotFound {
+            return attr_result;
+        }
     }
     cache::invalidate_list_cache();
     Ok(())
@@ -416,8 +427,8 @@ pub fn human_size(n: i64) -> String {
     match n {
         n if n < 1024 => format!("{n}B"),
         n if n < 1024 * 1024 => format!("{:.1}K", n as f64 / 1024.0),
-        n if n < 1024 * 1024 * 1024 => format!("{:.1}M", n as f64 / 1024.0 / 1024.0),
-        n => format!("{:.1}G", n as f64 / 1024.0 / 1024.0 / 1024.0),
+        n if n < 1024 * 1024 * 1024 => format!("{:.1}M", n as f64 / (1024.0 * 1024.0)),
+        n => format!("{:.1}G", n as f64 / (1024.0 * 1024.0 * 1024.0)),
     }
 }
 
@@ -482,7 +493,7 @@ fn encode_ulid(bytes: [u8; 16]) -> String {
     for byte in bytes {
         value = (value << 8) | byte as u128;
     }
-    let mut out = [b'0'; 26];
+    let mut out = [0u8; 26];
     for i in (0..26).rev() {
         out[i] = ALPHABET[(value & 0x1f) as usize];
         value >>= 5;

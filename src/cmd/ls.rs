@@ -94,8 +94,8 @@ fn parse_attrs_mode(value: Option<&str>) -> io::Result<Option<AttrsMode>> {
 
 pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     if args.long {
-        args.date.get_or_insert("ls".into());
-        args.size.get_or_insert("human".into());
+        args.date.get_or_insert_with(|| "ls".into());
+        args.size.get_or_insert_with(|| "human".into());
         args.preview = true;
         if args.attrs.is_none() {
             args.attrs = Some("flag".into());
@@ -113,17 +113,27 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         print_entries_json(&items, ls_date_mode, args.chars);
         return Ok(());
     }
-    let simple_ids_only = args.date.is_none()
-        && args.size.is_none()
-        && !args.name
-        && !args.preview
-        && attrs_mode != Some(AttrsMode::Count)
-        && attrs_mode != Some(AttrsMode::Flag)
-        && !meta_sel.show_all
-        && meta_sel.display_tags.is_empty();
+
+    let has_size = args.size.is_some();
+    let has_date = args.date.is_some();
+    let show_count = attrs_mode == Some(AttrsMode::Count);
+    let show_flag = attrs_mode == Some(AttrsMode::Flag);
+    let show_name = args.name;
+    let show_preview = args.preview;
+    let has_display_tags = !meta_sel.display_tags.is_empty();
+    let show_all_meta = meta_sel.show_all;
+
+    let simple_ids_only = !has_date
+        && !has_size
+        && !show_name
+        && !show_preview
+        && !show_count
+        && !show_flag
+        && !show_all_meta
+        && !has_display_tags;
     if simple_ids_only && !args.headers {
         let stdout = io::stdout();
-        let mut out = stdout.lock();
+        let mut out = io::BufWriter::new(stdout.lock());
         let rows = decorate_entries(&items, &args.id, ls_date_mode, args.chars, &meta_sel);
         for row in rows {
             write_colored(&mut out, &row.id, "1;33", color)?;
@@ -131,6 +141,9 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
         return Ok(());
     }
+
+    let use_bytes = args.size.as_deref() == Some("bytes");
+    let num_tags = meta_sel.display_tags.len();
 
     struct LsRow {
         id: String,
@@ -146,9 +159,21 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
 
     // When auto-computing preview width, build entries with empty previews first;
     // effective_chars will be derived from the column measurement loop below.
-    let initial_chars = if args.preview && args.chars == 80 { 0 } else { args.chars };
+    let auto_preview = show_preview && args.chars == 80;
+    let initial_chars = if auto_preview { 0 } else { args.chars };
     let decorated = decorate_entries(&items, &args.id, ls_date_mode, initial_chars, &meta_sel);
-    let mut rows = Vec::with_capacity(decorated.len());
+    let num_items = decorated.len();
+    let mut rows = Vec::with_capacity(num_items);
+
+    let mut max_id = 0usize;
+    let mut max_size = 0usize;
+    let mut max_date = 0usize;
+    let mut max_name = 0usize;
+    let mut max_attr_count = 0usize;
+    let mut max_attr_flag = 0usize;
+    let mut max_inline_meta = 0usize;
+    let mut meta_widths = vec![0usize; num_tags];
+
     for (row, item) in decorated.into_iter().zip(items.iter()) {
         let DecoratedEntry {
             id,
@@ -160,64 +185,67 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             meta_vals,
             meta_inline,
         } = row;
-        rows.push(LsRow {
-            id: id.clone(),
-            size: args
-                .size
-                .as_deref()
-                .map(|mode| {
-                    if mode == "bytes" {
-                        size_bytes.clone()
-                    } else {
-                        size_human.clone()
-                    }
-                })
-                .unwrap_or_default(),
-            date: if args.date.is_some() {
-                date
-            } else {
-                String::new()
-            },
-            name: if args.name {
-                filename.unwrap_or_else(|| id.clone())
-            } else {
-                String::new()
-            },
-            attr_count: if attrs_mode == Some(AttrsMode::Count) {
-                item.attrs.len().to_string()
-            } else {
-                String::new()
-            },
-            attr_flag: if attrs_mode == Some(AttrsMode::Flag) && !item.attrs.is_empty() {
-                "*".to_string()
-            } else {
-                String::new()
-            },
-            meta_vals,
-            meta_inline,
-            preview: if args.preview { preview } else { String::new() },
-        });
-    }
 
-    let mut max_id = 0usize;
-    let mut max_size = 0usize;
-    let mut max_date = 0usize;
-    let mut max_name = 0usize;
-    let mut max_attr_count = 0usize;
-    let mut max_attr_flag = 0usize;
-    let mut max_inline_meta = 0usize;
-    let mut meta_widths = vec![0usize; meta_sel.display_tags.len()];
-    for row in &rows {
-        max_id = max_id.max(row.id.chars().count());
-        max_size = max_size.max(row.size.chars().count());
-        max_date = max_date.max(row.date.chars().count());
-        max_name = max_name.max(row.name.chars().count());
-        max_attr_count = max_attr_count.max(row.attr_count.chars().count());
-        max_attr_flag = max_attr_flag.max(row.attr_flag.chars().count());
-        max_inline_meta = max_inline_meta.max(row.meta_inline.chars().count());
-        for (idx, value) in row.meta_vals.iter().enumerate() {
+        let size_val = if has_size {
+            let s = if use_bytes { size_bytes } else { size_human };
+            max_size = max_size.max(s.len());
+            s
+        } else {
+            String::new()
+        };
+
+        let date_val = if has_date {
+            max_date = max_date.max(date.len());
+            date
+        } else {
+            String::new()
+        };
+
+        let name_val = if show_name {
+            let n = filename.unwrap_or_else(|| id.clone());
+            max_name = max_name.max(n.chars().count());
+            n
+        } else {
+            String::new()
+        };
+
+        let attr_count_val = if show_count {
+            let s = item.attrs.len().to_string();
+            max_attr_count = max_attr_count.max(s.len());
+            s
+        } else {
+            String::new()
+        };
+
+        let attr_flag_val = if show_flag && !item.attrs.is_empty() {
+            max_attr_flag = max_attr_flag.max(1);
+            "*".to_string()
+        } else {
+            String::new()
+        };
+
+        max_id = max_id.max(id.len());
+
+        if show_all_meta {
+            max_inline_meta = max_inline_meta.max(meta_inline.chars().count());
+        }
+        for (idx, value) in meta_vals.iter().enumerate() {
             meta_widths[idx] = meta_widths[idx].max(value.chars().count());
         }
+
+        let preview_val = if show_preview { preview } else { String::new() };
+
+        rows.push(LsRow {
+            id,
+            size: size_val,
+            date: date_val,
+            name: name_val,
+            attr_count: attr_count_val,
+            attr_flag: attr_flag_val,
+            meta_vals,
+            meta_inline,
+            preview: preview_val,
+        });
     }
 
     let header_id = "id";
@@ -228,22 +256,22 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     let header_preview = "preview";
     if args.headers {
         max_id = max_id.max(header_id.len());
-        if args.size.is_some() {
+        if has_size {
             max_size = max_size.max(header_size.len());
         }
-        if args.date.is_some() {
+        if has_date {
             max_date = max_date.max(header_date.len());
         }
-        if args.name {
+        if show_name {
             max_name = max_name.max(header_name.len());
         }
-        if attrs_mode == Some(AttrsMode::Count) {
+        if show_count {
             max_attr_count = max_attr_count.max(header_attrs.len());
         }
-        if attrs_mode == Some(AttrsMode::Flag) {
+        if show_flag {
             max_attr_flag = max_attr_flag.max(header_attrs.len());
         }
-        if meta_sel.show_all {
+        if show_all_meta {
             max_inline_meta = max_inline_meta.max(header_attrs.len());
         }
         for (idx, key) in meta_sel.display_tags.iter().enumerate() {
@@ -252,16 +280,30 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     }
 
     let width = terminal_width();
-    if args.preview && args.chars == 80 {
+    if auto_preview {
         let term_width = width.unwrap_or(80);
         let mut fixed = max_id;
-        if max_size > 0 { fixed += 2 + max_size; }
-        if max_date > 0 { fixed += 2 + max_date; }
-        if max_name > 0 { fixed += 2 + max_name; }
-        if max_attr_count > 0 { fixed += 2 + max_attr_count; }
-        if max_attr_flag > 0 { fixed += 2 + max_attr_flag; }
-        for &mw in &meta_widths { fixed += 2 + mw; }
-        if max_inline_meta > 0 { fixed += 2 + max_inline_meta; }
+        if max_size > 0 {
+            fixed += 2 + max_size;
+        }
+        if max_date > 0 {
+            fixed += 2 + max_date;
+        }
+        if max_name > 0 {
+            fixed += 2 + max_name;
+        }
+        if max_attr_count > 0 {
+            fixed += 2 + max_attr_count;
+        }
+        if max_attr_flag > 0 {
+            fixed += 2 + max_attr_flag;
+        }
+        for &mw in &meta_widths {
+            fixed += 2 + mw;
+        }
+        if max_inline_meta > 0 {
+            fixed += 2 + max_inline_meta;
+        }
         let effective_chars = term_width.saturating_sub(fixed + 2).max(20);
         for (row, item) in rows.iter_mut().zip(items.iter()) {
             if !item.preview.is_empty() {
@@ -271,51 +313,79 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     }
 
     let stdout = io::stdout();
-    let mut out = stdout.lock();
+    let mut out = io::BufWriter::new(stdout.lock());
+
+    // Pre-allocate a reusable line buffer to avoid per-row allocations.
+    let estimated_line_cap = max_id
+        + max_size
+        + max_date
+        + max_name
+        + max_attr_count
+        + max_attr_flag
+        + max_inline_meta
+        + 128;
+    let mut line = String::with_capacity(estimated_line_cap);
+
     if args.headers {
-        let mut header = String::new();
-        push_colorized(&mut header, &pad_right(header_id, max_id), "1", color);
-        if args.size.is_some() {
-            header.push_str("  ");
-            push_colorized(&mut header, &pad_right(header_size, max_size), "1", color);
+        line.clear();
+        push_colorized(&mut line, &pad_right(header_id, max_id), "1", color);
+        if has_size {
+            line.push_str("  ");
+            push_colorized(&mut line, &pad_right(header_size, max_size), "1", color);
         }
-        if args.date.is_some() {
-            header.push_str("  ");
-            push_colorized(&mut header, &pad_right(header_date, max_date), "1", color);
+        if has_date {
+            line.push_str("  ");
+            push_colorized(&mut line, &pad_right(header_date, max_date), "1", color);
         }
-        if attrs_mode == Some(AttrsMode::Count) {
-            header.push_str("  ");
-            push_colorized(&mut header, &pad_right(header_attrs, max_attr_count), "1", color);
+        if show_count {
+            line.push_str("  ");
+            push_colorized(
+                &mut line,
+                &pad_right(header_attrs, max_attr_count),
+                "1",
+                color,
+            );
         }
-        if attrs_mode == Some(AttrsMode::Flag) {
-            header.push_str("  ");
-            push_colorized(&mut header, &pad_right(header_attrs, max_attr_flag), "1", color);
+        if show_flag {
+            line.push_str("  ");
+            push_colorized(
+                &mut line,
+                &pad_right(header_attrs, max_attr_flag),
+                "1",
+                color,
+            );
         }
-        if args.name {
-            header.push_str("  ");
-            push_colorized(&mut header, &pad_right(header_name, max_name), "1", color);
+        if show_name {
+            line.push_str("  ");
+            push_colorized(&mut line, &pad_right(header_name, max_name), "1", color);
         }
         for (idx, key) in meta_sel.display_tags.iter().enumerate() {
-            header.push_str("  ");
-            push_colorized(&mut header, &pad_right(key, meta_widths[idx]), "1", color);
+            line.push_str("  ");
+            push_colorized(&mut line, &pad_right(key, meta_widths[idx]), "1", color);
         }
-        if meta_sel.show_all {
-            header.push_str("  ");
-            push_colorized(&mut header, &pad_right(header_attrs, max_inline_meta), "1", color);
+        if show_all_meta {
+            line.push_str("  ");
+            push_colorized(
+                &mut line,
+                &pad_right(header_attrs, max_inline_meta),
+                "1",
+                color,
+            );
         }
-        if args.preview {
-            header.push_str("  ");
-            push_colorized(&mut header, header_preview, "1", color);
+        if show_preview {
+            line.push_str("  ");
+            push_colorized(&mut line, header_preview, "1", color);
         }
-        let rendered = if let Some(width) = width {
-            trim_ansi_to_width(&header, width)
+        let rendered = if let Some(w) = width {
+            trim_ansi_to_width(&line, w)
         } else {
-            header
+            // Avoid clone by taking ownership; we'll re-allocate on clear below.
+            std::mem::take(&mut line)
         };
         writeln!(out, "{rendered}")?;
     }
-    for row in rows {
-        let mut line = String::new();
+    for row in &rows {
+        line.clear();
         push_colorized(&mut line, &pad_right(&row.id, max_id), "1;33", color);
         if !row.size.is_empty() {
             line.push_str("  ");
@@ -327,7 +397,12 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
         if !row.attr_count.is_empty() {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_left(&row.attr_count, max_attr_count), "35", color);
+            push_colorized(
+                &mut line,
+                &pad_left(&row.attr_count, max_attr_count),
+                "35",
+                color,
+            );
         }
         if max_attr_flag > 0 {
             line.push_str("  ");
@@ -364,12 +439,12 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             line.push_str("  ");
             line.push_str(&row.preview);
         }
-        let rendered = if let Some(width) = width {
-            trim_ansi_to_width(&line, width)
+        if let Some(w) = width {
+            let rendered = trim_ansi_to_width(&line, w);
+            writeln!(out, "{rendered}")?;
         } else {
-            line
-        };
-        writeln!(out, "{rendered}")?;
+            writeln!(out, "{line}")?;
+        }
     }
     Ok(())
 }
