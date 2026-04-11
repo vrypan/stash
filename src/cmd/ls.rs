@@ -435,7 +435,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             line.push_str("  ");
             push_colorized(&mut line, &pad_right(value, meta_widths[idx]), "36", style_color);
         }
-        if !row.meta_inline.is_empty() {
+        if max_inline_meta > 0 {
             line.push_str("  ");
             push_colorized(
                 &mut line,
