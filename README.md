@@ -14,11 +14,11 @@ $ stash demos/words.gif
 
 Inspect your stash
 ```
-$ stash ls -lp
+$ stash ls -l
 
-jhec0b9h  292.1K  Apr 11 05:15  words.gif   GIF89a......1......... .. !..$..... ..&..#..(..%..
-z70pc1xm    777B  Apr 11 05:11  Cargo.toml  [package] name = "stash-cli" version = "0.6.0" edi
-wve1pgsd     12B  Apr 11 05:08  wve1pgsd    hello world
+jhec0b9h  292.1K  Apr 11 05:15  *  GIF89a......1......... .. !..$..... ..&..#..(..%..+.....(..R...
+z70pc1xm    777B  Apr 11 05:11  *  [package] name = "stash-cli" version = "0.6.0" edition = "20...
+wve1pgsd     12B  Apr 11 05:08  *  hello world
 ```
 Read stash entries
 ```
@@ -54,8 +54,10 @@ $ stash attr wve1pgsd note=test
 $ stash attr jhec0b9h note=test type=gif
 
 $ stash ls -l -a note -a type
-jhec0b9h  292.1K  Apr 11 05:15  *  words.gif  test  gif
-wve1pgsd     12B  Apr 11 05:08     wve1pgsd   test
+ghvg4s0b    231B  Apr 11 05:48                src/cmd/rm.rs src/cmd/ls.rs src/cmd/log.rs src/cmd/attr.rs s...
+jhec0b9h  292.1K  Apr 11 05:15  *  test  gif  GIF89a......1......... .. !..$..... ..&..#..(..%..+.....(..R...
+z70pc1xm    777B  Apr 11 05:11  *             [package] name = "stash-cli" version = "0.6.0" edition = "20...
+wve1pgsd     12B  Apr 11 05:08  *  test       hello world
 ```
 
 Everything is stored as plain files under `~/.shtash` (or `$STASH_DIR` if you set it).
@@ -65,9 +67,9 @@ No fancy databases or complex data formats.
 $ stash ls --date --id=full --preview --reverse
 
 01knxf1n5ffvk9jsm8wve1pgsd  Apr 11 05:08  hello world
-01knxf6yj2tdgj4k8kz70pc1xm  Apr 11 05:11  [package] name = "stash-cli" version = "0.6.0" edition = "2024" d
-01knxfeb2hgmybg39ajhec0b9h  Apr 11 05:15  GIF89a......1......... .. !..$..... ..&..#..(..%..+.....(..R..8..
-01knxhb7pa2wnsm0djghvg4s0b  Apr 11 05:48  src/cmd/rm.rs src/cmd/ls.rs src/cmd/log.rs src/cmd/attr.rs src/cm
+01knxf6yj2tdgj4k8kz70pc1xm  Apr 11 05:11  [package] name = "stash-cli" version = "0.6.0" edition = "20...
+01knxfeb2hgmybg39ajhec0b9h  Apr 11 05:15  GIF89a......1......... .. !..$..... ..&..#..(..%..+.....(..R...
+01knxhb7pa2wnsm0djghvg4s0b  Apr 11 05:48  src/cmd/rm.rs src/cmd/ls.rs src/cmd/log.rs src/cmd/attr.rs s...
 
 $ file .stash/data/*
 
