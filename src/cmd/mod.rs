@@ -8,7 +8,6 @@ use crate::store;
 use crate::store::Meta;
 
 mod attr;
-mod log;
 mod ls;
 mod path;
 mod push;
@@ -41,9 +40,6 @@ enum Command {
     Cat(CatArgs),
     #[command(about = "List entries")]
     Ls(ls::LsArgs),
-    #[command(alias = "list")]
-    #[command(about = "Show detailed entry history")]
-    Log(log::LogArgs),
     #[command(about = "Show or update entry attributes")]
     Attr(attr::AttrArgs),
     #[command(about = "List attribute keys across the stash")]
@@ -121,7 +117,6 @@ pub fn run() -> io::Result<()> {
         Some(Command::Tee(args)) => push::tee_command(args),
         Some(Command::Cat(args)) => cat_command(args),
         Some(Command::Ls(args)) => ls::ls_command(args),
-        Some(Command::Log(args)) => log::log_command(args),
         Some(Command::Attr(args)) => attr::attr_command(args),
         Some(Command::Attrs(args)) => attrs_command(args),
         Some(Command::Path(args)) => path::path_command(args),

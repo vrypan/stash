@@ -185,7 +185,7 @@ And if you want to find the right snapshots first:
 
 ```bash
 stash attrs --count
-stash log -a label
+stash ls -a label -a +label
 stash ls -A
 ```
 
@@ -198,7 +198,7 @@ kubectl get pods -A | stash
 
 # later
 
-stash list
+stash ls
 stash cat | less
 stash pop | wc -l
 ```
@@ -226,6 +226,6 @@ for f in *.json; do
   jq '.important' "$f" | stash -a q="$f"
 done
 
-stash log
+stash ls -a q
 stash cat <id> | jq .
 ```

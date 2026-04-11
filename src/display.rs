@@ -20,7 +20,6 @@ pub(crate) struct DecoratedEntry {
     pub(crate) filename: Option<String>,
     pub(crate) meta_vals: Vec<String>,
     pub(crate) meta_inline: String,
-    pub(crate) log_attr_lines: Vec<(String, String)>,
 }
 
 pub(crate) fn decorate_entries(
@@ -69,26 +68,6 @@ fn decorate_entry(
     } else {
         String::new()
     };
-    let log_attr_lines = if meta_sel.show_all || !meta_sel.display_tags.is_empty() {
-        if meta_sel.show_all {
-            item.attrs
-                .iter()
-                .map(|(k, v)| (k.clone(), escape_attr_output(v)))
-                .collect()
-        } else {
-            meta_sel
-                .display_tags
-                .iter()
-                .filter_map(|tag| {
-                    item.attrs
-                        .get(tag)
-                        .map(|v| (tag.clone(), escape_attr_output(v)))
-                })
-                .collect()
-        }
-    } else {
-        Vec::new()
-    };
     let preview = if item.preview.is_empty() {
         String::new()
     } else {
@@ -103,7 +82,6 @@ fn decorate_entry(
         filename,
         meta_vals,
         meta_inline,
-        log_attr_lines,
     }
 }
 
@@ -416,7 +394,7 @@ fn civil_to_days(year: i32, month: u32, day: u32) -> i64 {
 }
 
 // ---------------------------------------------------------------------------
-// Log output
+// Structured listing output
 // ---------------------------------------------------------------------------
 
 pub(crate) fn print_entries_json(items: &[Meta], date_mode: &str, chars: usize) {
@@ -460,91 +438,4 @@ pub(crate) fn print_entries_json(items: &[Meta], date_mode: &str, chars: usize) 
 
     serde_json::to_writer_pretty(io::stdout(), &out).expect("write log json");
     println!();
-}
-
-fn log_template_value(
-    item: &Meta,
-    idx: usize,
-    date_mode: &str,
-    chars: usize,
-    key: &str,
-) -> Option<String> {
-    match key {
-        "id" => Some(item.display_id()),
-        "short_id" => Some(item.short_id()),
-        "stack_ref" => Some((idx + 1).to_string()),
-        "ts" => Some(item.ts.clone()),
-        "date" => Some(format_date(&item.ts, date_mode)),
-        "size" => Some(item.size.to_string()),
-        "size_human" => Some(store::human_size(item.size)),
-        "preview" => {
-            let preview = preview_snippet(&item.preview, chars);
-            (!preview.is_empty()).then_some(preview)
-        }
-        _ => None,
-    }
-}
-
-fn placeholder_color_code(expr: &str) -> Option<&'static str> {
-    match expr {
-        "id" | "short_id" | "stack_ref" => Some("1;33"),
-        s if s.starts_with("attr:") => Some("35"),
-        _ => None,
-    }
-}
-
-fn render_log_template(
-    item: &Meta,
-    idx: usize,
-    date_mode: &str,
-    chars: usize,
-    format: &str,
-    color: bool,
-) -> String {
-    let mut out = String::new();
-    let mut rest = format;
-    while let Some(start) = rest.find('{') {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + 1..];
-        let Some(end) = after.find('}') else {
-            out.push_str(&rest[start..]);
-            return out;
-        };
-        let expr = after[..end].trim();
-        let value = if let Some(key) = expr.strip_prefix("attr:") {
-            item.attrs.get(key).cloned()
-        } else {
-            log_template_value(item, idx, date_mode, chars, expr)
-        };
-        if let Some(value) = value {
-            if let Some(code) = placeholder_color_code(expr) {
-                push_colorized(&mut out, &value, code, color);
-            } else {
-                out.push_str(&value);
-            }
-        } else {
-            out.push('{');
-            out.push_str(expr);
-            out.push('}');
-        }
-        rest = &after[end + 1..];
-    }
-    out.push_str(rest);
-    out
-}
-
-pub(crate) fn print_log_template(
-    items: &[Meta],
-    date_mode: &str,
-    chars: usize,
-    format: &str,
-    color: bool,
-) -> io::Result<()> {
-    for (idx, item) in items.iter().enumerate() {
-        println!(
-            "{}",
-            render_log_template(item, idx, date_mode, chars, format, color)
-        );
-    }
-    Ok(())
 }

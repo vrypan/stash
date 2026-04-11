@@ -38,7 +38,6 @@ $ stash cat @1 | head
 
 src/cmd/rm.rs
 src/cmd/ls.rs
-src/cmd/log.rs
 src/cmd/attr.rs
 src/cmd/path.rs
 src/cmd/mod.rs
@@ -55,8 +54,8 @@ $ stash attr wve1pgsd note=test
 $ stash attr jhec0b9h note=test type=gif
 
 $ stash ls -l -a note -a type
-jhec0b9h  292.1K  Apr 11 05:15  words.gif  test  gif
-wve1pgsd     12B  Apr 11 05:08  wve1pgsd   test
+jhec0b9h  292.1K  Apr 11 05:15  *  words.gif  test  gif
+wve1pgsd     12B  Apr 11 05:08     wve1pgsd   test
 ```
 
 Everything is stored as plain files under `~/.shtash` (or `$STASH_DIR` if you set it).

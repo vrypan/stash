@@ -202,10 +202,12 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .stdout(predicate::str::contains("one"));
 
     stash_cmd(dir.path())
-        .args(["log", "--format", "{short_id} {attr:type}", "--color=false"])
+        .args(["ls", "-a", "type", "-a", "+kind", "--color=false"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("text"));
+        .stdout(predicate::str::contains("text"))
+        .stdout(predicate::str::contains(&second[second.len() - 8..]))
+        .stdout(predicate::str::contains(&first[first.len() - 8..]).not());
 
     let mut ls_long_cmd = stash_cmd(dir.path());
     ls_long_cmd.args(["ls", "-l", "--color=false"]);
@@ -226,13 +228,6 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
     let ls_filtered = stdout_string(&mut ls_filtered_cmd);
     assert!(ls_filtered.contains(&first));
     assert!(!ls_filtered.contains(&second));
-
-    stash_cmd(dir.path())
-        .args(["log", "-a", "kind", "-a", "+kind", "--color=false"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("kind: sample"))
-        .stdout(predicate::str::contains("label: one").not());
 
     stash_cmd(dir.path())
         .args(["attrs", "--count"])

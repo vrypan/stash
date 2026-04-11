@@ -82,11 +82,11 @@ fn bench_ls(c: &mut Criterion) {
     let _ = fs::remove_dir_all(dir);
 }
 
-fn bench_log(c: &mut Criterion) {
-    let dir = temp_stash_dir("log");
+fn bench_ls_json(c: &mut Criterion) {
+    let dir = temp_stash_dir("ls-json");
     fill_stash(&dir, 1000);
-    c.bench_function("BenchmarkLog1000", |b| {
-        b.iter(|| run_cli(&dir, &["log", "-n", "20", "--color=false"]))
+    c.bench_function("BenchmarkLsJson1000", |b| {
+        b.iter(|| run_cli(&dir, &["ls", "--json", "-n", "20"]))
     });
     let _ = fs::remove_dir_all(dir);
 }
@@ -100,5 +100,5 @@ fn bench_attr(c: &mut Criterion) {
     let _ = fs::remove_dir_all(dir);
 }
 
-criterion_group!(cli_benches, bench_ls, bench_log, bench_attr);
+criterion_group!(cli_benches, bench_ls, bench_ls_json, bench_attr);
 criterion_main!(cli_benches);

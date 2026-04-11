@@ -40,7 +40,7 @@ If you want to find the right snapshots first:
 
 ```bash
 stash attrs --count
-stash log -a phase
+stash ls -a phase -a +phase
 stash ls -A
 ```
 
@@ -70,7 +70,7 @@ Useful follow-up commands:
 
 ```bash
 stash attrs --count
-stash log -a kind -a commit
+stash ls -a kind -a commit -a +kind -a +commit
 stash ls -A
 diff -u <(stash cat @2) <(stash cat @1)
 ```
@@ -113,7 +113,7 @@ Small, predictable attributes make stash output easier to reuse:
 With a few consistent keys, you can quickly find related runs:
 
 ```bash
-stash log -a kind -a phase
+stash ls -a kind -a phase -a +kind -a +phase
 stash ls -A
 stash attrs --count
 ```

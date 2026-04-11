@@ -7,7 +7,6 @@ stash [file]
 stash push [file]
 stash tee
 stash path [id|n|@n]
-stash log
 stash attr <id|n|@n>
 stash attrs [--count]
 stash cat [id|n|@n]
@@ -22,9 +21,6 @@ stash completion <bash|zsh|fish>
 Without a subcommand, `stash` uses smart mode:
 - in the middle of a pipeline, it behaves like `stash tee`
 - otherwise, it behaves like `stash push`
-
-`stash list` is an alias for `stash log`.
-
 ## Push And Tee
 
 `stash push` always stores input and returns the new entry ID only if asked:
@@ -118,7 +114,7 @@ Notes:
 - `stash attrs` prints one attribute key per line
 - `stash attrs --count` prints `key<TAB>count`
 - this command lists user-defined attribute keys stored in entry attrs
-- use `stash ls -a key` or `stash log -a key` to see matching entries
+- use `stash ls -a +key` to see matching entries
 - use `stash attr <ref>` to inspect the attributes of one specific entry
 
 ## ls
@@ -139,11 +135,13 @@ stash ls --date
 stash ls --size
 stash ls --name
 stash ls --preview
+stash ls --json
 stash ls --size=bytes --name
 stash ls -a source -a stage
+stash ls -a source -a +source
 ```
 
-`--long` is shorthand for `--date --size --name`:
+`--long` is shorthand for `--date --size --attrs=flag -a filename`:
 
 ```bash
 stash ls -l
@@ -154,53 +152,21 @@ Notes:
 - `--size` defaults to `human` if no value is given
 - `--date` accepts `iso`, `ago`, or `ls`
 - `--size` accepts `human` or `bytes`
-- `-A` or `--attrs` shows attributes where available without filtering
-- `-a name` filters to entries where the attribute is set
-- multiple `-a/--attr` flags use OR semantics
-- `stash ls` renders one column per requested tag when explicit tags are used
-- `stash ls -A` shows attribute values inline
+- `-A` and `--attrs=list` show attribute values inline
+- `--attrs=count` shows a per-entry count of user-defined attrs
+- `--attrs=flag` shows `*` when an entry has one or more user attrs
+- `-a name` selects an attribute for display
+- `-a +name` filters to entries where the attribute is set
 - `--id=short|full|pos` controls the first column in all modes
-
-## Log Output
-
-`stash log` shows one detailed block per entry:
-
-```bash
-stash log
-stash log -n 10
-stash log -r
-stash log --id=short
-stash log --id=pos
-stash log -A
-```
-
-`stash log` defaults to full IDs and ISO dates.
-Use `--id=short`, `--id=full`, or `--id=pos` to override the display mode.
-
-Show or filter entry attributes:
-
-```bash
-stash log -A
-stash log -a job
-stash log -a job -a owner
-```
-
-`-A` shows attributes where available without filtering.
-`-a name` matches entries that contain the attribute with any value.
-Multiple `-a/--attr` flags are combined with OR.
-
-Notes:
-- `stash log` shows size, date, selected attributes, and a preview.
-- `--color=false` disables color output.
-- Use `stash ls` for one-line ID views and `stash ls -l` for file-oriented detail.
 
 ## Structured Output
 
-JSON output mirrors the long view:
+JSON output mirrors the rich listing view:
 
 ```bash
-stash log --json
-stash log --json -n 1
+stash ls --json
+stash ls --json -n 1
+stash ls --json -a +kind
 ```
 
 Each JSON entry includes:
@@ -211,32 +177,8 @@ Each JSON entry includes:
 - `date`
 - `size`
 - `size_human`
-- `meta`
+- flattened attributes
 - `preview`
-
-## Custom Formatting
-
-`stash log --format` renders each entry through a lightweight placeholder
-format:
-
-```bash
-stash log --format '{short_id} {date} {size_human}'
-stash log --format '{short_id} {attr:filename}'
-```
-
-Available placeholders:
-- `{id}`
-- `{short_id}`
-- `{stack_ref}`
-- `{ts}`
-- `{date}`
-- `{size}`
-- `{size_human}`
-- `{preview}`
-- `{attr:key}`
-
-Use shell quoting such as `$'...'` if you want to include tabs or newlines in
-the format string.
 
 ## Path
 

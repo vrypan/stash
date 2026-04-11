@@ -154,7 +154,6 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             filename,
             meta_vals,
             meta_inline,
-            log_attr_lines: _,
         } = row;
         rows.push(LsRow {
             id: id.clone(),
