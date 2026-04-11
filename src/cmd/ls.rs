@@ -40,6 +40,9 @@ pub(crate) struct LsArgs {
     #[arg(long, help = "Output listing as rich JSON")]
     json: bool,
 
+    #[arg(long, help = "Print a header row for tabular output")]
+    headers: bool,
+
     #[arg(long, default_missing_value = "ls", num_args = 0..=1, help = "Include date column: iso, ago, or ls")]
     date: Option<String>,
 
@@ -55,7 +58,11 @@ pub(crate) struct LsArgs {
     #[arg(short = 'p', long = "preview", help = "Append compact preview text")]
     preview: bool,
 
-    #[arg(short = 'l', long = "long", help = "Alias for --date --size --name")]
+    #[arg(
+        short = 'l',
+        long = "long",
+        help = "Alias for --date --size --attrs=flag --preview"
+    )]
     long: bool,
 
     #[arg(long, default_value_t = 80, help = "Preview character limit")]
@@ -106,15 +113,15 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         print_entries_json(&items, ls_date_mode, args.chars);
         return Ok(());
     }
-    if args.date.is_none()
+    let simple_ids_only = args.date.is_none()
         && args.size.is_none()
         && !args.name
         && !args.preview
         && attrs_mode != Some(AttrsMode::Count)
         && attrs_mode != Some(AttrsMode::Flag)
         && !meta_sel.show_all
-        && meta_sel.display_tags.is_empty()
-    {
+        && meta_sel.display_tags.is_empty();
+    if simple_ids_only && !args.headers {
         let stdout = io::stdout();
         let mut out = stdout.lock();
         let rows = decorate_entries(&items, &args.id, ls_date_mode, args.chars, &meta_sel);
@@ -213,6 +220,37 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
     }
 
+    let header_id = "id";
+    let header_size = "size";
+    let header_date = "date";
+    let header_name = "name";
+    let header_attrs = "attrs";
+    let header_preview = "preview";
+    if args.headers {
+        max_id = max_id.max(header_id.len());
+        if args.size.is_some() {
+            max_size = max_size.max(header_size.len());
+        }
+        if args.date.is_some() {
+            max_date = max_date.max(header_date.len());
+        }
+        if args.name {
+            max_name = max_name.max(header_name.len());
+        }
+        if attrs_mode == Some(AttrsMode::Count) {
+            max_attr_count = max_attr_count.max(header_attrs.len());
+        }
+        if attrs_mode == Some(AttrsMode::Flag) {
+            max_attr_flag = max_attr_flag.max(header_attrs.len());
+        }
+        if meta_sel.show_all {
+            max_inline_meta = max_inline_meta.max(header_attrs.len());
+        }
+        for (idx, key) in meta_sel.display_tags.iter().enumerate() {
+            meta_widths[idx] = meta_widths[idx].max(key.chars().count());
+        }
+    }
+
     let width = terminal_width();
     if args.preview && args.chars == 80 {
         let term_width = width.unwrap_or(80);
@@ -234,6 +272,48 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
+    if args.headers {
+        let mut header = String::new();
+        push_colorized(&mut header, &pad_right(header_id, max_id), "1", color);
+        if args.size.is_some() {
+            header.push_str("  ");
+            push_colorized(&mut header, &pad_right(header_size, max_size), "1", color);
+        }
+        if args.date.is_some() {
+            header.push_str("  ");
+            push_colorized(&mut header, &pad_right(header_date, max_date), "1", color);
+        }
+        if attrs_mode == Some(AttrsMode::Count) {
+            header.push_str("  ");
+            push_colorized(&mut header, &pad_right(header_attrs, max_attr_count), "1", color);
+        }
+        if attrs_mode == Some(AttrsMode::Flag) {
+            header.push_str("  ");
+            push_colorized(&mut header, &pad_right(header_attrs, max_attr_flag), "1", color);
+        }
+        if args.name {
+            header.push_str("  ");
+            push_colorized(&mut header, &pad_right(header_name, max_name), "1", color);
+        }
+        for (idx, key) in meta_sel.display_tags.iter().enumerate() {
+            header.push_str("  ");
+            push_colorized(&mut header, &pad_right(key, meta_widths[idx]), "1", color);
+        }
+        if meta_sel.show_all {
+            header.push_str("  ");
+            push_colorized(&mut header, &pad_right(header_attrs, max_inline_meta), "1", color);
+        }
+        if args.preview {
+            header.push_str("  ");
+            push_colorized(&mut header, header_preview, "1", color);
+        }
+        let rendered = if let Some(width) = width {
+            trim_ansi_to_width(&header, width)
+        } else {
+            header
+        };
+        writeln!(out, "{rendered}")?;
+    }
     for row in rows {
         let mut line = String::new();
         push_colorized(&mut line, &pad_right(&row.id, max_id), "1;33", color);

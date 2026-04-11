@@ -84,6 +84,7 @@ You can also use `stash` like a small flat file store:
 stash ls
 stash ls -l
 stash ls --date --size --name
+stash ls --headers --date --size -A
 stash attrs --count
 stash cat @1
 stash cat yjvyz3sf
@@ -98,13 +99,15 @@ ryacf7sz
 a3f11qka
 
 $ stash ls -l
-ryacf7sz  384.3K  Apr  1  Forest-Green.png
-a3f11qka    493B  Apr  1  docker-forgejo.yml
+ryacf7sz  384.3K  Apr  1  *  PNG image data, 1024 x 768, 8-bit/color RGBA,...
+a3f11qka    493B  Apr  1  *  version: "3"
 ```
 
 In that model:
 - `stash ls` lists entry IDs only
-- `stash ls -l` expands that into a file-oriented view
+- `stash ls -l` expands that into a richer summary view with date, size,
+  attribute flag, and preview
+- `stash ls --headers ...` adds column labels to tabular output
 - `stash attrs --count` shows which user-defined attributes exist across the stash
 - `stash cat` reads an entry by stack ref or ID
 - `stash rm` deletes an entry by stack ref or ID, or removes older entries with `--before`

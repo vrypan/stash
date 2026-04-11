@@ -135,13 +135,14 @@ stash ls --date
 stash ls --size
 stash ls --name
 stash ls --preview
+stash ls --headers --date --size
 stash ls --json
 stash ls --size=bytes --name
 stash ls -a source -a stage
 stash ls -a source -a +source
 ```
 
-`--long` is shorthand for `--date --size --attrs=flag -a filename`:
+`--long` is shorthand for `--date --size --attrs=flag --preview`:
 
 ```bash
 stash ls -l
@@ -152,6 +153,7 @@ Notes:
 - `--size` defaults to `human` if no value is given
 - `--date` accepts `iso`, `ago`, or `ls`
 - `--size` accepts `human` or `bytes`
+- `--headers` prints a header row for tabular output
 - `-A` and `--attrs=list` show attribute values inline
 - `--attrs=count` shows a per-entry count of user-defined attrs
 - `--attrs=flag` shows `*` when an entry has one or more user attrs

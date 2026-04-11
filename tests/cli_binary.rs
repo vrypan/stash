@@ -215,6 +215,17 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
     assert!(ls_long.contains('*'));
     assert!(ls_long.contains("report body"));
     assert!(ls_long.contains(&file_id[file_id.len() - 8..]));
+    assert!(!ls_long.contains("report.txt"));
+
+    let mut ls_headers_cmd = stash_cmd(dir.path());
+    ls_headers_cmd.args(["ls", "--headers", "--date", "--size", "-A", "--color=false"]);
+    let ls_headers = stdout_string(&mut ls_headers_cmd);
+    let mut lines = ls_headers.lines();
+    let header = lines.next().unwrap();
+    assert!(header.contains("id"));
+    assert!(header.contains("size"));
+    assert!(header.contains("date"));
+    assert!(header.contains("attrs"));
 
     let mut ls_with_attr_cmd = stash_cmd(dir.path());
     ls_with_attr_cmd.args(["ls", "-a", "label", "--color=false"]);
