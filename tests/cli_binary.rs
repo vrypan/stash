@@ -183,6 +183,9 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
     let dir = test_stash_dir();
     let first = push_text(dir.path(), "first body\n", &["type=text", "label=one"]);
     let second = push_text(dir.path(), "second line\n", &["type=text", "kind=sample"]);
+    let file_path = dir.path().join("report.txt");
+    fs::write(&file_path, "report body\n").unwrap();
+    let file_id = push_file(dir.path(), &file_path, &["note=report"]);
 
     stash_cmd(dir.path())
         .args(["ls", "--id=full"])
@@ -203,6 +206,13 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .assert()
         .success()
         .stdout(predicate::str::contains("text"));
+
+    let mut ls_long_cmd = stash_cmd(dir.path());
+    ls_long_cmd.args(["ls", "-l", "--color=false"]);
+    let ls_long = stdout_string(&mut ls_long_cmd);
+    assert!(ls_long.contains("report.txt"));
+    assert!(ls_long.contains(&file_id[file_id.len() - 8..]));
+    assert!(ls_long.contains('*'));
 
     let mut ls_with_attr_cmd = stash_cmd(dir.path());
     ls_with_attr_cmd.args(["ls", "-a", "label", "--color=false"]);
@@ -228,7 +238,7 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .args(["attrs", "--count"])
         .assert()
         .success()
-        .stdout("kind\t1\nlabel\t1\ntype\t2\n");
+        .stdout("filename\t1\nkind\t1\nlabel\t1\nnote\t1\ntype\t2\n");
 
     let mut ls_json_cmd = stash_cmd(dir.path());
     ls_json_cmd.args(["ls", "--json", "-a", "+kind"]);

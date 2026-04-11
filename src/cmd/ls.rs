@@ -86,13 +86,18 @@ fn parse_attrs_mode(value: Option<&str>) -> io::Result<Option<AttrsMode>> {
 }
 
 pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
-    let color = color_enabled(&args.color)?;
-    let attrs_mode = parse_attrs_mode(args.attrs.as_deref())?;
     if args.long {
         args.date.get_or_insert("ls".into());
         args.size.get_or_insert("human".into());
-        args.name = true;
+        if args.attrs.is_none() {
+            args.attrs = Some("flag".into());
+        }
+        if !args.attr.iter().any(|value| value == "filename") {
+            args.attr.push("filename".into());
+        }
     }
+    let color = color_enabled(&args.color)?;
+    let attrs_mode = parse_attrs_mode(args.attrs.as_deref())?;
     if let Some(mode) = args.date.as_deref() {
         args.date = Some(normalize_date_mode(mode)?.to_string());
     }
