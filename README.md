@@ -63,13 +63,15 @@ Everything is stored as plain files under `~/.shtash` (or `$STASH_DIR` if you se
 No fancy databases or complex data formats.
 
 ```
-stash ls --date --id=full --preview --reverse
+$ stash ls --date --id=full --preview --reverse
+
 01knxf1n5ffvk9jsm8wve1pgsd  Apr 11 05:08  hello world
 01knxf6yj2tdgj4k8kz70pc1xm  Apr 11 05:11  [package] name = "stash-cli" version = "0.6.0" edition = "2024" d
 01knxfeb2hgmybg39ajhec0b9h  Apr 11 05:15  GIF89a......1......... .. !..$..... ..&..#..(..%..+.....(..R..8..
 01knxhb7pa2wnsm0djghvg4s0b  Apr 11 05:48  src/cmd/rm.rs src/cmd/ls.rs src/cmd/log.rs src/cmd/attr.rs src/cm
 
-file .stash/data/*
+$ file .stash/data/*
+
 .stash/data/01knxf1n5ffvk9jsm8wve1pgsd: ASCII text
 .stash/data/01knxf6yj2tdgj4k8kz70pc1xm: ASCII text
 .stash/data/01knxfeb2hgmybg39ajhec0b9h: GIF image data, version 89a, 1200 x 900
