@@ -349,14 +349,14 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
         for (idx, value) in row.meta_vals.iter().enumerate() {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(value, meta_widths[idx]), "35", color);
+            push_colorized(&mut line, &pad_right(value, meta_widths[idx]), "36", color);
         }
         if !row.meta_inline.is_empty() {
             line.push_str("  ");
             push_colorized(
                 &mut line,
                 &pad_right(&row.meta_inline, max_inline_meta),
-                "35",
+                "36",
                 color,
             );
         }
