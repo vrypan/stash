@@ -419,7 +419,7 @@ fn civil_to_days(year: i32, month: u32, day: u32) -> i64 {
 // Log output
 // ---------------------------------------------------------------------------
 
-pub(crate) fn print_log_json(items: &[Meta], date_mode: &str, chars: usize) {
+pub(crate) fn print_entries_json(items: &[Meta], date_mode: &str, chars: usize) {
     #[derive(Serialize)]
     struct LogJsonEntry {
         id: String,
@@ -429,8 +429,8 @@ pub(crate) fn print_log_json(items: &[Meta], date_mode: &str, chars: usize) {
         date: String,
         size: i64,
         size_human: String,
-        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-        meta: BTreeMap<String, String>,
+        #[serde(flatten)]
+        attrs: BTreeMap<String, String>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         preview: Vec<String>,
     }
@@ -448,7 +448,7 @@ pub(crate) fn print_log_json(items: &[Meta], date_mode: &str, chars: usize) {
                 date: format_date(&item.ts, date_mode),
                 size: item.size,
                 size_human: store::human_size(item.size),
-                meta: item.attrs.clone(),
+                attrs: item.attrs.clone(),
                 preview: if preview.is_empty() {
                     Vec::new()
                 } else {

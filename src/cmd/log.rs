@@ -52,7 +52,7 @@ pub(super) fn log_command(args: LogArgs) -> io::Result<()> {
     let meta_sel = parse_meta_selection(&args.attr, args.attrs)?;
     let items = super::collect_entries(&meta_sel, args.reverse, args.number)?;
     if args.json {
-        print_log_json(&items, date_mode, args.chars);
+        print_entries_json(&items, date_mode, args.chars);
         return Ok(());
     }
     if let Some(format) = args.format.as_deref() {

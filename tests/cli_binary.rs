@@ -229,6 +229,18 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .assert()
         .success()
         .stdout("kind\t1\nlabel\t1\ntype\t2\n");
+
+    let mut ls_json_cmd = stash_cmd(dir.path());
+    ls_json_cmd.args(["ls", "--json", "-a", "+kind"]);
+    let ls_json = stdout_string(&mut ls_json_cmd);
+    let value: Value = serde_json::from_str(&ls_json).unwrap();
+    let rows = value.as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["id"], second);
+    assert_eq!(rows[0]["kind"], "sample");
+    assert!(rows[0].get("short_id").is_some());
+    assert!(rows[0].get("stack_ref").is_some());
+    assert!(rows[0].get("size_human").is_some());
 }
 
 #[test]

@@ -37,6 +37,9 @@ pub(crate) struct LsArgs {
     #[arg(short = 'r', long = "reverse", help = "Show oldest first")]
     reverse: bool,
 
+    #[arg(long, help = "Output listing as rich JSON")]
+    json: bool,
+
     #[arg(long, default_missing_value = "ls", num_args = 0..=1, help = "Include date column: iso, ago, or ls")]
     date: Option<String>,
 
@@ -96,6 +99,10 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     let meta_sel = parse_meta_selection(&args.attr, attrs_mode == Some(AttrsMode::List))?;
     let items = super::collect_entries(&meta_sel, args.reverse, args.number)?;
     let ls_date_mode = args.date.as_deref().unwrap_or("ls");
+    if args.json {
+        print_entries_json(&items, ls_date_mode, args.chars);
+        return Ok(());
+    }
     if args.date.is_none()
         && args.size.is_none()
         && !args.name
