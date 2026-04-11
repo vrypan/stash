@@ -83,6 +83,7 @@ You can also use `stash` like a small flat file store:
 ```bash
 stash ls
 stash ls -l
+stash ls -l --stripe
 stash ls --date --size --name
 stash ls --headers --date --size -A
 stash attrs --count
@@ -107,6 +108,7 @@ In that model:
 - `stash ls` lists entry IDs only
 - `stash ls -l` expands that into a richer summary view with date, size,
   attribute flag, and preview
+- `stash ls --stripe` dims every other row to make dense listings easier to scan
 - `stash ls --headers ...` adds column labels to tabular output
 - `stash attrs --count` shows which user-defined attributes exist across the stash
 - `stash cat` reads an entry by stack ref or ID

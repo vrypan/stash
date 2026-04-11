@@ -43,6 +43,9 @@ pub(crate) struct LsArgs {
     #[arg(long, help = "Print a header row for tabular output")]
     headers: bool,
 
+    #[arg(long, help = "Dim every other output row")]
+    stripe: bool,
+
     #[arg(long, default_missing_value = "ls", num_args = 0..=1, help = "Include date column: iso, ago, or ls")]
     date: Option<String>,
 
@@ -102,6 +105,8 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
     }
     let color = color_enabled(&args.color)?;
+    let stripe = color && args.stripe;
+    let style_color = color && !args.stripe;
     let attrs_mode = parse_attrs_mode(args.attrs.as_deref())?;
     if let Some(mode) = args.date.as_deref() {
         args.date = Some(normalize_date_mode(mode)?.to_string());
@@ -135,9 +140,13 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         let stdout = io::stdout();
         let mut out = io::BufWriter::new(stdout.lock());
         let rows = decorate_entries(&items, &args.id, ls_date_mode, args.chars, &meta_sel);
-        for row in rows {
-            write_colored(&mut out, &row.id, "1;33", color)?;
-            writeln!(out)?;
+        for (idx, row) in rows.into_iter().enumerate() {
+            if stripe && idx % 2 == 1 {
+                writeln!(out, "{}", dim_ansi_line(&row.id))?;
+            } else {
+                write_colored(&mut out, &row.id, "1;33", style_color)?;
+                writeln!(out)?;
+            }
         }
         return Ok(());
     }
@@ -328,14 +337,14 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
 
     if args.headers {
         line.clear();
-        push_colorized(&mut line, &pad_right(header_id, max_id), "1", color);
+        push_colorized(&mut line, &pad_right(header_id, max_id), "1", style_color);
         if has_size {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(header_size, max_size), "1", color);
+            push_colorized(&mut line, &pad_right(header_size, max_size), "1", style_color);
         }
         if has_date {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(header_date, max_date), "1", color);
+            push_colorized(&mut line, &pad_right(header_date, max_date), "1", style_color);
         }
         if show_count {
             line.push_str("  ");
@@ -343,7 +352,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
                 &mut line,
                 &pad_right(header_attrs, max_attr_count),
                 "1",
-                color,
+                style_color,
             );
         }
         if show_flag {
@@ -352,16 +361,16 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
                 &mut line,
                 &pad_right(header_attrs, max_attr_flag),
                 "1",
-                color,
+                style_color,
             );
         }
         if show_name {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(header_name, max_name), "1", color);
+            push_colorized(&mut line, &pad_right(header_name, max_name), "1", style_color);
         }
         for (idx, key) in meta_sel.display_tags.iter().enumerate() {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(key, meta_widths[idx]), "1", color);
+            push_colorized(&mut line, &pad_right(key, meta_widths[idx]), "1", style_color);
         }
         if show_all_meta {
             line.push_str("  ");
@@ -369,12 +378,12 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
                 &mut line,
                 &pad_right(header_attrs, max_inline_meta),
                 "1",
-                color,
+                style_color,
             );
         }
         if show_preview {
             line.push_str("  ");
-            push_colorized(&mut line, header_preview, "1", color);
+            push_colorized(&mut line, header_preview, "1", style_color);
         }
         let rendered = if let Some(w) = width {
             trim_ansi_to_width(&line, w)
@@ -384,9 +393,9 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         };
         writeln!(out, "{rendered}")?;
     }
-    for row in &rows {
+    for (idx, row) in rows.iter().enumerate() {
         line.clear();
-        push_colorized(&mut line, &pad_right(&row.id, max_id), "1;33", color);
+        push_colorized(&mut line, &pad_right(&row.id, max_id), "1;33", style_color);
         if !row.size.is_empty() {
             line.push_str("  ");
             line.push_str(&pad_left(&row.size, max_size));
@@ -401,7 +410,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
                 &mut line,
                 &pad_left(&row.attr_count, max_attr_count),
                 "35",
-                color,
+                style_color,
             );
         }
         if max_attr_flag > 0 {
@@ -410,7 +419,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
                 &mut line,
                 &pad_left(&row.attr_flag, max_attr_flag),
                 "1;35",
-                color,
+                style_color,
             );
         }
         if !row.name.is_empty() {
@@ -419,12 +428,12 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             if row.name == row.id {
                 line.push_str(&padded);
             } else {
-                push_colorized(&mut line, &padded, "1;36", color);
+                push_colorized(&mut line, &padded, "1;36", style_color);
             }
         }
         for (idx, value) in row.meta_vals.iter().enumerate() {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(value, meta_widths[idx]), "36", color);
+            push_colorized(&mut line, &pad_right(value, meta_widths[idx]), "36", style_color);
         }
         if !row.meta_inline.is_empty() {
             line.push_str("  ");
@@ -432,7 +441,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
                 &mut line,
                 &pad_right(&row.meta_inline, max_inline_meta),
                 "36",
-                color,
+                style_color,
             );
         }
         if !row.preview.is_empty() {
@@ -441,9 +450,17 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
         if let Some(w) = width {
             let rendered = trim_ansi_to_width(&line, w);
-            writeln!(out, "{rendered}")?;
+            if stripe && idx % 2 == 1 {
+                writeln!(out, "{}", dim_ansi_line(&rendered))?;
+            } else {
+                writeln!(out, "{rendered}")?;
+            }
         } else {
-            writeln!(out, "{line}")?;
+            if stripe && idx % 2 == 1 {
+                writeln!(out, "{}", dim_ansi_line(&line))?;
+            } else {
+                writeln!(out, "{line}")?;
+            }
         }
     }
     Ok(())

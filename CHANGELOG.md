@@ -2,6 +2,22 @@
 
 All notable changes to `stash` are documented in this file.
 
+## 0.7.0
+
+- `stash log` has been removed!
+- `stash ls` is now the single listing command.
+- Expand `stash ls` output modes:
+  - add `--json` with rich per-entry output
+  - add `--attrs=list|count|flag`
+  - add `--headers` for labeled tabular output
+  - make `-l` expand to `--date --size --attrs=flag --preview`
+  - color explicit `-a` columns and inline `-A` output in cyan
+- Improve listing and store hot paths:
+  - reduce allocations in `ls`
+  - reuse output buffers in tabular rendering
+  - tighten cache validation and id resolution
+  - add and tune Criterion benchmarks for `ls`, `attr`, and `push`
+
 ## 0.6.0
 
 This is a major code refactor with small perf improvements and significant

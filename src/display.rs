@@ -207,6 +207,37 @@ pub(crate) fn write_colored<W: Write>(
     }
 }
 
+pub(crate) fn dim_ansi_line(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 16);
+    out.push_str("\x1b[2m");
+    let mut i = 0;
+    while let Some(rel) = s[i..].find("\x1b[") {
+        let esc = i + rel;
+        out.push_str(&s[i..esc]);
+        if let Some(end_rel) = s[esc + 2..].find('m') {
+            let end = esc + 2 + end_rel;
+            let code = &s[esc + 2..end];
+            if code == "0" {
+                out.push_str("\x1b[0;2m");
+            } else {
+                out.push_str("\x1b[");
+                out.push_str(code);
+                out.push_str(";2m");
+            }
+            i = end + 1;
+        } else {
+            out.push_str(&s[esc..]);
+            i = s.len();
+            break;
+        }
+    }
+    if i < s.len() {
+        out.push_str(&s[i..]);
+    }
+    out.push_str("\x1b[0m");
+    out
+}
+
 pub(crate) fn pad_right(s: &str, width: usize) -> String {
     let len = s.chars().count();
     if len >= width {
