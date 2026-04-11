@@ -2,7 +2,7 @@
 
 # ~{@ stash
 
-`sstash` is a small, fast command line tool that saves data for future reference and integrates nicely
+`sstash` is a small, efficient command line tool that saves data for future reference and integrates nicely
 with command line workflows.
 
 Stash piped output or files
@@ -118,6 +118,5 @@ For auto-completion and other shell-specific features, check:
 - [docs/zsh.md](docs/zsh.md)
 
 ## ~{@
-In case you wonder, `~{@` is an ASCII-Art acorn
 
-
+In case you wonder, `~{@` is an ASCII-art acorn
