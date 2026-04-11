@@ -1,4 +1,4 @@
-<img width="1280" height="640" alt="social-banner" src="https://github.com/user-attachments/assets/c98cfa58-2976-4b8d-9e5b-d9e5314348e6" />
+![](banner.png)
 
 # ~{@ stash
 
