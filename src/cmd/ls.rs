@@ -89,11 +89,9 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     if args.long {
         args.date.get_or_insert("ls".into());
         args.size.get_or_insert("human".into());
+        args.preview = true;
         if args.attrs.is_none() {
             args.attrs = Some("flag".into());
-        }
-        if !args.attr.iter().any(|value| value == "filename") {
-            args.attr.push("filename".into());
         }
     }
     let color = color_enabled(&args.color)?;
@@ -247,6 +245,19 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             line.push_str("  ");
             line.push_str(&pad_left(&row.date, max_date));
         }
+        if !row.attr_count.is_empty() {
+            line.push_str("  ");
+            push_colorized(&mut line, &pad_left(&row.attr_count, max_attr_count), "35", color);
+        }
+        if max_attr_flag > 0 {
+            line.push_str("  ");
+            push_colorized(
+                &mut line,
+                &pad_left(&row.attr_flag, max_attr_flag),
+                "1;35",
+                color,
+            );
+        }
         if !row.name.is_empty() {
             line.push_str("  ");
             let padded = pad_right(&row.name, max_name);
@@ -255,14 +266,6 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             } else {
                 push_colorized(&mut line, &padded, "1;36", color);
             }
-        }
-        if !row.attr_count.is_empty() {
-            line.push_str("  ");
-            push_colorized(&mut line, &pad_left(&row.attr_count, max_attr_count), "35", color);
-        }
-        if max_attr_flag > 0 {
-            line.push_str("  ");
-            push_colorized(&mut line, &pad_left(&row.attr_flag, max_attr_flag), "35", color);
         }
         for (idx, value) in row.meta_vals.iter().enumerate() {
             line.push_str("  ");

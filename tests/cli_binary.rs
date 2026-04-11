@@ -212,9 +212,9 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
     let mut ls_long_cmd = stash_cmd(dir.path());
     ls_long_cmd.args(["ls", "-l", "--color=false"]);
     let ls_long = stdout_string(&mut ls_long_cmd);
-    assert!(ls_long.contains("report.txt"));
-    assert!(ls_long.contains(&file_id[file_id.len() - 8..]));
     assert!(ls_long.contains('*'));
+    assert!(ls_long.contains("report body"));
+    assert!(ls_long.contains(&file_id[file_id.len() - 8..]));
 
     let mut ls_with_attr_cmd = stash_cmd(dir.path());
     ls_with_attr_cmd.args(["ls", "-a", "label", "--color=false"]);
