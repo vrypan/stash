@@ -13,15 +13,18 @@ pub(crate) struct LsArgs {
     )]
     id: String,
 
-    #[arg(short = 'a', long = "attr", value_name = "name", action = ArgAction::Append, help = "Filter by attribute name (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "name|+name", action = ArgAction::Append, help = "Show an attribute column, or filter with +name (repeatable)")]
     attr: Vec<String>,
 
     #[arg(
         short = 'A',
         long = "attrs",
-        help = "Show all attributes where available"
+        num_args = 0..=1,
+        default_missing_value = "list",
+        value_name = "list|count|flag",
+        help = "Attribute display: list, count, or flag"
     )]
-    attrs: bool,
+    attrs: Option<String>,
 
     #[arg(
         short = 'n',
@@ -59,8 +62,29 @@ pub(crate) struct LsArgs {
     color: String,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum AttrsMode {
+    List,
+    Count,
+    Flag,
+}
+
+fn parse_attrs_mode(value: Option<&str>) -> io::Result<Option<AttrsMode>> {
+    match value {
+        None => Ok(None),
+        Some("list") => Ok(Some(AttrsMode::List)),
+        Some("count") => Ok(Some(AttrsMode::Count)),
+        Some("flag") => Ok(Some(AttrsMode::Flag)),
+        Some(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--attrs must be list, count, or flag",
+        )),
+    }
+}
+
 pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     let color = color_enabled(&args.color)?;
+    let attrs_mode = parse_attrs_mode(args.attrs.as_deref())?;
     if args.long {
         args.date.get_or_insert("ls".into());
         args.size.get_or_insert("human".into());
@@ -69,15 +93,17 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     if let Some(mode) = args.date.as_deref() {
         args.date = Some(normalize_date_mode(mode)?.to_string());
     }
-    let meta_sel = parse_meta_selection(&args.attr, args.attrs)?;
+    let meta_sel = parse_meta_selection(&args.attr, attrs_mode == Some(AttrsMode::List))?;
     let items = super::collect_entries(&meta_sel, args.reverse, args.number)?;
     let ls_date_mode = args.date.as_deref().unwrap_or("ls");
     if args.date.is_none()
         && args.size.is_none()
         && !args.name
         && !args.preview
+        && attrs_mode != Some(AttrsMode::Count)
+        && attrs_mode != Some(AttrsMode::Flag)
         && !meta_sel.show_all
-        && meta_sel.tags.is_empty()
+        && meta_sel.display_tags.is_empty()
     {
         let stdout = io::stdout();
         let mut out = stdout.lock();
@@ -94,6 +120,8 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         size: String,
         date: String,
         name: String,
+        attr_count: String,
+        attr_flag: String,
         meta_vals: Vec<String>,
         meta_inline: String,
         preview: String,
@@ -104,7 +132,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     let initial_chars = if args.preview && args.chars == 80 { 0 } else { args.chars };
     let decorated = decorate_entries(&items, &args.id, ls_date_mode, initial_chars, &meta_sel);
     let mut rows = Vec::with_capacity(decorated.len());
-    for row in decorated {
+    for (row, item) in decorated.into_iter().zip(items.iter()) {
         let DecoratedEntry {
             id,
             size_bytes,
@@ -139,6 +167,16 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             } else {
                 String::new()
             },
+            attr_count: if attrs_mode == Some(AttrsMode::Count) {
+                item.attrs.len().to_string()
+            } else {
+                String::new()
+            },
+            attr_flag: if attrs_mode == Some(AttrsMode::Flag) && !item.attrs.is_empty() {
+                "*".to_string()
+            } else {
+                String::new()
+            },
             meta_vals,
             meta_inline,
             preview: if args.preview { preview } else { String::new() },
@@ -149,13 +187,17 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     let mut max_size = 0usize;
     let mut max_date = 0usize;
     let mut max_name = 0usize;
+    let mut max_attr_count = 0usize;
+    let mut max_attr_flag = 0usize;
     let mut max_inline_meta = 0usize;
-    let mut meta_widths = vec![0usize; meta_sel.tags.len()];
+    let mut meta_widths = vec![0usize; meta_sel.display_tags.len()];
     for row in &rows {
         max_id = max_id.max(row.id.chars().count());
         max_size = max_size.max(row.size.chars().count());
         max_date = max_date.max(row.date.chars().count());
         max_name = max_name.max(row.name.chars().count());
+        max_attr_count = max_attr_count.max(row.attr_count.chars().count());
+        max_attr_flag = max_attr_flag.max(row.attr_flag.chars().count());
         max_inline_meta = max_inline_meta.max(row.meta_inline.chars().count());
         for (idx, value) in row.meta_vals.iter().enumerate() {
             meta_widths[idx] = meta_widths[idx].max(value.chars().count());
@@ -169,6 +211,8 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         if max_size > 0 { fixed += 2 + max_size; }
         if max_date > 0 { fixed += 2 + max_date; }
         if max_name > 0 { fixed += 2 + max_name; }
+        if max_attr_count > 0 { fixed += 2 + max_attr_count; }
+        if max_attr_flag > 0 { fixed += 2 + max_attr_flag; }
         for &mw in &meta_widths { fixed += 2 + mw; }
         if max_inline_meta > 0 { fixed += 2 + max_inline_meta; }
         let effective_chars = term_width.saturating_sub(fixed + 2).max(20);
@@ -200,6 +244,14 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             } else {
                 push_colorized(&mut line, &padded, "1;36", color);
             }
+        }
+        if !row.attr_count.is_empty() {
+            line.push_str("  ");
+            push_colorized(&mut line, &pad_left(&row.attr_count, max_attr_count), "35", color);
+        }
+        if max_attr_flag > 0 {
+            line.push_str("  ");
+            push_colorized(&mut line, &pad_left(&row.attr_flag, max_attr_flag), "35", color);
         }
         for (idx, value) in row.meta_vals.iter().enumerate() {
             line.push_str("  ");

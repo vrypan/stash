@@ -46,9 +46,9 @@ fn decorate_entry(
     meta_sel: &MetaSelection,
 ) -> DecoratedEntry {
     let filename = item.attrs.get("filename").cloned();
-    let meta_vals = if !meta_sel.tags.is_empty() {
+    let meta_vals = if !meta_sel.display_tags.is_empty() {
         meta_sel
-            .tags
+            .display_tags
             .iter()
             .map(|tag| {
                 item.attrs
@@ -69,7 +69,7 @@ fn decorate_entry(
     } else {
         String::new()
     };
-    let log_attr_lines = if meta_sel.show_all || !meta_sel.tags.is_empty() {
+    let log_attr_lines = if meta_sel.show_all || !meta_sel.display_tags.is_empty() {
         if meta_sel.show_all {
             item.attrs
                 .iter()
@@ -77,7 +77,7 @@ fn decorate_entry(
                 .collect()
         } else {
             meta_sel
-                .tags
+                .display_tags
                 .iter()
                 .filter_map(|tag| {
                     item.attrs

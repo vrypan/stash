@@ -204,6 +204,26 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .success()
         .stdout(predicate::str::contains("text"));
 
+    let mut ls_with_attr_cmd = stash_cmd(dir.path());
+    ls_with_attr_cmd.args(["ls", "-a", "label", "--color=false"]);
+    let ls_with_attr = stdout_string(&mut ls_with_attr_cmd);
+    assert!(ls_with_attr.contains(&first[first.len() - 8..]));
+    assert!(ls_with_attr.contains(&second[second.len() - 8..]));
+    assert!(ls_with_attr.contains("one"));
+
+    let mut ls_filtered_cmd = stash_cmd(dir.path());
+    ls_filtered_cmd.args(["ls", "-a", "+label", "--id=full", "--color=false"]);
+    let ls_filtered = stdout_string(&mut ls_filtered_cmd);
+    assert!(ls_filtered.contains(&first));
+    assert!(!ls_filtered.contains(&second));
+
+    stash_cmd(dir.path())
+        .args(["log", "-a", "kind", "-a", "+kind", "--color=false"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("kind: sample"))
+        .stdout(predicate::str::contains("label: one").not());
+
     stash_cmd(dir.path())
         .args(["attrs", "--count"])
         .assert()

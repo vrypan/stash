@@ -9,7 +9,7 @@ pub(crate) struct LogArgs {
     #[arg(long, default_value = "full", help = "ID display: short, full, or pos")]
     id: String,
 
-    #[arg(short = 'a', long = "attr", value_name = "name", action = ArgAction::Append, help = "Filter by attribute name (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "name|+name", action = ArgAction::Append, help = "Show an attribute, or filter with +name (repeatable)")]
     attr: Vec<String>,
 
     #[arg(

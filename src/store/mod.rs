@@ -94,33 +94,47 @@ impl Meta {
 #[derive(Clone, Debug, Default)]
 pub struct MetaSelection {
     pub show_all: bool,
-    pub tags: Vec<String>,
+    pub display_tags: Vec<String>,
+    pub filter_tags: Vec<String>,
 }
 
 pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<MetaSelection> {
     let mut out = MetaSelection {
         show_all,
-        tags: Vec::new(),
+        display_tags: Vec::new(),
+        filter_tags: Vec::new(),
     };
-    let mut seen = std::collections::HashSet::new();
+    let mut seen_display = std::collections::HashSet::new();
+    let mut seen_filter = std::collections::HashSet::new();
     for value in values {
         if value.contains(',') || value.contains('=') || value.trim().is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "--attr accepts attribute names and is repeatable",
+                "--attr accepts attribute names and +attribute filters, and is repeatable",
             ));
-        } else if seen.insert(value.as_str()) {
-            out.tags.push(value.clone());
+        }
+        if let Some(key) = value.strip_prefix('+') {
+            if key.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "--attr filter must be +name",
+                ));
+            }
+            if seen_filter.insert(key.to_string()) {
+                out.filter_tags.push(key.to_string());
+            }
+        } else if seen_display.insert(value.to_string()) {
+            out.display_tags.push(value.clone());
         }
     }
     Ok(out)
 }
 
 pub fn matches_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> bool {
-    if sel.show_all || sel.tags.is_empty() {
+    if sel.filter_tags.is_empty() {
         return true;
     }
-    sel.tags.iter().any(|tag| attrs.contains_key(tag))
+    sel.filter_tags.iter().all(|tag| attrs.contains_key(tag))
 }
 
 // ---------------------------------------------------------------------------
