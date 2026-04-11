@@ -2,62 +2,84 @@
 
 # ~{@ stash
 
-`stash` is a small local store for pipeline output and ad hoc file snapshots.
+`sstash` is a small, fast command line tool that saves data for future reference and integrates nicely
+with command line workflows.
 
-It stores each entry as raw bytes under `~/.stash/data`, stores attributes
-under `~/.stash/attr`, assigns it a stable ULID, and lets you retrieve entries
-by recency or ID later. Everything is flat files and directories.
-
-Without a subcommand, `stash` uses smart mode:
-- in the middle of a pipeline, it behaves like `stash tee`
-- otherwise, it behaves like `stash push`
-
-> [!TIP]
-> stash fits nicely in any workflow that would involve temporary files, or
-> expensive output that needs to be processed in more than one ways.
-
-> [!NOTE]
-> What is `~{@`??? An ASCII art acorn.
-
-## Quick Start
-
-Save output and reuse it:
-
-```bash
-curl -s https://api.example.com/data | stash
-stash cat | jq .
-stash cat | jq '.items[]'
+Stash piped output or files
+```
+$ echo "hello world" | stash
+$ stash Cargo.toml
+$ stash demos/words.gif
 ```
 
-Keep the pipeline flowing while saving the same bytes:
+Inspect your stash
+```
+$ stash ls -lp
 
-```bash
-curl -s https://api.example.com/data | stash tee | jq .
-curl -s https://api.example.com/data | stash | jq .
+jhec0b9h  292.1K  Apr 11 05:15  words.gif   GIF89a......1......... .. !..$..... ..&..#..(..%..
+z70pc1xm    777B  Apr 11 05:11  Cargo.toml  [package] name = "stash-cli" version = "0.6.0" edi
+wve1pgsd     12B  Apr 11 05:08  wve1pgsd    hello world
+```
+Read stash entries
+```
+$ stash cat wve1pgsd
+hello world
+
+$stash cat @2 | wc -l
+  35
 ```
 
-By default, `stash`, `stash push`, and `stash tee` do not print the generated
-entry ID. Use `--print=stdout`, `--print=stderr`, or `--print=null` to control
-where the ID is emitted.
+Stash in the middle of a pipe
+```
+$ find src -type f | stash tee | wc -l
+      15
 
-Use with diff:
+$ stash cat @1 | head
 
-```bash
-find . -type f | sort | stash -a label=before
-# ... later ...
-find . -type f | sort | stash -a label=after
-
-diff -u <(stash cat @2) <(stash cat @1)
+src/cmd/rm.rs
+src/cmd/ls.rs
+src/cmd/log.rs
+src/cmd/attr.rs
+src/cmd/path.rs
+src/cmd/mod.rs
+src/cmd/push.rs
+src/display.rs
+src/lib.rs
+src/preview.rs
 ```
 
-File-oriented view:
+Set arbitrary attributes to each entry, either at creation time or later.
 
-```bash
-stash ls
-stash log
-stash attrs --count
-stash attr @1
 ```
+$ stash attr wve1pgsd note=test
+$ stash attr jhec0b9h note=test type=gif
+
+$ stash ls -l -a note -a type
+jhec0b9h  292.1K  Apr 11 05:15  words.gif  test  gif
+wve1pgsd     12B  Apr 11 05:08  wve1pgsd   test
+```
+
+Everything is stored as plain files under `~/.shtash` (or `$STASH_DIR` if you set it).
+No fancy databases or complex data formats.
+
+```
+stash ls --date --id=full --preview --reverse
+01knxf1n5ffvk9jsm8wve1pgsd  Apr 11 05:08  hello world
+01knxf6yj2tdgj4k8kz70pc1xm  Apr 11 05:11  [package] name = "stash-cli" version = "0.6.0" edition = "2024" d
+01knxfeb2hgmybg39ajhec0b9h  Apr 11 05:15  GIF89a......1......... .. !..$..... ..&..#..(..%..+.....(..R..8..
+01knxhb7pa2wnsm0djghvg4s0b  Apr 11 05:48  src/cmd/rm.rs src/cmd/ls.rs src/cmd/log.rs src/cmd/attr.rs src/cm
+
+file .stash/data/*
+.stash/data/01knxf1n5ffvk9jsm8wve1pgsd: ASCII text
+.stash/data/01knxf6yj2tdgj4k8kz70pc1xm: ASCII text
+.stash/data/01knxfeb2hgmybg39ajhec0b9h: GIF image data, version 89a, 1200 x 900
+.stash/data/01knxhb7pa2wnsm0djghvg4s0b: ASCII text
+```
+
+## Documentation
+- Usage guide, and examples: [docs/](docs)
+- Scrips, and cli integrations (bash/zsh/fish, ripgrep, starship, ssh, fzf, etc.): [scripts/](scripts/)
+
 
 ## Installation
 
@@ -93,26 +115,7 @@ For auto-completion and other shell-specific features, check:
 - [docs/fish.md](docs/fish.md)
 - [docs/zsh.md](docs/zsh.md)
 
-## Stash Repository Location
+## ~{@
+In case you wonder, `~{@` is an ASCII-Art acorn
 
-By default, `stash` stores data under `~/.stash`.
 
-You can override the stash root with `STASH_DIR`:
-
-```bash
-STASH_DIR=/tmp/job-a stash log
-STASH_DIR=/tmp/job-a stash Makefile
-STASH_DIR=/tmp/job-b stash log
-```
-
-This is useful when you want separate independent stashes for different jobs,
-projects, or CI runs.
-
-## Documentation
-
-- Usage guide: [docs/usage.md](docs/usage.md)
-- Command/reference guide: [docs/reference.md](docs/reference.md)
-- Example workflows: [docs/examples.md](docs/examples.md)
-- Shell completion setup: [docs/bash.md](docs/bash.md), [docs/fish.md](docs/fish.md), [docs/zsh.md](docs/zsh.md)
-- Demos: [demos/](demos/)
-- Helper scripts: [scripts/](scripts/)
