@@ -1,3 +1,4 @@
+
 # fzf-powered stash ref completion for zsh.
 #
 # Load the standard `_stash` completion first, then source this file:
@@ -6,7 +7,8 @@
 # If `fzf` is unavailable, this file leaves the normal completion unchanged.
 
 if (( ! $+commands[fzf] )); then
-  return 0
+    echo "fzf is not available; stash fzf-assisted completion was not enabled." >&2
+    return 0
 fi
 
 typeset -gi _stash_fzf_has_base=0
@@ -19,23 +21,33 @@ fi
 _stash_fzf_needs_ref() {
   local subcmd="${words[2]-}"
   local current_word="${words[CURRENT]-}"
-  local i
+
+  [[ "$current_word" == -* ]] && return 1
 
   case "$subcmd" in
     cat|attr|path)
-      [[ $CURRENT -eq 3 && "$current_word" != -* ]]
-      return
+      (( CURRENT == 3 ))
       ;;
     rm)
+      local i
       for (( i = 3; i < CURRENT; i++ )); do
-        case "${words[i]}" in
-          -a|--attr|--before)
-            return 1
-            ;;
-        esac
+        [[ "${words[i]}" == (-a|--attr) ]] && return 1
       done
-      [[ "$current_word" != -* ]]
-      return
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+_stash_fzf_needs_attr() {
+  local subcmd="${words[2]-}"
+  local prev="${words[CURRENT-1]-}"
+
+  case "$subcmd" in
+    ls|rm)
+      [[ ("$prev" == "-a" || "$prev" == "--attr") && "${words[CURRENT]-}" != -* ]]
       ;;
     *)
       return 1
@@ -46,15 +58,87 @@ _stash_fzf_needs_ref() {
 _stash_fzf_pick_ref() {
   local query="${PREFIX:-}"
 
-  stash ls --id=short --attrs=flag --preview --color=false 2>/dev/null \
-    | fzf \
-        --height=40% \
-        --reverse \
-        --border \
-        --ansi \
-        --query="$query" \
-        --preview='stash attr {1} 2>/dev/null; printf "\n"; stash cat {1} 2>/dev/null | head -100' \
-    | awk '{print $1}'
+  if (( $+commands[jq] )); then
+    stash ls --json --chars=120 2>/dev/null \
+      | jq -j '
+          .[]
+          | (
+              [
+                ("\u001b[1;33m" + .short_id + "\u001b[0m " + .date + " \u001b[36m" + .size_human + "\u001b[0m"),
+                (
+                  to_entries
+                  | map(
+                    select(
+                        .key as $k
+                        | (["id", "short_id", "stack_ref", "ts", "date", "size", "size_human", "preview"] | index($k))
+                        | not
+                      )
+                    )
+                  | .[]
+                  | "\u001b[36m" + .key + ":\u001b[0m " + (.value | tostring)
+                ),
+                (
+                  (.preview // [])
+                  | .[]
+                  | "... " + .
+                ),
+                ""
+              ]
+              | flatten
+              | join("\n")
+            ) + "\u0000"
+        ' \
+      | fzf \
+          --read0 \
+          --height=60% \
+          --reverse \
+          --border \
+          --ansi \
+          --query="$query" \
+      | sed 's/\x1b\[[0-9;]*m//g' \
+      | awk 'NR == 1 { print $1 }'
+  else
+    stash ls --id=short --date --size --preview --color=false 2>/dev/null \
+      | fzf \
+          --height=40% \
+          --reverse \
+          --border \
+          --ansi \
+          --query="$query" \
+      | awk '{ print $1 }'
+  fi
+}
+
+_stash_fzf_insert_match() {
+  local selected="$1"
+  [[ -n "$selected" ]] || return 1
+  compstate[insert]=1
+  compstate[list]=''
+  compadd -Q -U -S ' ' -- "$selected"
+}
+
+_stash_fzf_complete_attr() {
+  local current_word="${PREFIX:-${words[CURRENT]-}}"
+  local -a items
+  local key count
+
+  while IFS=$'\t' read -r key count; do
+    [[ -n "$key" ]] && items+=("$key [$count]")
+  done < <(stash attrs --count 2>/dev/null)
+  (( ${#items} )) || return 0
+
+  zle -I 2>/dev/null || true
+  local selected
+  selected="$(
+    printf '%s\n' "${items[@]}" \
+      | fzf \
+          --height=40% \
+          --reverse \
+          --border \
+          --query="$current_word"
+  )" || { _stash_fzf_redraw; return 0; }
+  _stash_fzf_redraw
+  _stash_fzf_insert_match "${selected%% \[*}"
 }
 
 _stash_fzf_redraw() {
@@ -62,17 +146,17 @@ _stash_fzf_redraw() {
 }
 
 _stash_fzf_complete() {
+  if _stash_fzf_needs_attr; then
+    _stash_fzf_complete_attr
+    return
+  fi
+
   if _stash_fzf_needs_ref; then
-    local selected fzf_status
     zle -I 2>/dev/null || true
-    selected="$(_stash_fzf_pick_ref)"
-    fzf_status=$?
+    local selected
+    selected="$(_stash_fzf_pick_ref)" || { _stash_fzf_redraw; return 0; }
     _stash_fzf_redraw
-    (( fzf_status == 0 )) || return 0
-    [[ -n "$selected" ]] || return 0
-    compstate[insert]=1
-    compstate[list]=''
-    compadd -Q -U -S ' ' -- "$selected"
+    _stash_fzf_insert_match "$selected"
     return
   fi
 
