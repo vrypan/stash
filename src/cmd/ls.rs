@@ -43,9 +43,6 @@ pub(crate) struct LsArgs {
     #[arg(long, help = "Print a header row for tabular output")]
     headers: bool,
 
-    #[arg(long, help = "Dim every other output row")]
-    stripe: bool,
-
     #[arg(long, default_missing_value = "ls", num_args = 0..=1, help = "Include date column: iso, ago, or ls")]
     date: Option<String>,
 
@@ -105,8 +102,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
     }
     let color = color_enabled(&args.color)?;
-    let stripe = color && args.stripe;
-    let style_color = color && !args.stripe;
+    let style_color = color;
     let attrs_mode = parse_attrs_mode(args.attrs.as_deref())?;
     if let Some(mode) = args.date.as_deref() {
         args.date = Some(normalize_date_mode(mode)?.to_string());
@@ -140,13 +136,9 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         let stdout = io::stdout();
         let mut out = io::BufWriter::new(stdout.lock());
         let rows = decorate_entries(&items, &args.id, ls_date_mode, args.chars, &meta_sel);
-        for (idx, row) in rows.into_iter().enumerate() {
-            if stripe && idx % 2 == 1 {
-                writeln!(out, "{}", dim_ansi_line(&row.id))?;
-            } else {
-                write_colored(&mut out, &row.id, "1;33", style_color)?;
-                writeln!(out)?;
-            }
+        for row in rows {
+            write_colored(&mut out, &row.id, "1;33", style_color)?;
+            writeln!(out)?;
         }
         return Ok(());
     }
@@ -393,7 +385,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         };
         writeln!(out, "{rendered}")?;
     }
-    for (idx, row) in rows.iter().enumerate() {
+    for row in &rows {
         line.clear();
         push_colorized(&mut line, &pad_right(&row.id, max_id), "1;33", style_color);
         if !row.size.is_empty() {
@@ -450,17 +442,9 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
         if let Some(w) = width {
             let rendered = trim_ansi_to_width(&line, w);
-            if stripe && idx % 2 == 1 {
-                writeln!(out, "{}", dim_ansi_line(&rendered))?;
-            } else {
-                writeln!(out, "{rendered}")?;
-            }
+            writeln!(out, "{rendered}")?;
         } else {
-            if stripe && idx % 2 == 1 {
-                writeln!(out, "{}", dim_ansi_line(&line))?;
-            } else {
-                writeln!(out, "{line}")?;
-            }
+            writeln!(out, "{line}")?;
         }
     }
     Ok(())

@@ -136,7 +136,6 @@ stash ls --size
 stash ls --name
 stash ls --preview
 stash ls --headers --date --size
-stash ls -l --stripe
 stash ls --json
 stash ls --size=bytes --name
 stash ls -a source -a stage
@@ -155,7 +154,6 @@ Notes:
 - `--date` accepts `iso`, `ago`, or `ls`
 - `--size` accepts `human` or `bytes`
 - `--headers` prints a header row for tabular output
-- `--stripe` dims every other row in tabular output
 - `-A` and `--attrs=list` show attribute values inline
 - `--attrs=count` shows a per-entry count of user-defined attrs
 - `--attrs=flag` shows `*` when an entry has one or more user attrs
