@@ -119,8 +119,18 @@ _stash_fzf_insert_match() {
 
 _stash_fzf_complete_attr() {
   local current_word="${PREFIX:-${words[CURRENT]-}}"
+  local attr_prefix=""
+  local query="$current_word"
   local -a items
   local key count
+
+  if [[ "$current_word" == ++* ]]; then
+    attr_prefix="++"
+    query="${current_word#++}"
+  elif [[ "$current_word" == +* ]]; then
+    attr_prefix="+"
+    query="${current_word#+}"
+  fi
 
   while IFS=$'\t' read -r key count; do
     [[ -n "$key" ]] && items+=("$key [$count]")
@@ -135,10 +145,10 @@ _stash_fzf_complete_attr() {
           --height=40% \
           --reverse \
           --border \
-          --query="$current_word"
+          --query="$query"
   )" || { _stash_fzf_redraw; return 0; }
   _stash_fzf_redraw
-  _stash_fzf_insert_match "${selected%% \[*}"
+  _stash_fzf_insert_match "${attr_prefix}${selected%% \[*}"
 }
 
 _stash_fzf_redraw() {
