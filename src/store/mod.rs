@@ -1,5 +1,5 @@
 use crate::preview::build_preview_data;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
@@ -54,7 +54,15 @@ pub struct UtcDateTime {
     pub sec: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    SerdeSerialize,
+    SerdeDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Meta {
     pub id: String,
     pub ts: String,
