@@ -197,6 +197,9 @@ stash ls -a label -a +label
 stash ls -A
 ```
 
+Here, `-a +label` both shows the `label` column and filters to entries where
+`label` is set.
+
 ### As a rolling scratch stack during shell work
 
 ```bash

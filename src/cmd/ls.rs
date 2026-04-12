@@ -13,7 +13,7 @@ pub(crate) struct LsArgs {
     )]
     id: String,
 
-    #[arg(short = 'a', long = "attr", value_name = "name|+name", action = ArgAction::Append, help = "Show an attribute column, or filter with +name (repeatable)")]
+    #[arg(short = 'a', long = "attr", value_name = "name|+name", action = ArgAction::Append, help = "Show an attribute column; +name also filters entries (repeatable)")]
     attr: Vec<String>,
 
     #[arg(

@@ -206,6 +206,7 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .assert()
         .success()
         .stdout(predicate::str::contains("text"))
+        .stdout(predicate::str::contains("sample"))
         .stdout(predicate::str::contains(&second[second.len() - 8..]))
         .stdout(predicate::str::contains(&first[first.len() - 8..]).not());
 
@@ -238,6 +239,7 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
     ls_filtered_cmd.args(["ls", "-a", "+label", "--id=full", "--color=false"]);
     let ls_filtered = stdout_string(&mut ls_filtered_cmd);
     assert!(ls_filtered.contains(&first));
+    assert!(ls_filtered.contains("one"));
     assert!(!ls_filtered.contains(&second));
 
     stash_cmd(dir.path())

@@ -130,6 +130,9 @@ pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<Met
                     "--attr filter must be +name",
                 ));
             }
+            if seen_display.insert(key.to_string()) {
+                out.display_tags.push(key.to_string());
+            }
             if seen_filter.insert(key.to_string()) {
                 out.filter_tags.push(key.to_string());
             }
