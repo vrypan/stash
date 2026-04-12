@@ -300,6 +300,22 @@ fn rm_and_pop_remove_expected_entries() {
         .args(["cat", &newest])
         .assert()
         .failure();
+
+    let first = push_text(dir.path(), "first\n", &["bucket=a"]);
+    let second = push_text(dir.path(), "second\n", &["bucket=b"]);
+    let third = push_text(dir.path(), "third\n", &["bucket=c"]);
+
+    stash_cmd(dir.path())
+        .args(["rm", "-f", "--after", &second])
+        .assert()
+        .success();
+
+    let mut ls_after_cmd = stash_cmd(dir.path());
+    ls_after_cmd.args(["ls", "--id=full"]);
+    let ls_after = stdout_string(&mut ls_after_cmd);
+    assert!(ls_after.contains(&second));
+    assert!(ls_after.contains(&first));
+    assert!(!ls_after.contains(&third));
 }
 
 #[test]

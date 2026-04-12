@@ -216,6 +216,7 @@ Remove older entries:
 
 ```bash
 stash rm --before @10
+stash rm --after @10
 ```
 
 Remove entries by attribute match:
@@ -229,6 +230,8 @@ stash rm -a source=usgs -a stage=raw
 Notes:
 - `-a name` matches entries where the attribute is set
 - `-a name=value` matches entries where the attribute equals that value
+- `--before <ref>` removes entries older than the referenced entry
+- `--after <ref>` removes entries newer than the referenced entry
 - multiple `-a/--attr` filters use AND semantics
 - `stash rm -a ...` shows the matching entries and asks for confirmation unless `-f` is used
 

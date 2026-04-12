@@ -71,6 +71,10 @@ stash rm -a source=usgs
 The referenced entry itself is kept. By default, `stash` asks for
 confirmation; use `-f` to skip the prompt.
 
+`stash rm --after <ref>` removes entries newer than the referenced entry.
+The referenced entry itself is kept. By default, `stash` asks for
+confirmation; use `-f` to skip the prompt.
+
 `stash rm -a <name>` removes entries where the attribute is set.
 `stash rm -a <name=value>` removes entries where the attribute matches exactly.
 When attribute filters are used, `stash` shows the matching entries and asks
@@ -110,7 +114,8 @@ In that model:
 - `stash ls --headers ...` adds column labels to tabular output
 - `stash attrs --count` shows which user-defined attributes exist across the stash
 - `stash cat` reads an entry by stack ref or ID
-- `stash rm` deletes an entry by stack ref or ID, or removes older entries with `--before`
+- `stash rm` deletes an entry by stack ref or ID, or removes entries relative
+  to a ref with `--before` or `--after`
 
 Filenames come from `filename` when available, so stashing files directly
 works naturally with `stash ls --name` or `stash ls -l`.

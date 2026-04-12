@@ -287,6 +287,16 @@ pub fn older_than_ids(id: &str) -> io::Result<Vec<String>> {
     Err(io::Error::new(io::ErrorKind::NotFound, "entry not found"))
 }
 
+pub fn newer_than_ids(id: &str) -> io::Result<Vec<String>> {
+    let items = list()?;
+    for (idx, item) in items.iter().enumerate() {
+        if item.id == id {
+            return Ok(items[..idx].iter().map(|m| m.id.clone()).collect());
+        }
+    }
+    Err(io::Error::new(io::ErrorKind::NotFound, "entry not found"))
+}
+
 pub fn resolve(input: &str) -> io::Result<String> {
     let raw = input.trim();
     if raw.is_empty() {
