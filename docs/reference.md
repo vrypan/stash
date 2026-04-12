@@ -158,7 +158,8 @@ Notes:
 - `--attrs=count` shows a per-entry count of user-defined attrs
 - `--attrs=flag` shows `*` when an entry has one or more user attrs
 - `-a name` selects an attribute for display
-- `-a +name` shows that attribute and filters to entries where it is set
+- `-a +name` filters to entries where the attribute is set
+- `-a ++name` both shows that attribute and filters to entries where it is set
 - `--id=short|full|pos` controls the first column in all modes
 
 ## Structured Output

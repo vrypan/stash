@@ -120,18 +120,28 @@ pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<Met
         if value.contains(',') || value.contains('=') || value.trim().is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "--attr accepts attribute names and +attribute filters, and is repeatable",
+                "--attr accepts name, +name, or ++name and is repeatable",
             ));
         }
-        if let Some(key) = value.strip_prefix('+') {
+        if let Some(key) = value.strip_prefix("++") {
+            if key.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "--attr filter+display must be ++name",
+                ));
+            }
+            if seen_display.insert(key.to_string()) {
+                out.display_tags.push(key.to_string());
+            }
+            if seen_filter.insert(key.to_string()) {
+                out.filter_tags.push(key.to_string());
+            }
+        } else if let Some(key) = value.strip_prefix('+') {
             if key.is_empty() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "--attr filter must be +name",
                 ));
-            }
-            if seen_display.insert(key.to_string()) {
-                out.display_tags.push(key.to_string());
             }
             if seen_filter.insert(key.to_string()) {
                 out.filter_tags.push(key.to_string());
