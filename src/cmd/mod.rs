@@ -1,4 +1,7 @@
-use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
+#[cfg(feature = "completion")]
+use clap::{CommandFactory, ValueEnum};
+#[cfg(feature = "completion")]
 use clap_complete::{Shell, generate};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use std::io::{self, IsTerminal};
@@ -50,6 +53,7 @@ enum Command {
     Rm(rm::RmArgs),
     #[command(about = "Print the newest entry and remove it")]
     Pop,
+    #[cfg(feature = "completion")]
     #[command(about = "Generate shell completion scripts")]
     Completion(CompletionArgs),
 }
@@ -66,12 +70,14 @@ struct AttrsArgs {
     count: bool,
 }
 
+#[cfg(feature = "completion")]
 #[derive(Args, Debug, Clone)]
 struct CompletionArgs {
     #[arg(value_enum, help = "Shell to generate completion for")]
     shell: CompletionShell,
 }
 
+#[cfg(feature = "completion")]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum CompletionShell {
     Bash,
@@ -79,6 +85,7 @@ enum CompletionShell {
     Zsh,
 }
 
+#[cfg(feature = "completion")]
 impl From<CompletionShell> for Shell {
     fn from(value: CompletionShell) -> Self {
         match value {
@@ -122,6 +129,7 @@ pub fn run() -> io::Result<()> {
         Some(Command::Path(args)) => path::path_command(args),
         Some(Command::Rm(args)) => rm::rm_command(args),
         Some(Command::Pop) => pop_command(),
+        #[cfg(feature = "completion")]
         Some(Command::Completion(args)) => completion_command(args),
         None => {
             if smart_mode_uses_tee(&cli.push) {
@@ -185,9 +193,18 @@ fn attrs_command(args: AttrsArgs) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "completion")]
 fn completion_command(args: CompletionArgs) -> io::Result<()> {
+    write_completions(Shell::from(args.shell), &mut io::stdout());
+    Ok(())
+}
+
+/// Generate shell completions for `stash` into `writer`.
+/// Called by both the inlined subcommand (feature = "completion") and
+/// the standalone `stash-completion` binary.
+#[cfg(feature = "completion")]
+pub fn write_completions(shell: Shell, writer: &mut dyn io::Write) {
     let mut cmd = Cli::command();
     let name = cmd.get_name().to_string();
-    generate(Shell::from(args.shell), &mut cmd, name, &mut io::stdout());
-    Ok(())
+    generate(shell, &mut cmd, name, writer);
 }

@@ -8,7 +8,7 @@ For a manual install, generate the completion file:
 
 ```bash
 mkdir -p ~/.config/fish/completions
-stash completion fish > ~/.config/fish/completions/stash.fish
+stash-completion fish > ~/.config/fish/completions/stash.fish
 ```
 
 Fish loads completions from that directory automatically.
