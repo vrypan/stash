@@ -18,6 +18,11 @@ fn stash_cmd(stash_dir: &Path) -> Command {
     cmd
 }
 
+#[cfg(feature = "completion")]
+fn completion_cmd() -> Command {
+    Command::cargo_bin("stash-completion").unwrap()
+}
+
 fn stdout_string(cmd: &mut Command) -> String {
     String::from_utf8(cmd.assert().success().get_output().stdout.clone()).unwrap()
 }
@@ -327,11 +332,11 @@ fn rm_and_pop_remove_expected_entries() {
     assert!(!ls_after.contains(&third));
 }
 
+#[cfg(feature = "completion")]
 #[test]
-fn completion_smoke_test() {
-    let dir = test_stash_dir();
-    stash_cmd(dir.path())
-        .args(["completion", "zsh"])
+fn completion_binary_smoke_test() {
+    completion_cmd()
+        .arg("zsh")
         .assert()
         .success()
         .stdout(predicate::str::contains("_stash"));
