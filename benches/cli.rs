@@ -169,6 +169,26 @@ fn bench_push_100(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_cat_dir() -> &'static Path {
+    static DIR: OnceLock<TempDir> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let _ = bench_binary(); // ensure binary is built
+        let dir = TempDir::new().expect("create cat benchmark stash dir");
+        // Push a 10MB entry via the CLI to avoid cached_base_dir conflicts.
+        let payload = vec![b'x'; 10 * 1024 * 1024];
+        run_cli_with_stdin(dir.path(), &["push", "--print=null"], &payload);
+        dir
+    })
+    .path()
+}
+
+fn bench_cat(c: &mut Criterion) {
+    let dir = bench_cat_dir();
+    c.bench_function("BenchmarkCat10MB", |b| {
+        b.iter(|| run_cli(dir, &["cat"]))
+    });
+}
+
 fn bench_config() -> Criterion {
     Criterion::default().measurement_time(std::time::Duration::from_secs(10))
 }
@@ -176,6 +196,6 @@ fn bench_config() -> Criterion {
 criterion_group! {
     name = cli_benches;
     config = bench_config();
-    targets = bench_ls, bench_ls_all, bench_ls_json, bench_ls_json_all, bench_attr, bench_push, bench_push_100
+    targets = bench_ls, bench_ls_all, bench_ls_json, bench_ls_json_all, bench_attr, bench_push, bench_push_100, bench_cat
 }
 criterion_main!(cli_benches);

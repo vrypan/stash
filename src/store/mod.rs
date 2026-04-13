@@ -405,8 +405,9 @@ pub fn unset_attrs(id: &str, keys: &[String]) -> io::Result<()> {
 }
 
 pub fn cat_to_writer<W: Write>(id: &str, mut writer: W) -> io::Result<()> {
-    let mut file = File::open(entry_data_path(id)?)?;
-    std::io::copy(&mut file, &mut writer)?;
+    let file = File::open(entry_data_path(id)?)?;
+    let mut reader = io::BufReader::with_capacity(65536, file);
+    io::copy(&mut reader, &mut writer)?;
     Ok(())
 }
 
