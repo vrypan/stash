@@ -53,9 +53,6 @@ enum Command {
     Rm(rm::RmArgs),
     #[command(about = "Print the newest entry and remove it")]
     Pop,
-    #[cfg(feature = "completion")]
-    #[command(about = "Generate shell completion scripts")]
-    Completion(CompletionArgs),
 }
 
 #[derive(Args, Debug, Clone, Default)]
@@ -68,13 +65,6 @@ struct CatArgs {
 struct AttrsArgs {
     #[arg(long, help = "Include entry count")]
     count: bool,
-}
-
-#[cfg(feature = "completion")]
-#[derive(Args, Debug, Clone)]
-struct CompletionArgs {
-    #[arg(value_enum, help = "Shell to generate completion for")]
-    shell: CompletionShell,
 }
 
 #[cfg(feature = "completion")]
@@ -129,8 +119,6 @@ pub fn run() -> io::Result<()> {
         Some(Command::Path(args)) => path::path_command(args),
         Some(Command::Rm(args)) => rm::rm_command(args),
         Some(Command::Pop) => pop_command(),
-        #[cfg(feature = "completion")]
-        Some(Command::Completion(args)) => completion_command(args),
         None => {
             if smart_mode_uses_tee(&cli.push) {
                 push::tee_command(push::TeeArgs {
@@ -193,15 +181,8 @@ fn attrs_command(args: AttrsArgs) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "completion")]
-fn completion_command(args: CompletionArgs) -> io::Result<()> {
-    write_completions(Shell::from(args.shell), &mut io::stdout());
-    Ok(())
-}
-
 /// Generate shell completions for `stash` into `writer`.
-/// Called by both the inlined subcommand (feature = "completion") and
-/// the standalone `stash-completion` binary.
+/// Called by the standalone `stash-completion` binary.
 #[cfg(feature = "completion")]
 pub fn write_completions(shell: Shell, writer: &mut dyn io::Write) {
     let mut cmd = Cli::command();
