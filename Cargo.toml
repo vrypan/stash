@@ -20,7 +20,7 @@ required-features = ["completion"]
 completion = ["dep:clap_complete"]
 
 [dependencies]
-clap = { version = "4.5.40", features = ["derive"] }
+clap = { version = "4.5.40", default-features = false, features = ["derive", "std", "color", "help", "usage", "error-context"] }
 clap_complete = { version = "4.5.49", optional = true }
 rkyv = "0.8.15"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -43,6 +43,7 @@ features = ["completion"]
 [profile.release]
 lto = "thin"
 strip = true
+panic = "abort"
 
 # The profile that 'dist' will build with
 [profile.dist]
