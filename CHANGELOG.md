@@ -4,7 +4,9 @@ All notable changes to `stash` are documented in this file.
 
 ## 0.7.0
 
-- `stash log` has been removed!
+`stash log` has been removed in favor of `stash ls`.
+
+- `stash log` removed.
 - `stash ls` is now the single listing command.
 - Expand `stash ls` output modes:
   - add `--json` with rich per-entry output
@@ -17,6 +19,19 @@ All notable changes to `stash` are documented in this file.
   - reuse output buffers in tabular rendering
   - tighten cache validation and id resolution
   - add and tune Criterion benchmarks for `ls`, `attr`, and `push`
+- Add `stash rm --after` to remove entries newer than a referenced entry.
+- Migrate the internal list cache serialization from `bincode` to `rkyv`.
+- Update `signal-hook` to `0.4.4`.
+- Keep empty `-A/--attrs=list` cells aligned across `stash ls` rows.
+- Refine `stash ls -a/--attr` selection:
+  - `-a name` shows the attribute column
+  - `-a +name` filters on the attribute
+  - `-a ++name` filters and shows in one argument
+- Improve the `stash-fzf.zsh` helper:
+  - use a richer multiline ref picker
+  - fix picker cancel and insertion behavior
+  - add `fzf`-powered attribute completion from `stash attrs --count`
+  - support `-a`, `-a +`, and `-a ++` attr completion prefixes
 
 ## 0.6.0
 
