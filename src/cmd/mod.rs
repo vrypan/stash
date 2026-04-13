@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand};
 #[cfg(feature = "completion")]
 use clap::{CommandFactory, ValueEnum};
 #[cfg(feature = "completion")]
@@ -57,8 +57,11 @@ enum Command {
 
 #[derive(Args, Debug, Clone, Default)]
 struct CatArgs {
-    #[arg(help = "Entry reference: id, n, or @n")]
-    reference: Option<String>,
+    #[arg(help = "Entry references: id, n, or @n")]
+    refs: Vec<String>,
+
+    #[arg(short = 'a', long = "attr", value_name = "name|name=value", action = ArgAction::Append, help = "Print entries where an attribute is set, or equals a value (repeatable)")]
+    attr: Vec<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -153,13 +156,75 @@ fn collect_entries(sel: &MetaSelection, reverse: bool, limit: usize) -> io::Resu
 }
 
 fn cat_command(args: CatArgs) -> io::Result<()> {
-    let id = if let Some(reference) = args.reference {
-        store::resolve(&reference)?
-    } else {
-        store::newest()?.id
-    };
     let stdout = io::stdout();
-    store::cat_to_writer(&id, stdout.lock())
+    let mut out = stdout.lock();
+
+    if !args.attr.is_empty() {
+        if !args.refs.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cat accepts either <ref>... or --attr",
+            ));
+        }
+        let filters = parse_attr_match_filters(&args.attr)?;
+        for item in store::list()?
+            .into_iter()
+            .filter(|meta| matches_attr_match_filters(&meta.attrs, &filters))
+        {
+            store::cat_to_writer(&item.id, &mut out)?;
+        }
+        return Ok(());
+    }
+
+    if args.refs.is_empty() {
+        return store::cat_to_writer(&store::newest()?.id, &mut out);
+    }
+
+    for reference in &args.refs {
+        let id = store::resolve(reference)?;
+        store::cat_to_writer(&id, &mut out)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+struct AttrMatchFilter {
+    key: String,
+    value: Option<String>,
+}
+
+fn parse_attr_match_filters(values: &[String]) -> io::Result<Vec<AttrMatchFilter>> {
+    let mut filters = Vec::with_capacity(values.len());
+    for value in values {
+        if value.trim().is_empty() || value.contains(',') {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "--attr accepts name or name=value and is repeatable",
+            ));
+        }
+        if let Some((key, attr_value)) = value.split_once('=') {
+            filters.push(AttrMatchFilter {
+                key: key.to_string(),
+                value: Some(attr_value.to_string()),
+            });
+        } else {
+            filters.push(AttrMatchFilter {
+                key: value.to_string(),
+                value: None,
+            });
+        }
+    }
+    Ok(filters)
+}
+
+fn matches_attr_match_filters(
+    attrs: &std::collections::BTreeMap<String, String>,
+    filters: &[AttrMatchFilter],
+) -> bool {
+    filters.iter().all(|filter| match &filter.value {
+        Some(value) => attrs.get(&filter.key) == Some(value),
+        None => attrs.contains_key(&filter.key),
+    })
 }
 
 fn pop_command() -> io::Result<()> {

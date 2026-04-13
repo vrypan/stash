@@ -79,6 +79,38 @@ fn push_and_cat_round_trip() {
 }
 
 #[test]
+fn cat_supports_multiple_refs_and_attr_filters() {
+    let dir = test_stash_dir();
+    let first = push_text(dir.path(), "first\n", &["group=a", "kind=note"]);
+    let second = push_text(dir.path(), "second\n", &["group=b"]);
+    let third = push_text(dir.path(), "third\n", &["group=a"]);
+
+    stash_cmd(dir.path())
+        .args(["cat", &first, &second, &third])
+        .assert()
+        .success()
+        .stdout("first\nsecond\nthird\n");
+
+    stash_cmd(dir.path())
+        .args(["cat", "-a", "group"])
+        .assert()
+        .success()
+        .stdout("third\nsecond\nfirst\n");
+
+    stash_cmd(dir.path())
+        .args(["cat", "-a", "group=a"])
+        .assert()
+        .success()
+        .stdout("third\nfirst\n");
+
+    stash_cmd(dir.path())
+        .args(["cat", &first, "-a", "group=a"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cat accepts either <ref>... or --attr"));
+}
+
+#[test]
 fn bare_stash_in_pipeline_behaves_like_tee() {
     let dir = test_stash_dir();
 

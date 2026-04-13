@@ -4,6 +4,10 @@ All notable changes to `stash` are documented in this file.
 
 ## 0.8.0-dev
 
+Breaking UI change: The meaning of `stash ls -a key` and `stash ls -a +key`
+has been swapped. Now `-a key` means "filter where key exists" and
+`-a +key` means "show key (value) where set".
+
 - Remove the in-process `stash completion` subcommand in favor of the
   standalone `stash-completion` helper binary.
 - Refine `stash ls -a/--attr` selection:
