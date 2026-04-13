@@ -29,18 +29,20 @@ hello world!
 
 But this exposed an existing inconsistency in how `-a` is used:
 
-- in `stash ls`, `-a key` meant "show a column with `key` values"
-- in `stash rm` and now `stash cat`, it means "filter entries where key is set"
+- in `stash ls`, `-a key` meant _"show a column with `key` values"_
+- in `stash rm` and now `stash cat`, it means _"filter entries where key is set"_
 
-This is not good. CLI arguments are a mini-language that should feel intuitive and consistent.
+**This is not good**. CLI arguments are a mini-language that should feel intuitive and consistent.
 
 So I had to make a small, but **breaking**, change: After `v0.8.0`, `-a key` always
-means "filter by key" in `ls`, `rm`, and `cat`.
+means _"filter by key"_.
 
-Now:
+Now, if you're familiar with `stash ls -a`, it is obvious what `stash cat -a` will do.
+And making `-a +key` mean _"add a column to show the key value"_ and `-a ++key` mean
+_"show entries where key is set, and show the key value as a column"_ makes sense.
 
-|--|--|--|
 |command|-a|meaning|
+| -- | -- | -- |
 |push, tee|key=value|set key=value|
 |ls, cat, rm|key|filter entries where key is set|
 |ls, cat, rm|key=value|filter entries where key=value|
