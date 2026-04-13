@@ -1,5 +1,3 @@
-![](banner.png)
-
 # ~{@ stash
 
 `sstash` is a small, efficient command line tool that saves data for future reference and integrates nicely
