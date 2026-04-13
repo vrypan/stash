@@ -92,10 +92,22 @@ fn cat_supports_multiple_refs_and_attr_filters() {
         .stdout("first\nsecond\nthird\n");
 
     stash_cmd(dir.path())
+        .args(["cat", "-r", &first, &second, &third])
+        .assert()
+        .success()
+        .stdout("third\nsecond\nfirst\n");
+
+    stash_cmd(dir.path())
         .args(["cat", "-a", "group"])
         .assert()
         .success()
         .stdout("third\nsecond\nfirst\n");
+
+    stash_cmd(dir.path())
+        .args(["cat", "-r", "-a", "group"])
+        .assert()
+        .success()
+        .stdout("first\nsecond\nthird\n");
 
     stash_cmd(dir.path())
         .args(["cat", "-a", "group=a"])

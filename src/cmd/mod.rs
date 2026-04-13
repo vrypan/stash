@@ -62,6 +62,9 @@ struct CatArgs {
 
     #[arg(short = 'a', long = "attr", value_name = "name|name=value", action = ArgAction::Append, help = "Print entries where an attribute is set, or equals a value (repeatable)")]
     attr: Vec<String>,
+
+    #[arg(short = 'r', long = "reverse", help = "Print entries in reverse order")]
+    reverse: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -167,10 +170,14 @@ fn cat_command(args: CatArgs) -> io::Result<()> {
             ));
         }
         let filters = parse_attr_match_filters(&args.attr)?;
-        for item in store::list()?
+        let mut items = store::list()?
             .into_iter()
             .filter(|meta| matches_attr_match_filters(&meta.attrs, &filters))
-        {
+            .collect::<Vec<_>>();
+        if args.reverse {
+            items.reverse();
+        }
+        for item in items {
             store::cat_to_writer(&item.id, &mut out)?;
         }
         return Ok(());
@@ -180,7 +187,13 @@ fn cat_command(args: CatArgs) -> io::Result<()> {
         return store::cat_to_writer(&store::newest()?.id, &mut out);
     }
 
-    for reference in &args.refs {
+    let refs: Vec<&String> = if args.reverse {
+        args.refs.iter().rev().collect()
+    } else {
+        args.refs.iter().collect()
+    };
+
+    for reference in refs {
         let id = store::resolve(reference)?;
         store::cat_to_writer(&id, &mut out)?;
     }
