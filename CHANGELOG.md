@@ -2,6 +2,17 @@
 
 All notable changes to `stash` are documented in this file.
 
+## 0.8.0-dev
+
+- Remove the in-process `stash completion` subcommand in favor of the
+  standalone `stash-completion` helper binary.
+- Refine `stash ls -a/--attr` selection:
+  - `-a name` filters on the attribute
+  - `-a +name` shows the attribute column
+  - `-a ++name` filters and shows in one argument
+- Update the README, reference docs, and demos to match the current `ls`
+  attribute behavior.
+
 ## 0.7.1
 
 - Reduce binary size by about 40%

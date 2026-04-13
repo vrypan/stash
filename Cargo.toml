@@ -1,6 +1,6 @@
 [package]
 name = "stash-cli"
-version = "0.7.1"
+version = "0.8.0-dev"
 edition = "2024"
 description = "A local store for pipeline output and ad hoc file snapshots"
 license = "MIT"

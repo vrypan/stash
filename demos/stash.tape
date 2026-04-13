@@ -36,7 +36,7 @@ Type "stash cat @1 | jq '{title: .metadata.title, count: .metadata.count}' | sta
 Enter
 
 Sleep 3s
-Type "stash ls -l --attr stage"
+Type "stash ls -l --attr +stage"
 Enter
 
 Sleep 3s
@@ -48,7 +48,7 @@ Type "printf 'alpha\nbeta\ngamma\n' | stash tee | wc -l"
 Enter
 
 Sleep 3s
-Type "stash log -n 2"
+Type "stash ls -l -n 2"
 Enter
 
 Sleep 4s

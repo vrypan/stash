@@ -193,12 +193,12 @@ And if you want to find the right snapshots first:
 
 ```bash
 stash attrs --count
-stash ls -a +label -a label
+stash ls -a label -a +label
 stash ls -a ++label
 stash ls -A
 ```
 
-Here, `-a label` shows the `label` column, `-a +label` filters to matching
+Here, `-a label` filters to matching entries, `-a +label` shows the `label` column,
 entries, and `-a ++label` does both.
 
 ### As a rolling scratch stack during shell work
@@ -238,6 +238,6 @@ for f in *.json; do
   jq '.important' "$f" | stash -a q="$f"
 done
 
-stash ls -a q
+stash ls -a +q
 stash cat <id> | jq .
 ```

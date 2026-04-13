@@ -114,7 +114,7 @@ Notes:
 - `stash attrs` prints one attribute key per line
 - `stash attrs --count` prints `key<TAB>count`
 - this command lists user-defined attribute keys stored in entry attrs
-- use `stash ls -a +key` to see matching entries
+- use `stash ls -a key` to see matching entries
 - use `stash attr <ref>` to inspect the attributes of one specific entry
 
 ## ls
@@ -138,7 +138,7 @@ stash ls --preview
 stash ls --headers --date --size
 stash ls --json
 stash ls --size=bytes --name
-stash ls -a source -a stage
+stash ls -a +source -a +stage
 stash ls -a source -a +source
 ```
 
@@ -157,8 +157,8 @@ Notes:
 - `-A` and `--attrs=list` show attribute values inline
 - `--attrs=count` shows a per-entry count of user-defined attrs
 - `--attrs=flag` shows `*` when an entry has one or more user attrs
-- `-a name` selects an attribute for display
-- `-a +name` filters to entries where the attribute is set
+- `-a name` filters to entries where the attribute is set
+- `-a +name` selects an attribute for display
 - `-a ++name` both shows that attribute and filters to entries where it is set
 - `--id=short|full|pos` controls the first column in all modes
 
@@ -169,7 +169,7 @@ JSON output mirrors the rich listing view:
 ```bash
 stash ls --json
 stash ls --json -n 1
-stash ls --json -a +kind
+stash ls --json -a kind
 ```
 
 Each JSON entry includes:

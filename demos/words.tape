@@ -31,7 +31,7 @@ Type "# Show the stashed entry"
 Enter
 Sleep 0.8s
 
-Type "stash ls -l --attr label"
+Type "stash ls -l --attr +label"
 Enter
 Sleep 1.2s
 

@@ -141,14 +141,14 @@ pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<Met
             if key.is_empty() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "--attr filter must be +name",
+                    "--attr display must be +name",
                 ));
             }
-            if seen_filter.insert(key.to_string()) {
-                out.filter_tags.push(key.to_string());
+            if seen_display.insert(key.to_string()) {
+                out.display_tags.push(key.to_string());
             }
-        } else if seen_display.insert(value.to_string()) {
-            out.display_tags.push(value.clone());
+        } else if seen_filter.insert(value.to_string()) {
+            out.filter_tags.push(value.clone());
         }
     }
     Ok(out)

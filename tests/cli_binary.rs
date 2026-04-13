@@ -207,7 +207,7 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .stdout(predicate::str::contains("one"));
 
     stash_cmd(dir.path())
-        .args(["ls", "-a", "type", "-a", "++kind", "--color=false"])
+        .args(["ls", "-a", "+type", "-a", "++kind", "--color=false"])
         .assert()
         .success()
         .stdout(predicate::str::contains("text"))
@@ -234,14 +234,14 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
     assert!(header.contains("attrs"));
 
     let mut ls_with_attr_cmd = stash_cmd(dir.path());
-    ls_with_attr_cmd.args(["ls", "-a", "label", "--color=false"]);
+    ls_with_attr_cmd.args(["ls", "-a", "+label", "--color=false"]);
     let ls_with_attr = stdout_string(&mut ls_with_attr_cmd);
     assert!(ls_with_attr.contains(&first[first.len() - 8..]));
     assert!(ls_with_attr.contains(&second[second.len() - 8..]));
     assert!(ls_with_attr.contains("one"));
 
     let mut ls_filtered_cmd = stash_cmd(dir.path());
-    ls_filtered_cmd.args(["ls", "-a", "+label", "--id=full", "--color=false"]);
+    ls_filtered_cmd.args(["ls", "-a", "label", "--id=full", "--color=false"]);
     let ls_filtered = stdout_string(&mut ls_filtered_cmd);
     assert!(ls_filtered.contains(&first));
     assert!(!ls_filtered.contains("one"));
@@ -261,7 +261,7 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .stdout("filename\t1\nkind\t1\nlabel\t1\nnote\t1\ntype\t2\n");
 
     let mut ls_json_cmd = stash_cmd(dir.path());
-    ls_json_cmd.args(["ls", "--json", "-a", "+kind"]);
+    ls_json_cmd.args(["ls", "--json", "-a", "kind"]);
     let ls_json = stdout_string(&mut ls_json_cmd);
     let value: Value = serde_json::from_str(&ls_json).unwrap();
     let rows = value.as_array().unwrap();
