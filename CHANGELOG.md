@@ -2,6 +2,11 @@
 
 All notable changes to `stash` are documented in this file.
 
+## 0.7.1
+
+- Reduce binary size by about 40%
+- Improve `stash cat` throughput by using a 64KB `BufReader`.
+
 ## 0.7.0
 
 `stash log` has been removed in favor of `stash ls`.
@@ -32,6 +37,7 @@ All notable changes to `stash` are documented in this file.
   - fix picker cancel and insertion behavior
   - add `fzf`-powered attribute completion from `stash attrs --count`
   - support `-a`, `-a +`, and `-a ++` attr completion prefixes
+
 
 ## 0.6.0
 
