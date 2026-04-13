@@ -11,6 +11,15 @@ if (( ! $+commands[fzf] )); then
     return 0
 fi
 
+# Detect whether fzf supports --gap (added in 0.53.0).
+typeset -gi _stash_fzf_has_gap=0
+() {
+  local ver major minor
+  ver=$(fzf --version 2>/dev/null | awk '{print $1}')
+  IFS=. read -r major minor _ <<< "$ver"
+  (( major > 0 || ( major == 0 && minor >= 53 ) )) && _stash_fzf_has_gap=1
+}
+
 typeset -gi _stash_fzf_has_base=0
 
 if (( $+functions[_stash] )); then
@@ -57,9 +66,14 @@ _stash_fzf_needs_attr() {
 
 _stash_fzf_pick_ref() {
   local query="${PREFIX:-}"
+  local raw
+  local -a gap_flag=()
+  (( _stash_fzf_has_gap )) && gap_flag=(--gap)
 
   if (( $+commands[jq] )); then
-    stash ls --json --chars=120 2>/dev/null \
+    # fzf must be the last command in $() so its exit status (130 on Escape)
+    # is captured; piping through sed|awk after fzf would mask it with awk's 0.
+    raw=$(stash ls --json --chars=120 2>/dev/null \
       | jq -j '
           .[]
           | (
@@ -80,9 +94,8 @@ _stash_fzf_pick_ref() {
                 (
                   (.preview // [])
                   | .[]
-                  | "... " + .
-                ),
-                ""
+                  | "" + .
+                )
               ]
               | flatten
               | join("\n")
@@ -94,18 +107,18 @@ _stash_fzf_pick_ref() {
           --reverse \
           --border \
           --ansi \
-          --query="$query" \
-      | sed 's/\x1b\[[0-9;]*m//g' \
-      | awk 'NR == 1 { print $1 }'
+          "${gap_flag[@]}" \
+          --query="$query") || return 1
+    printf '%s\n' "$raw" | sed 's/\x1b\[[0-9;]*m//g' | awk 'NR == 1 { print $1 }'
   else
-    stash ls --id=short --date --size --preview --color=false 2>/dev/null \
+    raw=$(stash ls --id=short --date --size --preview --color=false 2>/dev/null \
       | fzf \
           --height=40% \
           --reverse \
           --border \
           --ansi \
-          --query="$query" \
-      | awk '{ print $1 }'
+          --query="$query") || return 1
+    printf '%s\n' "$raw" | awk '{ print $1 }'
   fi
 }
 
