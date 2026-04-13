@@ -106,10 +106,24 @@ fn bench_ls(c: &mut Criterion) {
     });
 }
 
+fn bench_ls_all(c: &mut Criterion) {
+    let dir = bench_stash_dir();
+    c.bench_function("BenchmarkLsAll1000", |b| {
+        b.iter(|| run_cli(dir, &["ls", "-l"]))
+    });
+}
+
 fn bench_ls_json(c: &mut Criterion) {
     let dir = bench_stash_dir();
     c.bench_function("BenchmarkLsJson1000", |b| {
         b.iter(|| run_cli(dir, &["ls", "--json", "-n", "20"]))
+    });
+}
+
+fn bench_ls_json_all(c: &mut Criterion) {
+    let dir = bench_stash_dir();
+    c.bench_function("BenchmarkLsJsonAll1000", |b| {
+        b.iter(|| run_cli(dir, &["ls", "--json"]))
     });
 }
 
@@ -162,6 +176,6 @@ fn bench_config() -> Criterion {
 criterion_group! {
     name = cli_benches;
     config = bench_config();
-    targets = bench_ls, bench_ls_json, bench_attr, bench_push, bench_push_100
+    targets = bench_ls, bench_ls_all, bench_ls_json, bench_ls_json_all, bench_attr, bench_push, bench_push_100
 }
 criterion_main!(cli_benches);

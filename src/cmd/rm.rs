@@ -1,5 +1,5 @@
 use clap::{ArgAction, Args};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Write};
 
 use crate::store;
@@ -189,12 +189,14 @@ pub(super) fn rm_command(args: RmArgs) -> io::Result<()> {
         ));
     }
 
-    let mut seen = BTreeMap::new();
+    let mut seen = HashSet::new();
+    let mut ids: Vec<String> = Vec::new();
     for reference in &args.refs {
         let id = store::resolve(reference)?;
-        seen.entry(id.clone()).or_insert_with(|| reference.clone());
+        if seen.insert(id.clone()) {
+            ids.push(id);
+        }
     }
-    let ids: Vec<String> = seen.into_keys().collect();
     if ids.len() == 1 {
         return store::remove(&ids[0]);
     }

@@ -1,5 +1,6 @@
 use crate::store::{self, Meta, MetaSelection};
 use serde::Serialize;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as FmtWrite;
 use std::io::{self, IsTerminal, Write};
@@ -29,10 +30,16 @@ pub(crate) fn decorate_entries(
     preview_chars: usize,
     meta_sel: &MetaSelection,
 ) -> Vec<DecoratedEntry> {
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
     items
         .iter()
         .enumerate()
-        .map(|(idx, item)| decorate_entry(item, idx, id_mode, date_mode, preview_chars, meta_sel))
+        .map(|(idx, item)| {
+            decorate_entry(item, idx, id_mode, date_mode, preview_chars, meta_sel, now_secs)
+        })
         .collect()
 }
 
@@ -43,6 +50,7 @@ fn decorate_entry(
     date_mode: &str,
     preview_chars: usize,
     meta_sel: &MetaSelection,
+    now_secs: i64,
 ) -> DecoratedEntry {
     let filename = item.attrs.get("filename").cloned();
     let meta_vals = if !meta_sel.display_tags.is_empty() {
@@ -52,8 +60,8 @@ fn decorate_entry(
             .map(|tag| {
                 item.attrs
                     .get(tag)
-                    .map(|value| escape_attr_output(value))
-                    .unwrap_or_else(|| " ".into())
+                    .map(|value| escape_attr_output(value).into_owned())
+                    .unwrap_or_else(|| " ".to_owned())
             })
             .collect()
     } else {
@@ -63,7 +71,7 @@ fn decorate_entry(
         item.attrs
             .values()
             .map(|value| escape_attr_output(value))
-            .collect::<Vec<_>>()
+            .collect::<Vec<Cow<str>>>()
             .join("  ")
     } else {
         String::new()
@@ -77,7 +85,7 @@ fn decorate_entry(
         id: display_id(item, idx, id_mode),
         size_bytes: item.size.to_string(),
         size_human: store::human_size(item.size),
-        date: format_date(&item.ts, date_mode),
+        date: format_date(&item.ts, date_mode, now_secs),
         preview,
         filename,
         meta_vals,
@@ -91,16 +99,20 @@ fn decorate_entry(
 
 pub(crate) fn display_id(item: &Meta, idx: usize, mode: &str) -> String {
     match mode {
-        "full" => item.display_id(),
+        "full" => item.display_id().to_owned(),
         "pos" => (idx + 1).to_string(),
-        _ => item.short_id(),
+        _ => item.short_id().to_owned(),
     }
 }
 
 // Escapes a value for human-readable display output.
 // '=' is intentionally NOT escaped here (unlike escape_attr in store.rs)
 // because it has no special meaning outside the storage format.
-pub(crate) fn escape_attr_output(input: &str) -> String {
+pub(crate) fn escape_attr_output(input: &str) -> Cow<'_, str> {
+    // Fast path: most attribute values have no special chars — borrow directly.
+    if !input.bytes().any(|b| matches!(b, b'\\' | b'\n' | b'\r' | b'\t')) {
+        return Cow::Borrowed(input);
+    }
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
         match ch {
@@ -111,7 +123,7 @@ pub(crate) fn escape_attr_output(input: &str) -> String {
             other => out.push(other),
         }
     }
-    out
+    Cow::Owned(out)
 }
 
 pub(crate) fn preview_snippet(preview: &str, chars: usize) -> String {
@@ -161,7 +173,7 @@ pub(crate) fn is_writable_attr_key(key: &str) -> bool {
 
 pub(crate) fn attr_value(meta: &Meta, key: &str, with_preview: bool) -> Option<String> {
     match key {
-        "id" => Some(meta.display_id()),
+        "id" => Some(meta.display_id().to_owned()),
         "ts" => Some(meta.ts.clone()),
         "size" => Some(meta.size.to_string()),
         "preview" if with_preview || !meta.preview.is_empty() => {
@@ -207,21 +219,21 @@ pub(crate) fn write_colored<W: Write>(
     }
 }
 
-pub(crate) fn pad_right(s: &str, width: usize) -> String {
+pub(crate) fn pad_right(s: &str, width: usize) -> Cow<'_, str> {
     let len = s.chars().count();
     if len >= width {
-        s.to_string()
+        Cow::Borrowed(s)
     } else {
-        format!("{s}{}", " ".repeat(width - len))
+        Cow::Owned(format!("{s}{}", " ".repeat(width - len)))
     }
 }
 
-pub(crate) fn pad_left(s: &str, width: usize) -> String {
+pub(crate) fn pad_left(s: &str, width: usize) -> Cow<'_, str> {
     let len = s.chars().count();
     if len >= width {
-        s.to_string()
+        Cow::Borrowed(s)
     } else {
-        format!("{}{}", " ".repeat(width - len), s)
+        Cow::Owned(format!("{}{}", " ".repeat(width - len), s))
     }
 }
 
@@ -310,17 +322,16 @@ pub(crate) fn normalize_date_mode(mode: &str) -> io::Result<&str> {
     }
 }
 
-pub(crate) fn format_date(ts: &str, mode: &str) -> String {
+pub(crate) fn format_date(ts: &str, mode: &str, now_secs: i64) -> String {
     match normalize_date_mode(mode).unwrap_or("iso") {
-        "ago" => format_relative(ts).unwrap_or_else(|| ts.to_string()),
-        "ls" => format_ls_date(ts).unwrap_or_else(|| ts.to_string()),
+        "ago" => format_relative(ts, now_secs).unwrap_or_else(|| ts.to_string()),
+        "ls" => format_ls_date(ts, now_secs).unwrap_or_else(|| ts.to_string()),
         _ => ts.to_string(),
     }
 }
 
-fn format_relative(ts: &str) -> Option<String> {
+fn format_relative(ts: &str, now: i64) -> Option<String> {
     let then = parse_ts_seconds(ts)?;
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
     let delta = now.saturating_sub(then);
     Some(if delta < 60 {
         format!("{}s ago", delta)
@@ -333,9 +344,8 @@ fn format_relative(ts: &str) -> Option<String> {
     })
 }
 
-fn format_ls_date(ts: &str) -> Option<String> {
+fn format_ls_date(ts: &str, now_secs: i64) -> Option<String> {
     let (year, month, day, hour, minute, _) = parse_ts_parts(ts)?;
-    let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
     let now_year = store::unix_to_utc(now_secs).year;
     let mon = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -413,17 +423,21 @@ pub(crate) fn print_entries_json(items: &[Meta], date_mode: &str, chars: usize) 
         preview: Vec<String>,
     }
 
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
     let out: Vec<LogJsonEntry> = items
         .iter()
         .enumerate()
         .map(|(idx, item)| {
             let preview = preview_snippet(&item.preview, chars);
             LogJsonEntry {
-                id: item.display_id(),
-                short_id: item.short_id(),
+                id: item.display_id().to_owned(),
+                short_id: item.short_id().to_owned(),
                 stack_ref: (idx + 1).to_string(),
                 ts: item.ts.clone(),
-                date: format_date(&item.ts, date_mode),
+                date: format_date(&item.ts, date_mode, now_secs),
                 size: item.size,
                 size_human: store::human_size(item.size),
                 attrs: item.attrs.clone(),

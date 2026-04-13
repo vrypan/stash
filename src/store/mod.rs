@@ -33,7 +33,7 @@ impl std::fmt::Display for PartialSavedError {
         write!(
             f,
             "partial entry saved as \"{}\": {}",
-            self.id.to_ascii_lowercase(),
+            self.id,
             self.cause
         )
     }
@@ -72,12 +72,13 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub fn short_id(&self) -> String {
-        self.id[self.id.len().saturating_sub(SHORT_ID_LEN)..].to_ascii_lowercase()
+    // IDs are always stored lowercase (created via new_ulid which calls to_ascii_lowercase).
+    pub fn short_id(&self) -> &str {
+        &self.id[self.id.len().saturating_sub(SHORT_ID_LEN)..]
     }
 
-    pub fn display_id(&self) -> String {
-        self.id.to_ascii_lowercase()
+    pub fn display_id(&self) -> &str {
+        &self.id
     }
 
     pub fn to_json_value(&self, include_preview: bool) -> Value {
