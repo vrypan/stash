@@ -2,7 +2,7 @@
 
 All notable changes to `stash` are documented in this file.
 
-## 0.8.0-dev
+## 0.8.0
 
 Breaking UI change: The meaning of `stash ls -a key` and `stash ls -a +key`
 has been swapped. Now `-a key` means "filter where key exists" and
@@ -14,6 +14,8 @@ has been swapped. Now `-a key` means "filter where key exists" and
   - `-a name` filters on the attribute
   - `-a +name` shows the attribute column
   - `-a ++name` filters and shows in one argument
+- Add -a/--attr to `stash cat`
+- Add -r/--reverse to `stash cat`.
 - Update the README, reference docs, and demos to match the current `ls`
   attribute behavior.
 
