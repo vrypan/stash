@@ -195,11 +195,13 @@ And if you want to find the right snapshots first:
 stash attrs --count
 stash ls -a label -a +label
 stash ls -a ++label
+stash ls -a ++label=before
 stash ls -A
 ```
 
 Here, `-a label` filters to matching entries, `-a +label` shows the `label` column,
-entries, and `-a ++label` does both.
+entries, `-a ++label` is shorthand for `-a label -a +label`, and
+`-a ++label=before` is shorthand for `-a label=before -a +label`.
 
 ### As a rolling scratch stack during shell work
 

@@ -158,8 +158,10 @@ Notes:
 - `--attrs=count` shows a per-entry count of user-defined attrs
 - `--attrs=flag` shows `*` when an entry has one or more user attrs
 - `-a name` filters to entries where the attribute is set
+- `-a name=value` filters to entries where the attribute equals that value
 - `-a +name` selects an attribute for display
-- `-a ++name` both shows that attribute and filters to entries where it is set
+- `-a ++name` is shorthand for `-a name -a +name`
+- `-a ++name=value` is shorthand for `-a name=value -a +name`
 - `--id=short|full|pos` controls the first column in all modes
 
 ## Structured Output
@@ -170,6 +172,8 @@ JSON output mirrors the rich listing view:
 stash ls --json
 stash ls --json -n 1
 stash ls --json -a kind
+stash ls -a ++kind
+stash ls -a ++kind=sample
 ```
 
 Each JSON entry includes:
