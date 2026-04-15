@@ -11,7 +11,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};
@@ -22,6 +22,7 @@ const ALPN: &[u8] = b"stashd/snapshot/1";
 const DAEMON_CACHE_VERSION: u32 = 6;
 const RESYNC_INTERVAL: Duration = Duration::from_secs(30);
 const TOMBSTONE_HASH: Blake3Hash = [0; 32];
+static NEXT_SYNC_ID: AtomicU64 = AtomicU64::new(1);
 
 pub type Blake3Hash = [u8; 32];
 type HashMapById = HashMap<String, SnapshotEntry>;
@@ -128,7 +129,11 @@ struct ReplicatedEntry {
     Deserialize,
 )]
 enum RequestMessage {
-    SnapshotSync { from: String, entries: Vec<ReplicatedEntry> },
+    SnapshotSync {
+        from: String,
+        sync_id: u64,
+        entries: Vec<ReplicatedEntry>,
+    },
     LiveEvent { from: String, entry: ReplicatedEntry },
 }
 
@@ -258,6 +263,7 @@ async fn run_async(cli: Cli) -> io::Result<()> {
             let _ = sync_tx.send(Command::SyncPeer(peer.clone()));
         }
         let mut interval = tokio::time::interval(RESYNC_INTERVAL);
+        interval.tick().await;
         loop {
             interval.tick().await;
             for peer in &sync_peers {
@@ -385,37 +391,86 @@ fn print_node_info(endpoint: &Endpoint) -> io::Result<()> {
     Ok(())
 }
 
+fn sync_debug_enabled() -> bool {
+    std::env::var_os("STASHD_DEBUG_SYNC").is_some()
+}
+
+fn sync_trace(message: impl AsRef<str>) {
+    if sync_debug_enabled() {
+        eprintln!("stashd sync: {}", message.as_ref());
+    }
+}
+
+fn sync_io_error(context: impl AsRef<str>, err: impl std::fmt::Display) -> io::Error {
+    io::Error::other(format!("{}: {}", context.as_ref(), err))
+}
+
 async fn handle_incoming(
     incoming: iroh::endpoint::Incoming,
     tx: mpsc::UnboundedSender<Command>,
     allowlist: Arc<HashSet<PublicKey>>,
 ) -> io::Result<()> {
-    let connection = incoming.await.map_err(io::Error::other)?;
+    let connection = incoming
+        .await
+        .map_err(|err| sync_io_error("incoming: awaiting connection", err))?;
     let peer = connection.remote_id();
+    sync_trace(format!("incoming connection from {peer}"));
     if !allowlist.contains(&peer) {
+        sync_trace(format!("rejecting non-allowlisted peer {peer}"));
         return Ok(());
     }
 
-    let (mut send, mut recv) = connection.accept_bi().await.map_err(io::Error::other)?;
-    let request: RequestMessage = read_frame(&mut recv).await?;
+    let (mut send, mut recv) = connection
+        .accept_bi()
+        .await
+        .map_err(|err| sync_io_error(format!("incoming peer {peer}: accept bi stream"), err))?;
+    let request: RequestMessage = read_frame(&mut recv)
+        .await
+        .map_err(|err| sync_io_error(format!("incoming peer {peer}: read request"), err))?;
     match request {
-        RequestMessage::SnapshotSync { entries, .. } => {
+        RequestMessage::SnapshotSync {
+            sync_id, entries, ..
+        } => {
+            sync_trace(format!(
+                "incoming snapshot #{sync_id} from {peer}: {} entries",
+                entries.len(),
+            ));
             let (reply_tx, reply_rx) = oneshot::channel();
             let _ = tx.send(Command::ApplyRemote {
                 peer,
                 entries,
                 respond_to: Some(reply_tx),
             });
+            sync_trace(format!(
+                "incoming snapshot #{sync_id} from {peer}: waiting for apply"
+            ));
             let entries = reply_rx.await.unwrap_or_default();
-            write_frame(&mut send, &ResponseMessage::SnapshotSync { entries }).await?;
+            sync_trace(format!(
+                "incoming snapshot #{sync_id} from {peer}: reply ready with {} entries",
+                entries.len()
+            ));
+            write_frame(&mut send, &ResponseMessage::SnapshotSync { entries })
+                .await
+                .map_err(|err| {
+                    sync_io_error(
+                        format!("incoming peer {peer}: write snapshot reply #{sync_id}"),
+                        err,
+                    )
+                })?;
+            sync_trace(format!(
+                "incoming snapshot #{sync_id} from {peer}: reply written"
+            ));
         }
         RequestMessage::LiveEvent { entry, .. } => {
+            sync_trace(format!("incoming live event from {peer}: {}", entry.ulid));
             let _ = tx.send(Command::ApplyRemote {
                 peer,
                 entries: vec![entry],
                 respond_to: None,
             });
-            write_frame(&mut send, &ResponseMessage::Ack).await?;
+            write_frame(&mut send, &ResponseMessage::Ack)
+                .await
+                .map_err(|err| sync_io_error(format!("incoming peer {peer}: write ack"), err))?;
         }
     }
     Ok(())
@@ -427,23 +482,53 @@ async fn sync_peer(
     tx: mpsc::UnboundedSender<Command>,
     entries: Vec<ReplicatedEntry>,
 ) -> io::Result<()> {
+    let peer_id = peer.id;
+    let sync_id = NEXT_SYNC_ID.fetch_add(1, Ordering::Relaxed);
+    sync_trace(format!(
+        "starting snapshot sync #{sync_id} to {peer_id}: {} entries",
+        entries.len()
+    ));
     let connection = endpoint
         .connect(peer.clone(), ALPN)
         .await
-        .map_err(io::Error::other)?;
-    let (mut send, mut recv) = connection.open_bi().await.map_err(io::Error::other)?;
+        .map_err(|err| sync_io_error(format!("peer {peer_id}: connect"), err))?;
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|err| sync_io_error(format!("peer {peer_id}: open bi stream"), err))?;
     write_frame(
         &mut send,
         &RequestMessage::SnapshotSync {
             from: endpoint.id().to_string(),
+            sync_id,
             entries,
         },
     )
-    .await?;
-    let response: ResponseMessage = read_frame(&mut recv).await?;
+    .await
+    .map_err(|err| {
+        sync_io_error(
+            format!("peer {peer_id}: write snapshot request #{sync_id}"),
+            err,
+        )
+    })?;
+    sync_trace(format!(
+        "snapshot sync #{sync_id} to {peer_id}: request written"
+    ));
+    let response: ResponseMessage = read_frame(&mut recv)
+        .await
+        .map_err(|err| {
+            sync_io_error(
+                format!("peer {peer_id}: read snapshot response #{sync_id}"),
+                err,
+            )
+        })?;
     if let ResponseMessage::SnapshotSync { entries } = response {
+        sync_trace(format!(
+            "received snapshot response #{sync_id} from {peer_id}: {} entries",
+            entries.len()
+        ));
         let _ = tx.send(Command::ApplyRemote {
-            peer: peer.id,
+            peer: peer_id,
             entries,
             respond_to: None,
         });
@@ -456,11 +541,22 @@ async fn send_live_event(
     peer: EndpointAddr,
     entry: ReplicatedEntry,
 ) -> io::Result<()> {
+    let peer_id = peer.id;
+    let entry_id = entry.ulid.clone();
+    sync_trace(format!("sending live event to {peer_id}: {entry_id}"));
     let connection = endpoint
         .connect(peer, ALPN)
         .await
-        .map_err(io::Error::other)?;
-    let (mut send, mut recv) = connection.open_bi().await.map_err(io::Error::other)?;
+        .map_err(|err| sync_io_error(format!("peer {peer_id}: connect for live event {entry_id}"), err))?;
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|err| {
+            sync_io_error(
+                format!("peer {peer_id}: open bi stream for live event {entry_id}"),
+                err,
+            )
+        })?;
     write_frame(
         &mut send,
         &RequestMessage::LiveEvent {
@@ -468,8 +564,19 @@ async fn send_live_event(
             entry,
         },
     )
-    .await?;
-    let _: ResponseMessage = read_frame(&mut recv).await?;
+    .await
+    .map_err(|err| {
+        sync_io_error(
+            format!("peer {peer_id}: write live event request {entry_id}"),
+            err,
+        )
+    })?;
+    let _: ResponseMessage = read_frame(&mut recv).await.map_err(|err| {
+        sync_io_error(
+            format!("peer {peer_id}: read live event ack {entry_id}"),
+            err,
+        )
+    })?;
     Ok(())
 }
 
@@ -480,6 +587,7 @@ where
     let bytes = serde_json::to_vec(value).map_err(io::Error::other)?;
     send.write_u32(bytes.len() as u32).await?;
     send.write_all(&bytes).await?;
+    send.shutdown().await?;
     Ok(())
 }
 
