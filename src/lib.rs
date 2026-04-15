@@ -1,5 +1,5 @@
 pub mod cmd;
 pub mod display;
-pub mod preview;
 pub mod stashd;
-pub mod store;
+pub use stash_core::preview;
+pub use stash_core::store;

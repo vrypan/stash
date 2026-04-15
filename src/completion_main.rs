@@ -11,5 +11,5 @@ fn main() {
         eprintln!("Unknown shell: {shell_name}. Supported: bash, fish, zsh");
         std::process::exit(1);
     });
-    stash_cli::cmd::write_completions(shell, &mut io::stdout());
+    stash::cmd::write_completions(shell, &mut io::stdout());
 }

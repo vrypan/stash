@@ -1,0 +1,18 @@
+[package]
+name = "stash-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lib]
+name = "stash_core"
+path = "src/lib.rs"
+
+[dependencies]
+blake3 = "1.8.2"
+rkyv = "0.8.15"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.145"
+signal-hook = "0.4.4"

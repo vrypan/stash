@@ -1,5 +1,5 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use stash_cli::store;
+use stash::store;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::io::Write;
