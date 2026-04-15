@@ -140,6 +140,23 @@ struct SnapshotMetaEntry {
 }
 
 #[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Serialize,
+    Deserialize,
+)]
+struct SnapshotBucketSummary {
+    bucket: String,
+    count: u32,
+    hash: Blake3Hash,
+}
+
+#[derive(
     Debug,
     rkyv::Archive,
     rkyv::Serialize,
@@ -149,6 +166,17 @@ struct SnapshotMetaEntry {
 )]
 enum RequestMessage {
     SnapshotSyncStart {
+        from: String,
+        sync_id: u64,
+        buckets: Vec<SnapshotBucketSummary>,
+    },
+    SnapshotSyncBuckets {
+        from: String,
+        sync_id: u64,
+        level: u8,
+        buckets: Vec<SnapshotBucketSummary>,
+    },
+    SnapshotSyncMeta {
         from: String,
         sync_id: u64,
         entries: Vec<SnapshotMetaEntry>,
@@ -170,6 +198,12 @@ enum RequestMessage {
     Deserialize,
 )]
 enum ResponseMessage {
+    SnapshotSyncNeedBuckets {
+        sync_id: u64,
+        level: u8,
+        buckets: Vec<String>,
+    },
+    SnapshotSyncNeedMeta { sync_id: u64, buckets: Vec<String> },
     SnapshotSyncNeed { sync_id: u64, ids: Vec<String> },
     Ack,
 }
@@ -184,6 +218,19 @@ enum Command {
     CollectMissingSnapshotIds {
         entries: Vec<SnapshotMetaEntry>,
         respond_to: oneshot::Sender<Vec<String>>,
+    },
+    CollectMissingSnapshotBuckets {
+        buckets: Vec<SnapshotBucketSummary>,
+        respond_to: oneshot::Sender<io::Result<Vec<String>>>,
+    },
+    CollectSnapshotBuckets {
+        level: u8,
+        parents: Vec<String>,
+        respond_to: oneshot::Sender<io::Result<Vec<SnapshotBucketSummary>>>,
+    },
+    CollectSnapshotMeta {
+        buckets: Vec<String>,
+        respond_to: oneshot::Sender<io::Result<Vec<SnapshotMetaEntry>>>,
     },
     CollectSnapshotEntries {
         ids: Vec<String>,
@@ -366,6 +413,50 @@ async fn run_async(cli: Cli) -> io::Result<()> {
                 let ids = collect_missing_snapshot_ids_from_state(&state.entries, entries);
                 let _ = respond_to.send(ids);
             }
+            Command::CollectMissingSnapshotBuckets { buckets, respond_to } => {
+                let result = collect_missing_snapshot_buckets_from_state(
+                    &state.attr_dir,
+                    &mut state.lamport,
+                    &mut state.entries,
+                    &state.local_origin,
+                    buckets,
+                );
+                if result.is_ok() {
+                    write_cache_file(&state.cache_path, &state.entries)?;
+                }
+                let _ = respond_to.send(result);
+            }
+            Command::CollectSnapshotBuckets {
+                level,
+                parents,
+                respond_to,
+            } => {
+                let result = collect_snapshot_bucket_summaries(
+                    &state.attr_dir,
+                    &mut state.lamport,
+                    &mut state.entries,
+                    &state.local_origin,
+                    level,
+                    &parents,
+                );
+                if result.is_ok() {
+                    write_cache_file(&state.cache_path, &state.entries)?;
+                }
+                let _ = respond_to.send(result);
+            }
+            Command::CollectSnapshotMeta { buckets, respond_to } => {
+                let result = build_snapshot_meta_for_buckets(
+                    &state.attr_dir,
+                    &mut state.lamport,
+                    &mut state.entries,
+                    &state.local_origin,
+                    &buckets,
+                );
+                if result.is_ok() {
+                    write_cache_file(&state.cache_path, &state.entries)?;
+                }
+                let _ = respond_to.send(result);
+            }
             Command::CollectSnapshotEntries { ids, respond_to } => {
                 let result = build_requested_snapshot_entries(
                     &state.attr_dir,
@@ -380,11 +471,13 @@ async fn run_async(cli: Cli) -> io::Result<()> {
                 let _ = respond_to.send(result);
             }
             Command::SyncPeer(peer) => {
-                let snapshot = collect_network_snapshot_meta(
+                let snapshot = collect_snapshot_bucket_summaries(
                     &state.attr_dir,
                     &mut state.lamport,
                     &mut state.entries,
                     &state.local_origin,
+                    4,
+                    &[],
                 )?;
                 write_cache_file(&state.cache_path, &state.entries)?;
                 let tx = cmd_tx.clone();
@@ -463,6 +556,55 @@ async fn collect_missing_snapshot_ids(
         .map_err(|_| io::Error::other("snapshot metadata compare dropped"))
 }
 
+async fn collect_missing_snapshot_buckets(
+    buckets: &[SnapshotBucketSummary],
+    tx: &mpsc::UnboundedSender<Command>,
+) -> io::Result<Vec<String>> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(Command::CollectMissingSnapshotBuckets {
+        buckets: buckets.to_vec(),
+        respond_to: reply_tx,
+    })
+    .map_err(|_| io::Error::other("snapshot bucket compare channel closed"))?;
+    reply_rx
+        .await
+        .map_err(|_| io::Error::other("snapshot bucket compare dropped"))?
+}
+
+async fn collect_snapshot_buckets(
+    level: u8,
+    parents: &[String],
+    peer_id: PublicKey,
+    tx: &mpsc::UnboundedSender<Command>,
+) -> io::Result<Vec<SnapshotBucketSummary>> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(Command::CollectSnapshotBuckets {
+        level,
+        parents: parents.to_vec(),
+        respond_to: reply_tx,
+    })
+    .map_err(|_| io::Error::other(format!("snapshot bucket collection for peer {peer_id} channel closed")))?;
+    reply_rx
+        .await
+        .map_err(|_| io::Error::other(format!("snapshot bucket collection for peer {peer_id} dropped")))?
+}
+
+async fn collect_snapshot_meta_for_buckets(
+    buckets: &[String],
+    peer_id: PublicKey,
+    tx: &mpsc::UnboundedSender<Command>,
+) -> io::Result<Vec<SnapshotMetaEntry>> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(Command::CollectSnapshotMeta {
+        buckets: buckets.to_vec(),
+        respond_to: reply_tx,
+    })
+    .map_err(|_| io::Error::other(format!("snapshot metadata collection for peer {peer_id} channel closed")))?;
+    reply_rx
+        .await
+        .map_err(|_| io::Error::other(format!("snapshot metadata collection for peer {peer_id} dropped")))?
+}
+
 async fn collect_requested_snapshot_entries(
     ids: &[String],
     peer_id: PublicKey,
@@ -503,29 +645,187 @@ async fn handle_incoming(
         .map_err(|err| sync_io_error(format!("incoming peer {peer}: read request"), err))?;
     match request {
         RequestMessage::SnapshotSyncStart {
-            sync_id, entries, ..
+            sync_id, buckets, ..
         } => {
             sync_trace(format!(
-                "incoming snapshot meta #{sync_id} from {peer}: {} entries",
-                entries.len(),
+                "incoming snapshot buckets #{sync_id} from {peer}: {} buckets",
+                buckets.len(),
             ));
             sync_trace(format!(
-                "incoming snapshot meta #{sync_id} from {peer}: comparing local state"
+                "incoming snapshot buckets #{sync_id} from {peer}: comparing local state"
+            ));
+            let buckets = collect_missing_snapshot_buckets(&buckets, &tx).await?;
+            sync_trace(format!(
+                "incoming snapshot buckets #{sync_id} from {peer}: requesting {} buckets",
+                buckets.len()
+            ));
+            write_frame(
+                &mut send,
+                &ResponseMessage::SnapshotSyncNeedBuckets {
+                    sync_id,
+                    level: 5,
+                    buckets: buckets.clone(),
+                },
+            )
+                .await
+                .map_err(|err| {
+                    sync_io_error(
+                        format!("incoming peer {peer}: write snapshot bucket need #{sync_id}"),
+                        err,
+                    )
+                })?;
+            sync_trace(format!("incoming snapshot buckets #{sync_id} from {peer}: need written"));
+            if buckets.is_empty() {
+                return Ok(());
+            }
+
+            let request: RequestMessage = read_frame(&mut recv)
+                .await
+                .map_err(|err| {
+                    sync_io_error(
+                        format!("incoming peer {peer}: read level 5 snapshot buckets #{sync_id}"),
+                        err,
+                    )
+                })?;
+            let RequestMessage::SnapshotSyncBuckets {
+                sync_id: response_sync_id,
+                level,
+                buckets,
+                ..
+            } = request
+            else {
+                return Err(io::Error::other(format!(
+                    "incoming peer {peer}: expected level 5 snapshot buckets for sync #{sync_id}"
+                )));
+            };
+            if response_sync_id != sync_id || level != 5 {
+                return Err(io::Error::other(format!(
+                    "incoming peer {peer}: snapshot bucket phase mismatch {response_sync_id}/{level} != {sync_id}/5"
+                )));
+            }
+            sync_trace(format!(
+                "incoming level 5 snapshot buckets #{sync_id} from {peer}: {} buckets",
+                buckets.len()
+            ));
+            let buckets = collect_missing_snapshot_buckets(&buckets, &tx).await?;
+            sync_trace(format!(
+                "incoming level 5 snapshot buckets #{sync_id} from {peer}: requesting {} buckets",
+                buckets.len()
+            ));
+            write_frame(
+                &mut send,
+                &ResponseMessage::SnapshotSyncNeedBuckets {
+                    sync_id,
+                    level: 6,
+                    buckets: buckets.clone(),
+                },
+            )
+                .await
+                .map_err(|err| {
+                    sync_io_error(
+                        format!("incoming peer {peer}: write level 6 snapshot bucket need #{sync_id}"),
+                        err,
+                    )
+                })?;
+            sync_trace(format!(
+                "incoming level 5 snapshot buckets #{sync_id} from {peer}: need written"
+            ));
+            if buckets.is_empty() {
+                return Ok(());
+            }
+
+            let request: RequestMessage = read_frame(&mut recv)
+                .await
+                .map_err(|err| {
+                    sync_io_error(
+                        format!("incoming peer {peer}: read level 6 snapshot buckets #{sync_id}"),
+                        err,
+                    )
+                })?;
+            let RequestMessage::SnapshotSyncBuckets {
+                sync_id: response_sync_id,
+                level,
+                buckets,
+                ..
+            } = request
+            else {
+                return Err(io::Error::other(format!(
+                    "incoming peer {peer}: expected level 6 snapshot buckets for sync #{sync_id}"
+                )));
+            };
+            if response_sync_id != sync_id || level != 6 {
+                return Err(io::Error::other(format!(
+                    "incoming peer {peer}: snapshot bucket phase mismatch {response_sync_id}/{level} != {sync_id}/6"
+                )));
+            }
+            sync_trace(format!(
+                "incoming level 6 snapshot buckets #{sync_id} from {peer}: {} buckets",
+                buckets.len()
+            ));
+            write_frame(
+                &mut send,
+                &ResponseMessage::SnapshotSyncNeedMeta {
+                    sync_id,
+                    buckets: buckets.iter().map(|bucket| bucket.bucket.clone()).collect(),
+                },
+            )
+            .await
+            .map_err(|err| {
+                sync_io_error(
+                    format!("incoming peer {peer}: write snapshot metadata need #{sync_id}"),
+                    err,
+                )
+            })?;
+            sync_trace(format!(
+                "incoming level 6 snapshot buckets #{sync_id} from {peer}: metadata need written"
+            ));
+            if buckets.is_empty() {
+                return Ok(());
+            }
+
+            let request: RequestMessage = read_frame(&mut recv)
+                .await
+                .map_err(|err| {
+                    sync_io_error(
+                        format!("incoming peer {peer}: read snapshot metadata #{sync_id}"),
+                        err,
+                    )
+                })?;
+            let RequestMessage::SnapshotSyncMeta {
+                sync_id: response_sync_id,
+                entries,
+                ..
+            } = request
+            else {
+                return Err(io::Error::other(format!(
+                    "incoming peer {peer}: expected snapshot metadata for sync #{sync_id}"
+                )));
+            };
+            if response_sync_id != sync_id {
+                return Err(io::Error::other(format!(
+                    "incoming peer {peer}: snapshot sync id mismatch {response_sync_id} != {sync_id}"
+                )));
+            }
+            sync_trace(format!(
+                "incoming snapshot metadata #{sync_id} from {peer}: {} entries",
+                entries.len()
             ));
             let ids = collect_missing_snapshot_ids(&entries, &tx).await?;
             sync_trace(format!(
-                "incoming snapshot meta #{sync_id} from {peer}: requesting {} entries",
+                "incoming snapshot metadata #{sync_id} from {peer}: requesting {} entries",
                 ids.len()
             ));
             write_frame(&mut send, &ResponseMessage::SnapshotSyncNeed { sync_id, ids: ids.clone() })
                 .await
                 .map_err(|err| {
                     sync_io_error(
-                        format!("incoming peer {peer}: write snapshot need #{sync_id}"),
+                        format!("incoming peer {peer}: write snapshot entry need #{sync_id}"),
                         err,
                     )
                 })?;
-            sync_trace(format!("incoming snapshot meta #{sync_id} from {peer}: need written"));
+            sync_trace(format!(
+                "incoming snapshot metadata #{sync_id} from {peer}: need written"
+            ));
             if ids.is_empty() {
                 return Ok(());
             }
@@ -574,6 +874,16 @@ async fn handle_incoming(
                 })?;
             sync_trace(format!("incoming snapshot entries #{sync_id} from {peer}: ack written"));
         }
+        RequestMessage::SnapshotSyncMeta { sync_id, .. } => {
+            return Err(io::Error::other(format!(
+                "incoming peer {peer}: unexpected snapshot metadata request #{sync_id}"
+            )));
+        }
+        RequestMessage::SnapshotSyncBuckets { sync_id, level, .. } => {
+            return Err(io::Error::other(format!(
+                "incoming peer {peer}: unexpected snapshot bucket request #{sync_id}/{level}"
+            )));
+        }
         RequestMessage::SnapshotSyncEntries { sync_id, .. } => {
             return Err(io::Error::other(format!(
                 "incoming peer {peer}: unexpected snapshot entries request #{sync_id}"
@@ -598,13 +908,13 @@ async fn sync_peer(
     endpoint: Endpoint,
     peer: EndpointAddr,
     tx: mpsc::UnboundedSender<Command>,
-    entries: Vec<SnapshotMetaEntry>,
+    buckets: Vec<SnapshotBucketSummary>,
 ) -> io::Result<()> {
     let peer_id = peer.id;
     let sync_id = NEXT_SYNC_ID.fetch_add(1, Ordering::Relaxed);
     sync_trace(format!(
-        "starting snapshot sync #{sync_id} to {peer_id}: {} metadata entries",
-        entries.len()
+        "starting snapshot sync #{sync_id} to {peer_id}: {} buckets",
+        buckets.len()
     ));
     let connection = endpoint
         .connect(peer.clone(), ALPN)
@@ -619,7 +929,7 @@ async fn sync_peer(
         &RequestMessage::SnapshotSyncStart {
             from: endpoint.id().to_string(),
             sync_id,
-            entries,
+            buckets,
         },
     )
     .await
@@ -640,20 +950,181 @@ async fn sync_peer(
                 err,
             )
         })?;
-    if let ResponseMessage::SnapshotSyncNeed { sync_id: response_sync_id, ids } = response {
+    if let ResponseMessage::SnapshotSyncNeedBuckets {
+        sync_id: response_sync_id,
+        level,
+        buckets,
+    } = response
+    {
+        if response_sync_id != sync_id || level != 5 {
+            return Err(io::Error::other(format!(
+                "peer {peer_id}: snapshot bucket phase mismatch {response_sync_id}/{level} != {sync_id}/5"
+            )));
+        }
+        sync_trace(format!(
+            "received level 5 snapshot bucket need #{sync_id} from {peer_id}: {} buckets",
+            buckets.len()
+        ));
+        if buckets.is_empty() {
+            sync_trace(format!(
+                "snapshot sync #{sync_id} to {peer_id}: no level 5 buckets requested"
+            ));
+            return Ok(());
+        }
+        let level_5_buckets = collect_snapshot_buckets(5, &buckets, peer_id, &tx).await?;
+        sync_trace(format!(
+            "snapshot sync #{sync_id} to {peer_id}: sending {} level 5 buckets",
+            level_5_buckets.len()
+        ));
+        write_frame(
+            &mut send,
+            &RequestMessage::SnapshotSyncBuckets {
+                from: endpoint.id().to_string(),
+                sync_id,
+                level: 5,
+                buckets: level_5_buckets,
+            },
+        )
+        .await
+        .map_err(|err| {
+            sync_io_error(
+                format!("peer {peer_id}: write level 5 snapshot buckets #{sync_id}"),
+                err,
+            )
+        })?;
+        sync_trace(format!(
+            "snapshot sync #{sync_id} to {peer_id}: level 5 buckets written"
+        ));
+        let response: ResponseMessage = read_frame(&mut recv).await.map_err(|err| {
+            sync_io_error(format!("peer {peer_id}: read level 6 snapshot bucket need #{sync_id}"), err)
+        })?;
+        let ResponseMessage::SnapshotSyncNeedBuckets {
+            sync_id: response_sync_id,
+            level,
+            buckets,
+        } = response
+        else {
+            return Err(io::Error::other(format!(
+                "peer {peer_id}: expected level 6 snapshot bucket need for sync #{sync_id}"
+            )));
+        };
+        if response_sync_id != sync_id || level != 6 {
+            return Err(io::Error::other(format!(
+                "peer {peer_id}: snapshot bucket phase mismatch {response_sync_id}/{level} != {sync_id}/6"
+            )));
+        }
+        sync_trace(format!(
+            "received level 6 snapshot bucket need #{sync_id} from {peer_id}: {} buckets",
+            buckets.len()
+        ));
+        if buckets.is_empty() {
+            sync_trace(format!(
+                "snapshot sync #{sync_id} to {peer_id}: no level 6 buckets requested"
+            ));
+            return Ok(());
+        }
+        let level_6_buckets = collect_snapshot_buckets(6, &buckets, peer_id, &tx).await?;
+        sync_trace(format!(
+            "snapshot sync #{sync_id} to {peer_id}: sending {} level 6 buckets",
+            level_6_buckets.len()
+        ));
+        write_frame(
+            &mut send,
+            &RequestMessage::SnapshotSyncBuckets {
+                from: endpoint.id().to_string(),
+                sync_id,
+                level: 6,
+                buckets: level_6_buckets,
+            },
+        )
+        .await
+        .map_err(|err| {
+            sync_io_error(
+                format!("peer {peer_id}: write level 6 snapshot buckets #{sync_id}"),
+                err,
+            )
+        })?;
+        sync_trace(format!(
+            "snapshot sync #{sync_id} to {peer_id}: level 6 buckets written"
+        ));
+        let response: ResponseMessage = read_frame(&mut recv).await.map_err(|err| {
+            sync_io_error(format!("peer {peer_id}: read snapshot metadata need #{sync_id}"), err)
+        })?;
+        let ResponseMessage::SnapshotSyncNeedMeta {
+            sync_id: response_sync_id,
+            buckets,
+        } = response
+        else {
+            return Err(io::Error::other(format!(
+                "peer {peer_id}: expected snapshot metadata need for sync #{sync_id}"
+            )));
+        };
         if response_sync_id != sync_id {
             return Err(io::Error::other(format!(
                 "peer {peer_id}: snapshot sync id mismatch {response_sync_id} != {sync_id}"
             )));
         }
         sync_trace(format!(
-            "received snapshot need #{sync_id} from {peer_id}: {} entries",
+            "received snapshot metadata need #{sync_id} from {peer_id}: {} buckets",
+            buckets.len()
+        ));
+        if buckets.is_empty() {
+            sync_trace(format!(
+                "snapshot sync #{sync_id} to {peer_id}: no metadata buckets requested"
+            ));
+            return Ok(());
+        }
+        let metadata_entries = collect_snapshot_meta_for_buckets(&buckets, peer_id, &tx).await?;
+        sync_trace(format!(
+            "snapshot sync #{sync_id} to {peer_id}: sending {} metadata entries",
+            metadata_entries.len()
+        ));
+        write_frame(
+            &mut send,
+            &RequestMessage::SnapshotSyncMeta {
+                from: endpoint.id().to_string(),
+                sync_id,
+                entries: metadata_entries,
+            },
+        )
+        .await
+        .map_err(|err| {
+            sync_io_error(
+                format!("peer {peer_id}: write snapshot metadata #{sync_id}"),
+                err,
+            )
+        })?;
+        sync_trace(format!(
+            "snapshot sync #{sync_id} to {peer_id}: metadata written"
+        ));
+        let response: ResponseMessage = read_frame(&mut recv).await.map_err(|err| {
+            sync_io_error(format!("peer {peer_id}: read snapshot entry need #{sync_id}"), err)
+        })?;
+        let ResponseMessage::SnapshotSyncNeed { sync_id: response_sync_id, ids } = response else {
+            return Err(io::Error::other(format!(
+                "peer {peer_id}: expected snapshot entry need for sync #{sync_id}"
+            )));
+        };
+        if response_sync_id != sync_id {
+            return Err(io::Error::other(format!(
+                "peer {peer_id}: snapshot sync id mismatch {response_sync_id} != {sync_id}"
+            )));
+        }
+        sync_trace(format!(
+            "received snapshot entry need #{sync_id} from {peer_id}: {} entries",
             ids.len()
         ));
         if ids.is_empty() {
+            sync_trace(format!(
+                "snapshot sync #{sync_id} to {peer_id}: no entries requested"
+            ));
             return Ok(());
         }
         let requested_entries = collect_requested_snapshot_entries(&ids, peer_id, &tx).await?;
+        sync_trace(format!(
+            "snapshot sync #{sync_id} to {peer_id}: sending {} requested entries",
+            requested_entries.len()
+        ));
         write_frame(
             &mut send,
             &RequestMessage::SnapshotSyncEntries {
@@ -731,7 +1202,6 @@ where
     let bytes = serde_json::to_vec(value).map_err(io::Error::other)?;
     send.write_u32(bytes.len() as u32).await?;
     send.write_all(&bytes).await?;
-    send.shutdown().await?;
     Ok(())
 }
 
@@ -1122,33 +1592,83 @@ fn collect_missing_snapshot_ids_from_state(
         .collect()
 }
 
-fn collect_network_snapshot_meta(
+fn collect_missing_snapshot_buckets_from_state(
     attr_dir: &Path,
     lamport: &mut u64,
     entries: &mut HashMapById,
     local_origin: &str,
-) -> io::Result<Vec<SnapshotMetaEntry>> {
-    let mut out = Vec::with_capacity(entries.len());
-    let ids: Vec<String> = entries.keys().cloned().collect();
-    for id in ids {
-        let Some(entry) = entries.get(&id).cloned() else {
-            continue;
-        };
-        match build_snapshot_meta_entry(attr_dir, &id, entry.clone()) {
-            Ok(snapshot_entry) => out.push(snapshot_entry),
-            Err(err) if err.kind() == io::ErrorKind::NotFound && entry.hash != TOMBSTONE_HASH => {
-                *lamport = lamport.saturating_add(1);
-                let tombstone = SnapshotEntry {
-                    hash: TOMBSTONE_HASH,
-                    lamport: *lamport,
-                    changed_at_ms: unix_timestamp_ms()?,
-                    origin: local_origin.to_string(),
-                };
-                entries.insert(id.clone(), tombstone.clone());
-                out.push(build_snapshot_meta_entry(attr_dir, &id, tombstone)?);
-            }
-            Err(err) => return Err(err),
+    remote_buckets: Vec<SnapshotBucketSummary>,
+) -> io::Result<Vec<String>> {
+    if remote_buckets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let level = remote_buckets
+        .first()
+        .map(|bucket| bucket.bucket.len() as u8)
+        .unwrap_or(6);
+    let local_buckets = collect_snapshot_bucket_summaries(
+        attr_dir,
+        lamport,
+        entries,
+        local_origin,
+        level,
+        &[],
+    )?;
+    let local_map: HashMap<String, SnapshotBucketSummary> = local_buckets
+        .into_iter()
+        .map(|bucket| (bucket.bucket.clone(), bucket))
+        .collect();
+    Ok(remote_buckets
+        .into_iter()
+        .filter_map(|bucket| {
+            (local_map.get(&bucket.bucket) != Some(&bucket)).then_some(bucket.bucket)
+        })
+        .collect())
+}
+
+fn collect_snapshot_bucket_summaries(
+    attr_dir: &Path,
+    lamport: &mut u64,
+    entries: &mut HashMapById,
+    local_origin: &str,
+    level: u8,
+    parents: &[String],
+) -> io::Result<Vec<SnapshotBucketSummary>> {
+    let metadata_entries = build_snapshot_meta_for_buckets(
+        attr_dir,
+        lamport,
+        entries,
+        local_origin,
+        parents,
+    )?;
+    let mut grouped: BTreeMap<String, Vec<SnapshotMetaEntry>> = BTreeMap::new();
+    for entry in metadata_entries {
+        grouped
+            .entry(bucket_for_ulid(&entry.ulid, level))
+            .or_default()
+            .push(entry);
+    }
+    let mut out = Vec::with_capacity(grouped.len());
+    for (bucket, mut bucket_entries) in grouped {
+        bucket_entries.sort_by(|left, right| left.ulid.cmp(&right.ulid));
+        let mut hasher = blake3::Hasher::new();
+        for entry in &bucket_entries {
+            hasher.update(entry.ulid.as_bytes());
+            hasher.update(&[0]);
+            hasher.update(&entry.hash);
+            hasher.update(&[0]);
+            hasher.update(&entry.lamport.to_le_bytes());
+            hasher.update(&[0]);
+            hasher.update(&entry.changed_at_ms.to_le_bytes());
+            hasher.update(&[0]);
+            hasher.update(entry.origin.as_bytes());
+            hasher.update(&[b'\n']);
         }
+        out.push(SnapshotBucketSummary {
+            bucket,
+            count: bucket_entries.len() as u32,
+            hash: *hasher.finalize().as_bytes(),
+        });
     }
     Ok(out)
 }
@@ -1177,6 +1697,45 @@ fn build_requested_snapshot_entries(
                 };
                 entries.insert(id.clone(), tombstone.clone());
                 out.push(build_replication_entry(attr_dir, id, tombstone)?);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(out)
+}
+
+fn build_snapshot_meta_for_buckets(
+    attr_dir: &Path,
+    lamport: &mut u64,
+    entries: &mut HashMapById,
+    local_origin: &str,
+    buckets: &[String],
+) -> io::Result<Vec<SnapshotMetaEntry>> {
+    let bucket_filter: Option<HashSet<&str>> = (!buckets.is_empty())
+        .then(|| buckets.iter().map(String::as_str).collect());
+    let mut out = Vec::with_capacity(entries.len());
+    let ids: Vec<String> = entries.keys().cloned().collect();
+    for id in ids {
+        if let Some(filter) = bucket_filter.as_ref() {
+            if !matches_bucket_prefixes(&id, filter) {
+                continue;
+            }
+        }
+        let Some(entry) = entries.get(&id).cloned() else {
+            continue;
+        };
+        match build_snapshot_meta_entry(attr_dir, &id, entry.clone()) {
+            Ok(snapshot_entry) => out.push(snapshot_entry),
+            Err(err) if err.kind() == io::ErrorKind::NotFound && entry.hash != TOMBSTONE_HASH => {
+                *lamport = lamport.saturating_add(1);
+                let tombstone = SnapshotEntry {
+                    hash: TOMBSTONE_HASH,
+                    lamport: *lamport,
+                    changed_at_ms: unix_timestamp_ms()?,
+                    origin: local_origin.to_string(),
+                };
+                entries.insert(id.clone(), tombstone.clone());
+                out.push(build_snapshot_meta_entry(attr_dir, &id, tombstone)?);
             }
             Err(err) => return Err(err),
         }
@@ -1237,6 +1796,15 @@ fn snapshot_meta_to_snapshot(entry: &SnapshotMetaEntry) -> SnapshotEntry {
         changed_at_ms: entry.changed_at_ms,
         origin: entry.origin.clone(),
     }
+}
+
+fn matches_bucket_prefixes(id: &str, prefixes: &HashSet<&str>) -> bool {
+    prefixes.iter().any(|prefix| id.starts_with(prefix))
+}
+
+fn bucket_for_ulid(id: &str, level: u8) -> String {
+    let len = usize::from(level).min(id.len());
+    id[..len].to_string()
 }
 
 async fn broadcast_entries(
