@@ -121,6 +121,25 @@ struct ReplicatedEntry {
 }
 
 #[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Serialize,
+    Deserialize,
+)]
+struct SnapshotMetaEntry {
+    ulid: String,
+    hash: Blake3Hash,
+    lamport: u64,
+    changed_at_ms: u64,
+    origin: String,
+}
+
+#[derive(
     Debug,
     rkyv::Archive,
     rkyv::Serialize,
@@ -129,7 +148,12 @@ struct ReplicatedEntry {
     Deserialize,
 )]
 enum RequestMessage {
-    SnapshotSync {
+    SnapshotSyncStart {
+        from: String,
+        sync_id: u64,
+        entries: Vec<SnapshotMetaEntry>,
+    },
+    SnapshotSyncEntries {
         from: String,
         sync_id: u64,
         entries: Vec<ReplicatedEntry>,
@@ -146,7 +170,7 @@ enum RequestMessage {
     Deserialize,
 )]
 enum ResponseMessage {
-    SnapshotSync { entries: Vec<ReplicatedEntry> },
+    SnapshotSyncNeed { sync_id: u64, ids: Vec<String> },
     Ack,
 }
 
@@ -155,7 +179,15 @@ enum Command {
     ApplyRemote {
         peer: PublicKey,
         entries: Vec<ReplicatedEntry>,
-        respond_to: Option<oneshot::Sender<Vec<ReplicatedEntry>>>,
+        respond_to: Option<oneshot::Sender<()>>,
+    },
+    CollectMissingSnapshotIds {
+        entries: Vec<SnapshotMetaEntry>,
+        respond_to: oneshot::Sender<Vec<String>>,
+    },
+    CollectSnapshotEntries {
+        ids: Vec<String>,
+        respond_to: oneshot::Sender<io::Result<Vec<ReplicatedEntry>>>,
     },
     SyncPeer(EndpointAddr),
 }
@@ -326,18 +358,29 @@ async fn run_async(cli: Cli) -> io::Result<()> {
                     broadcast_entries(&state.endpoint, &state.peers, &updates, Some(peer)).await;
                 }
                 if let Some(reply) = respond_to {
-                    let snapshot = collect_network_snapshot(
-                        &state.attr_dir,
-                        &mut state.lamport,
-                        &mut state.entries,
-                        &state.local_origin,
-                    )?;
                     write_cache_file(&state.cache_path, &state.entries)?;
-                    let _ = reply.send(snapshot);
+                    let _ = reply.send(());
                 }
             }
+            Command::CollectMissingSnapshotIds { entries, respond_to } => {
+                let ids = collect_missing_snapshot_ids_from_state(&state.entries, entries);
+                let _ = respond_to.send(ids);
+            }
+            Command::CollectSnapshotEntries { ids, respond_to } => {
+                let result = build_requested_snapshot_entries(
+                    &state.attr_dir,
+                    &mut state.lamport,
+                    &mut state.entries,
+                    &state.local_origin,
+                    &ids,
+                );
+                if result.is_ok() {
+                    write_cache_file(&state.cache_path, &state.entries)?;
+                }
+                let _ = respond_to.send(result);
+            }
             Command::SyncPeer(peer) => {
-                let snapshot = collect_network_snapshot(
+                let snapshot = collect_network_snapshot_meta(
                     &state.attr_dir,
                     &mut state.lamport,
                     &mut state.entries,
@@ -405,6 +448,37 @@ fn sync_io_error(context: impl AsRef<str>, err: impl std::fmt::Display) -> io::E
     io::Error::other(format!("{}: {}", context.as_ref(), err))
 }
 
+async fn collect_missing_snapshot_ids(
+    entries: &[SnapshotMetaEntry],
+    tx: &mpsc::UnboundedSender<Command>,
+) -> io::Result<Vec<String>> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(Command::CollectMissingSnapshotIds {
+        entries: entries.to_vec(),
+        respond_to: reply_tx,
+    })
+    .map_err(|_| io::Error::other("snapshot metadata compare channel closed"))?;
+    reply_rx
+        .await
+        .map_err(|_| io::Error::other("snapshot metadata compare dropped"))
+}
+
+async fn collect_requested_snapshot_entries(
+    ids: &[String],
+    peer_id: PublicKey,
+    tx: &mpsc::UnboundedSender<Command>,
+) -> io::Result<Vec<ReplicatedEntry>> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(Command::CollectSnapshotEntries {
+        ids: ids.to_vec(),
+        respond_to: reply_tx,
+    })
+    .map_err(|_| io::Error::other(format!("snapshot entry collection for peer {peer_id} channel closed")))?;
+    reply_rx
+        .await
+        .map_err(|_| io::Error::other(format!("snapshot entry collection for peer {peer_id} dropped")))?
+}
+
 async fn handle_incoming(
     incoming: iroh::endpoint::Incoming,
     tx: mpsc::UnboundedSender<Command>,
@@ -428,12 +502,60 @@ async fn handle_incoming(
         .await
         .map_err(|err| sync_io_error(format!("incoming peer {peer}: read request"), err))?;
     match request {
-        RequestMessage::SnapshotSync {
+        RequestMessage::SnapshotSyncStart {
             sync_id, entries, ..
         } => {
             sync_trace(format!(
-                "incoming snapshot #{sync_id} from {peer}: {} entries",
+                "incoming snapshot meta #{sync_id} from {peer}: {} entries",
                 entries.len(),
+            ));
+            sync_trace(format!(
+                "incoming snapshot meta #{sync_id} from {peer}: comparing local state"
+            ));
+            let ids = collect_missing_snapshot_ids(&entries, &tx).await?;
+            sync_trace(format!(
+                "incoming snapshot meta #{sync_id} from {peer}: requesting {} entries",
+                ids.len()
+            ));
+            write_frame(&mut send, &ResponseMessage::SnapshotSyncNeed { sync_id, ids: ids.clone() })
+                .await
+                .map_err(|err| {
+                    sync_io_error(
+                        format!("incoming peer {peer}: write snapshot need #{sync_id}"),
+                        err,
+                    )
+                })?;
+            sync_trace(format!("incoming snapshot meta #{sync_id} from {peer}: need written"));
+            if ids.is_empty() {
+                return Ok(());
+            }
+
+            let request: RequestMessage = read_frame(&mut recv)
+                .await
+                .map_err(|err| {
+                    sync_io_error(
+                        format!("incoming peer {peer}: read snapshot entries #{sync_id}"),
+                        err,
+                    )
+                })?;
+            let RequestMessage::SnapshotSyncEntries {
+                sync_id: response_sync_id,
+                entries,
+                ..
+            } = request
+            else {
+                return Err(io::Error::other(format!(
+                    "incoming peer {peer}: expected snapshot entries for sync #{sync_id}"
+                )));
+            };
+            if response_sync_id != sync_id {
+                return Err(io::Error::other(format!(
+                    "incoming peer {peer}: snapshot sync id mismatch {response_sync_id} != {sync_id}"
+                )));
+            }
+            sync_trace(format!(
+                "incoming snapshot entries #{sync_id} from {peer}: {} entries",
+                entries.len()
             ));
             let (reply_tx, reply_rx) = oneshot::channel();
             let _ = tx.send(Command::ApplyRemote {
@@ -442,24 +564,20 @@ async fn handle_incoming(
                 respond_to: Some(reply_tx),
             });
             sync_trace(format!(
-                "incoming snapshot #{sync_id} from {peer}: waiting for apply"
+                "incoming snapshot entries #{sync_id} from {peer}: waiting for apply"
             ));
-            let entries = reply_rx.await.unwrap_or_default();
-            sync_trace(format!(
-                "incoming snapshot #{sync_id} from {peer}: reply ready with {} entries",
-                entries.len()
-            ));
-            write_frame(&mut send, &ResponseMessage::SnapshotSync { entries })
+            reply_rx.await.unwrap_or(());
+            write_frame(&mut send, &ResponseMessage::Ack)
                 .await
                 .map_err(|err| {
-                    sync_io_error(
-                        format!("incoming peer {peer}: write snapshot reply #{sync_id}"),
-                        err,
-                    )
+                    sync_io_error(format!("incoming peer {peer}: write snapshot ack #{sync_id}"), err)
                 })?;
-            sync_trace(format!(
-                "incoming snapshot #{sync_id} from {peer}: reply written"
-            ));
+            sync_trace(format!("incoming snapshot entries #{sync_id} from {peer}: ack written"));
+        }
+        RequestMessage::SnapshotSyncEntries { sync_id, .. } => {
+            return Err(io::Error::other(format!(
+                "incoming peer {peer}: unexpected snapshot entries request #{sync_id}"
+            )));
         }
         RequestMessage::LiveEvent { entry, .. } => {
             sync_trace(format!("incoming live event from {peer}: {}", entry.ulid));
@@ -480,12 +598,12 @@ async fn sync_peer(
     endpoint: Endpoint,
     peer: EndpointAddr,
     tx: mpsc::UnboundedSender<Command>,
-    entries: Vec<ReplicatedEntry>,
+    entries: Vec<SnapshotMetaEntry>,
 ) -> io::Result<()> {
     let peer_id = peer.id;
     let sync_id = NEXT_SYNC_ID.fetch_add(1, Ordering::Relaxed);
     sync_trace(format!(
-        "starting snapshot sync #{sync_id} to {peer_id}: {} entries",
+        "starting snapshot sync #{sync_id} to {peer_id}: {} metadata entries",
         entries.len()
     ));
     let connection = endpoint
@@ -498,7 +616,7 @@ async fn sync_peer(
         .map_err(|err| sync_io_error(format!("peer {peer_id}: open bi stream"), err))?;
     write_frame(
         &mut send,
-        &RequestMessage::SnapshotSync {
+        &RequestMessage::SnapshotSyncStart {
             from: endpoint.id().to_string(),
             sync_id,
             entries,
@@ -522,16 +640,42 @@ async fn sync_peer(
                 err,
             )
         })?;
-    if let ResponseMessage::SnapshotSync { entries } = response {
+    if let ResponseMessage::SnapshotSyncNeed { sync_id: response_sync_id, ids } = response {
+        if response_sync_id != sync_id {
+            return Err(io::Error::other(format!(
+                "peer {peer_id}: snapshot sync id mismatch {response_sync_id} != {sync_id}"
+            )));
+        }
         sync_trace(format!(
-            "received snapshot response #{sync_id} from {peer_id}: {} entries",
-            entries.len()
+            "received snapshot need #{sync_id} from {peer_id}: {} entries",
+            ids.len()
         ));
-        let _ = tx.send(Command::ApplyRemote {
-            peer: peer_id,
-            entries,
-            respond_to: None,
-        });
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let requested_entries = collect_requested_snapshot_entries(&ids, peer_id, &tx).await?;
+        write_frame(
+            &mut send,
+            &RequestMessage::SnapshotSyncEntries {
+                from: endpoint.id().to_string(),
+                sync_id,
+                entries: requested_entries,
+            },
+        )
+        .await
+        .map_err(|err| {
+            sync_io_error(
+                format!("peer {peer_id}: write snapshot entries #{sync_id}"),
+                err,
+            )
+        })?;
+        sync_trace(format!(
+            "snapshot sync #{sync_id} to {peer_id}: requested entries written"
+        ));
+        let _: ResponseMessage = read_frame(&mut recv).await.map_err(|err| {
+            sync_io_error(format!("peer {peer_id}: read snapshot ack #{sync_id}"), err)
+        })?;
+        sync_trace(format!("snapshot sync #{sync_id} to {peer_id}: ack received"));
     }
     Ok(())
 }
@@ -964,19 +1108,64 @@ fn apply_remote_entry_to_disk(attr_dir: &Path, entry: &ReplicatedEntry) -> io::R
     }
 }
 
-fn collect_network_snapshot(
+fn collect_missing_snapshot_ids_from_state(
+    local_entries: &HashMapById,
+    remote_entries: Vec<SnapshotMetaEntry>,
+) -> Vec<String> {
+    remote_entries
+        .into_iter()
+        .filter_map(|entry| {
+            let remote_snapshot = snapshot_meta_to_snapshot(&entry);
+            let current = local_entries.get(&entry.ulid).cloned();
+            should_accept_remote(current, remote_snapshot).then_some(entry.ulid)
+        })
+        .collect()
+}
+
+fn collect_network_snapshot_meta(
     attr_dir: &Path,
     lamport: &mut u64,
     entries: &mut HashMapById,
     local_origin: &str,
-) -> io::Result<Vec<ReplicatedEntry>> {
+) -> io::Result<Vec<SnapshotMetaEntry>> {
     let mut out = Vec::with_capacity(entries.len());
     let ids: Vec<String> = entries.keys().cloned().collect();
     for id in ids {
         let Some(entry) = entries.get(&id).cloned() else {
             continue;
         };
-        match build_replication_entry(attr_dir, &id, entry.clone()) {
+        match build_snapshot_meta_entry(attr_dir, &id, entry.clone()) {
+            Ok(snapshot_entry) => out.push(snapshot_entry),
+            Err(err) if err.kind() == io::ErrorKind::NotFound && entry.hash != TOMBSTONE_HASH => {
+                *lamport = lamport.saturating_add(1);
+                let tombstone = SnapshotEntry {
+                    hash: TOMBSTONE_HASH,
+                    lamport: *lamport,
+                    changed_at_ms: unix_timestamp_ms()?,
+                    origin: local_origin.to_string(),
+                };
+                entries.insert(id.clone(), tombstone.clone());
+                out.push(build_snapshot_meta_entry(attr_dir, &id, tombstone)?);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(out)
+}
+
+fn build_requested_snapshot_entries(
+    attr_dir: &Path,
+    lamport: &mut u64,
+    entries: &mut HashMapById,
+    local_origin: &str,
+    ids: &[String],
+) -> io::Result<Vec<ReplicatedEntry>> {
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let Some(entry) = entries.get(id).cloned() else {
+            continue;
+        };
+        match build_replication_entry(attr_dir, id, entry.clone()) {
             Ok(replication_entry) => out.push(replication_entry),
             Err(err) if err.kind() == io::ErrorKind::NotFound && entry.hash != TOMBSTONE_HASH => {
                 *lamport = lamport.saturating_add(1);
@@ -987,12 +1176,29 @@ fn collect_network_snapshot(
                     origin: local_origin.to_string(),
                 };
                 entries.insert(id.clone(), tombstone.clone());
-                out.push(build_replication_entry(attr_dir, &id, tombstone)?);
+                out.push(build_replication_entry(attr_dir, id, tombstone)?);
             }
             Err(err) => return Err(err),
         }
     }
     Ok(out)
+}
+
+fn build_snapshot_meta_entry(
+    attr_dir: &Path,
+    id: &str,
+    entry: SnapshotEntry,
+) -> io::Result<SnapshotMetaEntry> {
+    if entry.hash != TOMBSTONE_HASH {
+        fs::metadata(attr_dir.join(id))?;
+    }
+    Ok(SnapshotMetaEntry {
+        ulid: id.to_string(),
+        hash: entry.hash,
+        lamport: entry.lamport,
+        changed_at_ms: entry.changed_at_ms,
+        origin: entry.origin,
+    })
 }
 
 fn build_replication_entry(
@@ -1016,6 +1222,15 @@ fn build_replication_entry(
 }
 
 fn snapshot_from_wire(entry: &ReplicatedEntry) -> SnapshotEntry {
+    SnapshotEntry {
+        hash: entry.hash,
+        lamport: entry.lamport,
+        changed_at_ms: entry.changed_at_ms,
+        origin: entry.origin.clone(),
+    }
+}
+
+fn snapshot_meta_to_snapshot(entry: &SnapshotMetaEntry) -> SnapshotEntry {
     SnapshotEntry {
         hash: entry.hash,
         lamport: entry.lamport,
