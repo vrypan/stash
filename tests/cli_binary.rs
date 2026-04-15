@@ -291,12 +291,27 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
     assert!(!ls_filtered.contains("one"));
     assert!(!ls_filtered.contains(&second));
 
+    let mut ls_value_filtered_cmd = stash_cmd(dir.path());
+    ls_value_filtered_cmd.args(["ls", "-a", "kind=sample", "--id=full", "--color=false"]);
+    let ls_value_filtered = stdout_string(&mut ls_value_filtered_cmd);
+    assert!(ls_value_filtered.contains(&second));
+    assert!(!ls_value_filtered.contains(&first));
+    assert!(!ls_value_filtered.contains(&file_id));
+
     let mut ls_filter_and_show_cmd = stash_cmd(dir.path());
     ls_filter_and_show_cmd.args(["ls", "-a", "++label", "--id=full", "--color=false"]);
     let ls_filter_and_show = stdout_string(&mut ls_filter_and_show_cmd);
     assert!(ls_filter_and_show.contains(&first));
     assert!(ls_filter_and_show.contains("one"));
     assert!(!ls_filter_and_show.contains(&second));
+
+    let mut ls_value_filter_and_show_cmd = stash_cmd(dir.path());
+    ls_value_filter_and_show_cmd.args(["ls", "-a", "++kind=sample", "--id=full", "--color=false"]);
+    let ls_value_filter_and_show = stdout_string(&mut ls_value_filter_and_show_cmd);
+    assert!(ls_value_filter_and_show.contains(&second));
+    assert!(ls_value_filter_and_show.contains("sample"));
+    assert!(!ls_value_filter_and_show.contains(&first));
+    assert!(!ls_value_filter_and_show.contains(&file_id));
 
     stash_cmd(dir.path())
         .args(["attrs", "--count"])

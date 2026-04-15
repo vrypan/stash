@@ -107,6 +107,7 @@ pub struct MetaSelection {
     pub show_all: bool,
     pub display_tags: Vec<String>,
     pub filter_tags: Vec<String>,
+    pub filter_tag_values: Vec<(String, String)>,
 }
 
 pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<MetaSelection> {
@@ -114,14 +115,16 @@ pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<Met
         show_all,
         display_tags: Vec::with_capacity(values.len()),
         filter_tags: Vec::with_capacity(values.len()),
+        filter_tag_values: Vec::with_capacity(values.len()),
     };
     let mut seen_display = std::collections::HashSet::with_capacity(values.len());
     let mut seen_filter = std::collections::HashSet::with_capacity(values.len());
+    let mut seen_filter_values = std::collections::HashSet::with_capacity(values.len());
     for value in values {
-        if value.contains(',') || value.contains('=') || value.trim().is_empty() {
+        if value.contains(',') || value.trim().is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "--attr accepts name, +name, or ++name and is repeatable",
+                "--attr accepts name, name=value, +name, ++name, or ++name=value and is repeatable",
             ));
         }
         if let Some(key) = value.strip_prefix("++") {
@@ -130,6 +133,22 @@ pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<Met
                     io::ErrorKind::InvalidInput,
                     "--attr filter+display must be ++name",
                 ));
+            }
+            if let Some((filter_key, filter_value)) = key.split_once('=') {
+                if filter_key.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--attr filter+display value form must be ++name=value",
+                    ));
+                }
+                if seen_display.insert(filter_key.to_string()) {
+                    out.display_tags.push(filter_key.to_string());
+                }
+                let pair = (filter_key.to_string(), filter_value.to_string());
+                if seen_filter_values.insert(pair.clone()) {
+                    out.filter_tag_values.push(pair);
+                }
+                continue;
             }
             if seen_display.insert(key.to_string()) {
                 out.display_tags.push(key.to_string());
@@ -147,6 +166,17 @@ pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<Met
             if seen_display.insert(key.to_string()) {
                 out.display_tags.push(key.to_string());
             }
+        } else if let Some((key, attr_value)) = value.split_once('=') {
+            if key.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "--attr value filter must be name=value",
+                ));
+            }
+            let pair = (key.to_string(), attr_value.to_string());
+            if seen_filter_values.insert(pair.clone()) {
+                out.filter_tag_values.push(pair);
+            }
         } else if seen_filter.insert(value.to_string()) {
             out.filter_tags.push(value.clone());
         }
@@ -155,10 +185,11 @@ pub fn parse_meta_selection(values: &[String], show_all: bool) -> io::Result<Met
 }
 
 pub fn matches_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> bool {
-    if sel.filter_tags.is_empty() {
-        return true;
-    }
     sel.filter_tags.iter().all(|tag| attrs.contains_key(tag))
+        && sel
+            .filter_tag_values
+            .iter()
+            .all(|(key, value)| attrs.get(key) == Some(value))
 }
 
 // ---------------------------------------------------------------------------
