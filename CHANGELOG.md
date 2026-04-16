@@ -2,6 +2,23 @@
 
 All notable changes to `stash` are documented in this file.
 
+## Unreleased
+
+- Color attribute keys in `stash attr` output (cyan when stdout is a
+  terminal; disable with `--color false`).
+- Performance improvements in listing hot paths:
+  - Replace sort + reverse with a single descending sort in
+    `list_entry_ids`.
+  - Eliminate intermediate `Vec` allocation when building the inline
+    attribute string in `ls -A`.
+  - `write_list_cache` now takes ownership of items to avoid cloning
+    the full entry list on cache writes.
+  - `all_attr_keys` computes the key index from already-loaded items
+    instead of re-reading the cache file.
+- Add in-process Criterion benchmarks (`BenchmarkLsLib1000`,
+  `BenchmarkLsLibAll1000`, `BenchmarkLsJsonLib1000`) for reliable
+  regression detection without process-spawn variance.
+
 ## 0.8.1
 
 - Extend `stash cat` selection:
