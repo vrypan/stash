@@ -17,13 +17,20 @@ Add this to `~/.config/starship.toml`:
 description = "Show stash item count"
 command = '''
 count=$(find "${STASH_DIR:-$HOME/.stash}/attr" -type f 2>/dev/null | wc -l | tr -d ' ')
-printf '~{@ %s' "$count"
+if [ -n "$STASH_DIR" ] && [ "$STASH_DIR" != "$HOME/.stash" ]; then
+  printf '%s~{@ %s' "$(basename "$STASH_DIR")" "$count" 
+else
+  printf '~{@ %s' "$count"
+fi
 '''
 when = 'test -d "${STASH_DIR:-$HOME/.stash}/attr"'
 shell = ["bash", "--noprofile", "--norc"]
 style = "bold cyan"
 format = "[$output]($style)"
 ```
+
+Shows `~{@ 42` when using the default stash, and `~{@ 12 (work)` when a
+named stash is active.
 
 Then add `${custom.stash_count}` to your main Starship `format`.
 
@@ -119,6 +126,40 @@ Behavior:
 - when the last argument is a local file, it is streamed over SSH
 - adds `filename=<basename>` automatically for local files unless you already
   passed a `filename=...` attribute explicitly
+
+## `chstash.sh`
+
+Switches between named stashes by setting `STASH_DIR`. Works with both
+bash and zsh, and activates tab completion automatically based on the
+running shell.
+
+Source it from your `~/.bashrc` or `~/.zshrc`:
+
+```sh
+source /path/to/scripts/chstash.sh
+# or, if you installed stash using brew:
+# source "$(brew --prefix)/share/stash/scripts/chstash.sh"
+```
+
+Usage:
+
+```sh
+chstash           # show the active stash (or default)
+chstash work      # switch to ~/.stashes/work (created if needed)
+chstash /tmp/foo  # switch to an absolute path (created if needed)
+chstash -         # reset to default (~/.stash)
+chstash --list    # list named stashes in $STASH_BASE
+```
+
+Named stashes live under `~/.stashes` by default. Override with
+`STASH_BASE`:
+
+```sh
+export STASH_BASE=~/projects
+chstash myapp     # switches to ~/projects/myapp
+```
+
+Tab completion lists existing named stashes in `$STASH_BASE`.
 
 ## zsh-specific
 
