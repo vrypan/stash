@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "core", "sync"]
+members = ["."]
 resolver = "2"
 
 [workspace.package]
@@ -30,22 +30,17 @@ name = "stash-completion"
 path = "src/completion_main.rs"
 required-features = ["completion"]
 
-[[bin]]
-name = "stashd"
-path = "src/stashd_main.rs"
-
 [features]
 completion = ["dep:clap_complete"]
 
 [dependencies]
+blake3 = "1.8.2"
 clap = { version = "4.5.40", default-features = false, features = ["derive", "std", "color", "help", "usage", "error-context"] }
 clap_complete = { version = "4.5.49", optional = true }
-iroh = "0.96.1"
+rkyv = "0.8.15"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.145"
 signal-hook = "0.4.4"
-stash-core = { path = "core" }
-stash-sync = { path = "sync" }
 
 [dev-dependencies]
 assert_cmd = "2.0.17"
