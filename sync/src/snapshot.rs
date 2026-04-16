@@ -94,7 +94,7 @@ pub fn reconcile_startup_state<F>(
     mut emit: F,
 ) -> io::Result<HashMapById>
 where
-    F: FnMut(&str, SnapshotEntry),
+    F: FnMut(&str, &SnapshotEntry),
 {
     let cached = read_cache_file(cache_path, 6)?;
     let mut current = build_snapshot_map(attr_dir, local_origin)?;
@@ -205,16 +205,16 @@ pub fn should_rescan_event(attr_dir: &Path, event: &Event) -> bool {
 
 fn unique_attr_paths(attr_dir: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
     let attr_dir = canonical_path(attr_dir.to_path_buf());
+    let mut seen = HashSet::new();
     let mut out = Vec::new();
     for path in paths {
         let path = canonical_path(path.clone());
         if path.parent() != Some(&attr_dir) {
             continue;
         }
-        if out.iter().any(|existing| existing == &path) {
-            continue;
+        if seen.insert(path.clone()) {
+            out.push(path);
         }
-        out.push(path);
     }
     out
 }
@@ -302,15 +302,16 @@ pub fn process_local_event(
             changed_at_ms: observed_changed_at_ms.max(previous_changed_at_ms.saturating_add(1)),
             origin: local_origin.to_string(),
         };
-        entries.insert(id.clone(), entry.clone());
-        out.push(ReplicatedEntry {
+        let replicated = ReplicatedEntry {
             ulid: id.clone(),
             hash: entry.hash,
             lamport: entry.lamport,
             changed_at_ms: entry.changed_at_ms,
-            contents: local_state.as_ref().map(|(contents, _, _)| contents.clone()),
-            origin: local_origin.to_string(),
-        });
+            contents: local_state.map(|(contents, _, _)| contents),
+            origin: entry.origin.clone(),
+        };
+        entries.insert(id, entry);
+        out.push(replicated);
     }
     Ok(out)
 }
@@ -323,18 +324,11 @@ pub fn rescan_local_state(
     local_origin: &str,
 ) -> io::Result<Vec<ReplicatedEntry>> {
     let scanned = build_snapshot_map(attr_dir, local_origin)?;
-    let mut ids: BTreeMap<String, ()> = BTreeMap::new();
-    for id in entries.keys() {
-        ids.insert(id.clone(), ());
-    }
-    for id in scanned.keys() {
-        ids.insert(id.clone(), ());
-    }
+    let all_ids: HashSet<String> = entries.keys().chain(scanned.keys()).cloned().collect();
 
     let mut updates = Vec::new();
-    for id in ids.into_keys() {
-        let scanned_entry = scanned.get(&id).cloned();
-        let observed_hash = scanned_entry.as_ref().map(|entry| entry.hash).unwrap_or(TOMBSTONE_HASH);
+    for id in all_ids {
+        let observed_hash = scanned.get(&id).map(|e| e.hash).unwrap_or(TOMBSTONE_HASH);
         if let Some(expected) = suppressed.get(&id).cloned() {
             if expected.hash == observed_hash {
                 entries.insert(id.clone(), expected);
@@ -342,12 +336,12 @@ pub fn rescan_local_state(
                 continue;
             }
         }
-        if entries.get(&id).map(|entry| entry.hash) == Some(observed_hash) {
+        if entries.get(&id).map(|e| e.hash) == Some(observed_hash) {
             continue;
         }
         *lamport = lamport.saturating_add(1);
-        let previous_changed_at_ms = entries.get(&id).map(|entry| entry.changed_at_ms).unwrap_or(0);
-        let entry = if let Some(scanned_entry) = scanned_entry {
+        let previous_changed_at_ms = entries.get(&id).map(|e| e.changed_at_ms).unwrap_or(0);
+        let entry = if let Some(scanned_entry) = scanned.get(&id) {
             SnapshotEntry {
                 hash: scanned_entry.hash,
                 lamport: *lamport,
@@ -364,8 +358,8 @@ pub fn rescan_local_state(
                 origin: local_origin.to_string(),
             }
         };
-        entries.insert(id.clone(), entry.clone());
-        updates.push(build_replication_entry(attr_dir, &id, entry)?);
+        updates.push(build_replication_entry(attr_dir, &id, &entry)?);
+        entries.insert(id, entry);
     }
     Ok(updates)
 }
@@ -380,7 +374,7 @@ pub fn apply_remote_entries<F>(
     mut emit: F,
 ) -> io::Result<Vec<ReplicatedEntry>>
 where
-    F: FnMut(&str, SnapshotEntry),
+    F: FnMut(&str, &SnapshotEntry),
 {
     let mut accepted = Vec::new();
     for entry in remote_entries {
@@ -388,28 +382,28 @@ where
             continue;
         }
         let remote_snapshot = snapshot_from_wire(&entry);
-        let current = entries.get(&entry.ulid).cloned();
-        if !should_accept_remote(current, remote_snapshot.clone()) {
+        let current = entries.get(&entry.ulid);
+        if !should_accept_remote(current, &remote_snapshot) {
             continue;
         }
         apply_remote_entry_to_disk(attr_dir, &entry)?;
         *lamport = (*lamport).max(remote_snapshot.lamport);
         entries.insert(entry.ulid.clone(), remote_snapshot.clone());
-        suppressed.insert(entry.ulid.clone(), remote_snapshot.clone());
-        emit(&entry.ulid, remote_snapshot);
+        suppressed.insert(entry.ulid.clone(), remote_snapshot);
+        emit(&entry.ulid, entries.get(&entry.ulid).unwrap());
         accepted.push(entry);
     }
     Ok(accepted)
 }
 
-pub fn should_accept_remote(current: Option<SnapshotEntry>, remote: SnapshotEntry) -> bool {
+pub fn should_accept_remote(current: Option<&SnapshotEntry>, remote: &SnapshotEntry) -> bool {
     match current {
         None => true,
         Some(current) => compare_snapshot(remote, current) == CmpOrdering::Greater,
     }
 }
 
-pub fn compare_snapshot(left: SnapshotEntry, right: SnapshotEntry) -> CmpOrdering {
+pub fn compare_snapshot(left: &SnapshotEntry, right: &SnapshotEntry) -> CmpOrdering {
     left.lamport
         .cmp(&right.lamport)
         .then_with(|| left.changed_at_ms.cmp(&right.changed_at_ms))
@@ -445,8 +439,8 @@ pub fn collect_missing_snapshot_ids_from_state(
         .into_iter()
         .filter_map(|entry| {
             let remote_snapshot = snapshot_meta_to_snapshot(&entry);
-            let current = local_entries.get(&entry.ulid).cloned();
-            should_accept_remote(current, remote_snapshot).then_some(entry.ulid)
+            let current = local_entries.get(&entry.ulid);
+            should_accept_remote(current, &remote_snapshot).then_some(entry.ulid)
         })
         .collect()
 }
@@ -522,12 +516,13 @@ pub fn build_requested_snapshot_entries(
 ) -> io::Result<Vec<ReplicatedEntry>> {
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        let Some(entry) = entries.get(id).cloned() else {
+        let Some(entry) = entries.get(id) else {
             continue;
         };
-        match build_replication_entry(attr_dir, id, entry.clone()) {
+        let is_live = entry.hash != TOMBSTONE_HASH;
+        match build_replication_entry(attr_dir, id, entry) {
             Ok(replication_entry) => out.push(replication_entry),
-            Err(err) if err.kind() == io::ErrorKind::NotFound && entry.hash != TOMBSTONE_HASH => {
+            Err(err) if err.kind() == io::ErrorKind::NotFound && is_live => {
                 *lamport = lamport.saturating_add(1);
                 let tombstone = SnapshotEntry {
                     hash: TOMBSTONE_HASH,
@@ -535,8 +530,8 @@ pub fn build_requested_snapshot_entries(
                     changed_at_ms: unix_timestamp_ms()?,
                     origin: local_origin.to_string(),
                 };
-                entries.insert(id.clone(), tombstone.clone());
-                out.push(build_replication_entry(attr_dir, id, tombstone)?);
+                out.push(build_replication_entry(attr_dir, id, &tombstone)?);
+                entries.insert(id.clone(), tombstone);
             }
             Err(err) => return Err(err),
         }
@@ -553,20 +548,21 @@ pub fn build_snapshot_meta_for_buckets(
 ) -> io::Result<Vec<SnapshotMetaEntry>> {
     let bucket_filter: Option<HashSet<&str>> =
         (!buckets.is_empty()).then(|| buckets.iter().map(String::as_str).collect());
-    let mut out = Vec::with_capacity(entries.len());
     let ids: Vec<String> = entries.keys().cloned().collect();
+    let mut out = Vec::with_capacity(ids.len());
     for id in ids {
         if let Some(filter) = bucket_filter.as_ref() {
             if !matches_bucket_prefixes(&id, filter) {
                 continue;
             }
         }
-        let Some(entry) = entries.get(&id).cloned() else {
+        let Some(entry) = entries.get(&id) else {
             continue;
         };
-        match build_snapshot_meta_entry(attr_dir, &id, entry.clone()) {
+        let is_live = entry.hash != TOMBSTONE_HASH;
+        match build_snapshot_meta_entry(attr_dir, &id, entry) {
             Ok(snapshot_entry) => out.push(snapshot_entry),
-            Err(err) if err.kind() == io::ErrorKind::NotFound && entry.hash != TOMBSTONE_HASH => {
+            Err(err) if err.kind() == io::ErrorKind::NotFound && is_live => {
                 *lamport = lamport.saturating_add(1);
                 let tombstone = SnapshotEntry {
                     hash: TOMBSTONE_HASH,
@@ -574,8 +570,8 @@ pub fn build_snapshot_meta_for_buckets(
                     changed_at_ms: unix_timestamp_ms()?,
                     origin: local_origin.to_string(),
                 };
-                entries.insert(id.clone(), tombstone.clone());
-                out.push(build_snapshot_meta_entry(attr_dir, &id, tombstone)?);
+                out.push(build_snapshot_meta_entry(attr_dir, &id, &tombstone)?);
+                entries.insert(id, tombstone);
             }
             Err(err) => return Err(err),
         }
@@ -586,7 +582,7 @@ pub fn build_snapshot_meta_for_buckets(
 pub fn build_snapshot_meta_entry(
     attr_dir: &Path,
     id: &str,
-    entry: SnapshotEntry,
+    entry: &SnapshotEntry,
 ) -> io::Result<SnapshotMetaEntry> {
     if entry.hash != TOMBSTONE_HASH {
         fs::metadata(attr_dir.join(id))?;
@@ -596,14 +592,14 @@ pub fn build_snapshot_meta_entry(
         hash: entry.hash,
         lamport: entry.lamport,
         changed_at_ms: entry.changed_at_ms,
-        origin: entry.origin,
+        origin: entry.origin.clone(),
     })
 }
 
 pub fn build_replication_entry(
     attr_dir: &Path,
     id: &str,
-    entry: SnapshotEntry,
+    entry: &SnapshotEntry,
 ) -> io::Result<ReplicatedEntry> {
     let contents = if entry.hash == TOMBSTONE_HASH {
         None
@@ -616,7 +612,7 @@ pub fn build_replication_entry(
         lamport: entry.lamport,
         changed_at_ms: entry.changed_at_ms,
         contents,
-        origin: entry.origin,
+        origin: entry.origin.clone(),
     })
 }
 
@@ -649,21 +645,15 @@ pub fn bucket_for_ulid(id: &str, level: u8) -> String {
 
 fn emit_differences<F>(old: &HashMapById, new: &HashMapById, emit: &mut F)
 where
-    F: FnMut(&str, SnapshotEntry),
+    F: FnMut(&str, &SnapshotEntry),
 {
-    let mut ids: BTreeMap<String, ()> = BTreeMap::new();
-    for id in old.keys() {
-        ids.insert(id.clone(), ());
-    }
-    for id in new.keys() {
-        ids.insert(id.clone(), ());
-    }
-    for id in ids.keys() {
-        let old_entry = old.get(id);
+    let all_ids: HashSet<&String> = old.keys().chain(new.keys()).collect();
+    for id in all_ids {
+        let old_hash = old.get(id).map(|e| e.hash);
         let new_entry = new.get(id);
-        if old_entry.map(|entry| entry.hash) != new_entry.map(|entry| entry.hash) {
+        if old_hash != new_entry.map(|e| e.hash) {
             if let Some(new_entry) = new_entry {
-                emit(id, new_entry.clone());
+                emit(id, new_entry);
             }
         }
     }
@@ -799,7 +789,7 @@ mod tests {
             changed_at_ms: 2,
             origin: "peer-b".into(),
         };
-        assert!(should_accept_remote(Some(current), remote));
+        assert!(should_accept_remote(Some(&current), &remote));
     }
 
     #[test]
@@ -816,7 +806,7 @@ mod tests {
             changed_at_ms: 11,
             origin: "peer-a".into(),
         };
-        assert_eq!(compare_snapshot(newer, older), CmpOrdering::Greater);
+        assert_eq!(compare_snapshot(&newer, &older), CmpOrdering::Greater);
     }
 
     #[test]
@@ -833,6 +823,6 @@ mod tests {
             changed_at_ms: 10,
             origin: "peer-b".into(),
         };
-        assert_eq!(compare_snapshot(high_origin, low_origin), CmpOrdering::Greater);
+        assert_eq!(compare_snapshot(&high_origin, &low_origin), CmpOrdering::Greater);
     }
 }

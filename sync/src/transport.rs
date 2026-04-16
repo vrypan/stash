@@ -570,15 +570,15 @@ pub(crate) async fn broadcast_entries(
         if skip_peer == Some(peer.id) {
             continue;
         }
-        for entry in entries {
-            let endpoint = endpoint.clone();
-            let peer = peer.clone();
-            let entry = entry.clone();
-            tokio::spawn(async move {
-                if let Err(err) = send_live_event(endpoint, peer, entry).await {
+        let endpoint = endpoint.clone();
+        let peer = peer.clone();
+        let entries = entries.to_vec();
+        tokio::spawn(async move {
+            for entry in entries {
+                if let Err(err) = send_live_event(endpoint.clone(), peer.clone(), entry).await {
                     eprintln!("live event send error: {err}");
                 }
-            });
-        }
+            }
+        });
     }
 }

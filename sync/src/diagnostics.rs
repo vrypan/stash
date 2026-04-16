@@ -15,7 +15,7 @@ pub(crate) fn sync_io_error(context: impl AsRef<str>, err: impl std::fmt::Displa
     io::Error::other(format!("{}: {}", context.as_ref(), err))
 }
 
-pub(crate) fn emit_snapshot(id: &str, entry: SnapshotEntry) {
+pub(crate) fn emit_snapshot(id: &str, entry: &SnapshotEntry) {
     eprintln!("{} {} {}", entry.changed_at_ms, id, hex_hash(entry.hash));
 }
 

@@ -190,7 +190,7 @@ async fn run_async(config: Config) -> io::Result<()> {
                     continue;
                 }
                 for update in &updates {
-                    emit_snapshot(&update.ulid, snapshot_from_wire(update));
+                    emit_snapshot(&update.ulid, &snapshot_from_wire(update));
                 }
                 write_cache_file(&state.cache_path, &state.entries, DAEMON_CACHE_VERSION)?;
                 broadcast_entries(&state.endpoint, &state.peers, &updates, None).await;
@@ -210,7 +210,6 @@ async fn run_async(config: Config) -> io::Result<()> {
                     broadcast_entries(&state.endpoint, &state.peers, &updates, Some(peer)).await;
                 }
                 if let Some(reply) = respond_to {
-                    write_cache_file(&state.cache_path, &state.entries, DAEMON_CACHE_VERSION)?;
                     let _ = reply.send(());
                 }
             }
@@ -226,9 +225,6 @@ async fn run_async(config: Config) -> io::Result<()> {
                     &state.local_origin,
                     buckets,
                 );
-                if result.is_ok() {
-                    write_cache_file(&state.cache_path, &state.entries, DAEMON_CACHE_VERSION)?;
-                }
                 let _ = respond_to.send(result);
             }
             Command::CollectSnapshotBuckets { level, parents, respond_to } => {
@@ -240,9 +236,6 @@ async fn run_async(config: Config) -> io::Result<()> {
                     level,
                     &parents,
                 );
-                if result.is_ok() {
-                    write_cache_file(&state.cache_path, &state.entries, DAEMON_CACHE_VERSION)?;
-                }
                 let _ = respond_to.send(result);
             }
             Command::CollectSnapshotMeta { buckets, respond_to } => {
@@ -253,9 +246,6 @@ async fn run_async(config: Config) -> io::Result<()> {
                     &state.local_origin,
                     &buckets,
                 );
-                if result.is_ok() {
-                    write_cache_file(&state.cache_path, &state.entries, DAEMON_CACHE_VERSION)?;
-                }
                 let _ = respond_to.send(result);
             }
             Command::CollectSnapshotEntries { ids, respond_to } => {
@@ -266,9 +256,6 @@ async fn run_async(config: Config) -> io::Result<()> {
                     &state.local_origin,
                     &ids,
                 );
-                if result.is_ok() {
-                    write_cache_file(&state.cache_path, &state.entries, DAEMON_CACHE_VERSION)?;
-                }
                 let _ = respond_to.send(result);
             }
             Command::SyncPeer(peer) => {
@@ -280,7 +267,6 @@ async fn run_async(config: Config) -> io::Result<()> {
                     4,
                     &[],
                 )?;
-                write_cache_file(&state.cache_path, &state.entries, DAEMON_CACHE_VERSION)?;
                 let tx = cmd_tx.clone();
                 let endpoint = state.endpoint.clone();
                 tokio::spawn(async move {
