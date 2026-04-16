@@ -34,7 +34,6 @@ required-features = ["completion"]
 completion = ["dep:clap_complete"]
 
 [dependencies]
-blake3 = "1.8.2"
 clap = { version = "4.5.40", default-features = false, features = ["derive", "std", "color", "help", "usage", "error-context"] }
 clap_complete = { version = "4.5.49", optional = true }
 rkyv = "0.8.15"
