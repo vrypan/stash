@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub(crate) struct DecoratedEntry {
+pub struct DecoratedEntry {
     pub(crate) id: String,
     pub(crate) size_bytes: String,
     pub(crate) size_human: String,
@@ -23,7 +23,7 @@ pub(crate) struct DecoratedEntry {
     pub(crate) meta_inline: String,
 }
 
-pub(crate) fn decorate_entries(
+pub fn decorate_entries(
     items: &[Meta],
     id_mode: &str,
     date_mode: &str,
@@ -410,7 +410,12 @@ fn civil_to_days(year: i32, month: u32, day: u32) -> i64 {
 // Structured listing output
 // ---------------------------------------------------------------------------
 
-pub(crate) fn print_entries_json(items: &[Meta], date_mode: &str, chars: usize) {
+pub fn print_entries_json<W: Write>(
+    out: &mut W,
+    items: &[Meta],
+    date_mode: &str,
+    chars: usize,
+) {
     #[derive(Serialize)]
     struct LogJsonEntry {
         id: String,
@@ -430,7 +435,7 @@ pub(crate) fn print_entries_json(items: &[Meta], date_mode: &str, chars: usize) 
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
-    let out: Vec<LogJsonEntry> = items
+    let entries: Vec<LogJsonEntry> = items
         .iter()
         .enumerate()
         .map(|(idx, item)| {
@@ -453,6 +458,6 @@ pub(crate) fn print_entries_json(items: &[Meta], date_mode: &str, chars: usize) 
         })
         .collect();
 
-    serde_json::to_writer_pretty(io::stdout(), &out).expect("write log json");
-    println!();
+    serde_json::to_writer_pretty(&mut *out, &entries).expect("write log json");
+    writeln!(out).expect("write log json newline");
 }

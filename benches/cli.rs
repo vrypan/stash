@@ -127,6 +127,48 @@ fn bench_ls_json_all(c: &mut Criterion) {
     });
 }
 
+// In-process variants: eliminate process-spawn variance so list/render
+// regressions are measurable without noise from fork/exec/linker.
+
+fn bench_ls_lib(c: &mut Criterion) {
+    let dir = bench_stash_dir();
+    unsafe { std::env::set_var("STASH_DIR", dir) };
+    let meta_sel = stash::store::parse_meta_selection(&[], false).unwrap();
+    c.bench_function("BenchmarkLsLib1000", |b| {
+        b.iter(|| {
+            let items = stash::store::list().unwrap();
+            stash::display::decorate_entries(&items, "short", "ls", 80, &meta_sel)
+        })
+    });
+    unsafe { std::env::remove_var("STASH_DIR") };
+}
+
+fn bench_ls_lib_all(c: &mut Criterion) {
+    let dir = bench_stash_dir();
+    unsafe { std::env::set_var("STASH_DIR", dir) };
+    let meta_sel = stash::store::parse_meta_selection(&[], true).unwrap();
+    c.bench_function("BenchmarkLsLibAll1000", |b| {
+        b.iter(|| {
+            let items = stash::store::list().unwrap();
+            stash::display::decorate_entries(&items, "short", "ls", 80, &meta_sel)
+        })
+    });
+    unsafe { std::env::remove_var("STASH_DIR") };
+}
+
+fn bench_ls_json_lib(c: &mut Criterion) {
+    let dir = bench_stash_dir();
+    unsafe { std::env::set_var("STASH_DIR", dir) };
+    c.bench_function("BenchmarkLsJsonLib1000", |b| {
+        b.iter(|| {
+            let items = stash::store::list().unwrap();
+            let mut sink = std::io::sink();
+            stash::display::print_entries_json(&mut sink, &items, "iso", 80)
+        })
+    });
+    unsafe { std::env::remove_var("STASH_DIR") };
+}
+
 fn bench_attr(c: &mut Criterion) {
     let dir = bench_stash_dir();
     c.bench_function("BenchmarkAttrNewest1000", |b| {
@@ -196,6 +238,8 @@ fn bench_config() -> Criterion {
 criterion_group! {
     name = cli_benches;
     config = bench_config();
-    targets = bench_ls, bench_ls_all, bench_ls_json, bench_ls_json_all, bench_attr, bench_push, bench_push_100, bench_cat
+    targets = bench_ls, bench_ls_all, bench_ls_json, bench_ls_json_all,
+              bench_ls_lib, bench_ls_lib_all, bench_ls_json_lib,
+              bench_attr, bench_push, bench_push_100, bench_cat
 }
 criterion_main!(cli_benches);

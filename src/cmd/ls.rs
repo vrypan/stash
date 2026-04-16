@@ -111,7 +111,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     let items = super::collect_entries(&meta_sel, args.reverse, args.number)?;
     let ls_date_mode = args.date.as_deref().unwrap_or("ls");
     if args.json {
-        print_entries_json(&items, ls_date_mode, args.chars);
+        print_entries_json(&mut io::stdout(), &items, ls_date_mode, args.chars);
         return Ok(());
     }
 
