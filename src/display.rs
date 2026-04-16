@@ -68,11 +68,14 @@ fn decorate_entry(
         Vec::new()
     };
     let meta_inline = if meta_sel.show_all && !item.attrs.is_empty() {
-        item.attrs
-            .values()
-            .map(|value| escape_attr_output(value))
-            .collect::<Vec<Cow<str>>>()
-            .join("  ")
+        let mut s = String::new();
+        for (i, value) in item.attrs.values().enumerate() {
+            if i > 0 {
+                s.push_str("  ");
+            }
+            s.push_str(&escape_attr_output(value));
+        }
+        s
     } else {
         String::new()
     };

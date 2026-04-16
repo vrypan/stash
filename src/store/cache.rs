@@ -70,32 +70,33 @@ fn read_list_cache_file() -> io::Result<ListCacheFile> {
     Ok(cache)
 }
 
-pub(super) fn write_list_cache(items: &[Meta]) -> io::Result<()> {
+pub(super) fn write_list_cache(items: Vec<Meta>) -> io::Result<Vec<Meta>> {
     super::init()?;
     let path = super::list_cache_path()?;
-    let attr_keys = build_attr_key_index(items);
+    let attr_keys = build_attr_key_index(&items);
     let cache = ListCacheFile {
         version: LIST_CACHE_VERSION,
         data_mtime: dir_mtime_key(&super::data_dir()?)?,
         attr_mtime: dir_mtime_key(&super::attr_dir()?)?,
-        items: items.to_vec(),
+        items,
         attr_keys,
     };
     let encoded =
         rkyv::to_bytes::<rkyv::rancor::Error>(&cache).map_err(io::Error::other)?;
-    fs::write(path, encoded)
+    fs::write(path, encoded)?;
+    Ok(cache.items)
 }
 
 fn build_attr_key_index(items: &[Meta]) -> BTreeMap<String, usize> {
     let mut out = BTreeMap::new();
     for item in items {
         for key in item.attrs.keys() {
-            if let Some(count) = out.get_mut(key) {
-                *count += 1;
-            } else {
-                out.insert(key.clone(), 1);
-            }
+            *out.entry(key.clone()).or_insert(0) += 1;
         }
     }
     out
+}
+
+pub(super) fn attr_key_index_vec(items: &[Meta]) -> Vec<(String, usize)> {
+    build_attr_key_index(items).into_iter().collect()
 }

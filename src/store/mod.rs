@@ -270,8 +270,7 @@ pub fn list_entry_ids() -> io::Result<Vec<String>> {
         .filter_map(|item| item.ok())
         .map(|item| item.file_name().to_string_lossy().into_owned())
         .collect();
-    ids.sort_unstable();
-    ids.reverse();
+    ids.sort_unstable_by(|a, b| b.cmp(a));
     Ok(ids)
 }
 
@@ -286,7 +285,7 @@ pub fn list() -> io::Result<Vec<Meta>> {
             out.push(meta);
         }
     }
-    cache::write_list_cache(&out)?;
+    let out = cache::write_list_cache(out)?;
     Ok(out)
 }
 
@@ -294,11 +293,11 @@ pub fn all_attr_keys() -> io::Result<Vec<(String, usize)>> {
     if let Ok(keys) = cache::read_attr_keys() {
         return Ok(keys);
     }
+    // list() will rebuild and write the cache (including attr keys) if it is
+    // cold; compute the index directly from the items we already have rather
+    // than writing and then re-reading the cache file.
     let items = list()?;
-    // Fall back to rebuilding from the list. write_list_cache already stored
-    // the attr key index, so the next call will hit the cache.
-    cache::write_list_cache(&items)?;
-    cache::read_attr_keys()
+    Ok(cache::attr_key_index_vec(&items))
 }
 
 pub fn newest() -> io::Result<Meta> {

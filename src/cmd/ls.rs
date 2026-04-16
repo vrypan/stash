@@ -276,7 +276,7 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             max_inline_meta = max_inline_meta.max(header_attrs.len());
         }
         for (idx, key) in meta_sel.display_tags.iter().enumerate() {
-            meta_widths[idx] = meta_widths[idx].max(key.chars().count());
+            meta_widths[idx] = meta_widths[idx].max(key.len());
         }
     }
 
