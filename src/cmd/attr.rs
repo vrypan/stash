@@ -1,8 +1,9 @@
 use clap::{ArgAction, Args};
 use std::collections::BTreeMap;
-use std::io;
+use std::io::{self, Write};
 
-use crate::display::{attr_value, escape_attr_output, is_writable_attr_key};
+use crate::display::{attr_value, color_enabled, escape_attr_output, is_writable_attr_key,
+    write_colored};
 use crate::store;
 
 #[derive(Args, Debug, Clone)]
@@ -35,9 +36,13 @@ pub(crate) struct AttrArgs {
         help = "Include preview pseudo-property when available"
     )]
     preview: bool,
+
+    #[arg(long, default_value = "true", help = "Color output: true or false")]
+    color: String,
 }
 
 pub(super) fn attr_command(args: AttrArgs) -> io::Result<()> {
+    let color = color_enabled(&args.color)?;
     let id = store::resolve(&args.reference)?;
     if !args.unset.is_empty() {
         if !args.items.is_empty() {
@@ -120,6 +125,9 @@ pub(super) fn attr_command(args: AttrArgs) -> io::Result<()> {
         ));
     }
 
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+
     if !args.items.is_empty() {
         for key in &args.items {
             let Some(value) = attr_value(&meta, key, args.preview) else {
@@ -128,19 +136,25 @@ pub(super) fn attr_command(args: AttrArgs) -> io::Result<()> {
                     format!("attribute not found: {key}"),
                 ));
             };
-            println!("{}{}{}", key, args.separator, escape_attr_output(&value));
+            write_colored(&mut out, key, "36", color)?;
+            writeln!(out, "{}{}", args.separator, escape_attr_output(&value))?;
         }
         return Ok(());
     }
 
-    println!("id{}{}", args.separator, meta.display_id());
-    println!("ts{}{}", args.separator, meta.ts);
-    println!("size{}{}", args.separator, meta.size);
+    write_colored(&mut out, "id", "36", color)?;
+    writeln!(out, "{}{}", args.separator, meta.display_id())?;
+    write_colored(&mut out, "ts", "36", color)?;
+    writeln!(out, "{}{}", args.separator, meta.ts)?;
+    write_colored(&mut out, "size", "36", color)?;
+    writeln!(out, "{}{}", args.separator, meta.size)?;
     for (k, v) in &meta.attrs {
-        println!("{}{}{}", k, args.separator, escape_attr_output(v));
+        write_colored(&mut out, k, "36", color)?;
+        writeln!(out, "{}{}", args.separator, escape_attr_output(v))?;
     }
     if args.preview && !meta.preview.is_empty() {
-        println!("preview{}{}", args.separator, escape_attr_output(&meta.preview));
+        write_colored(&mut out, "preview", "36", color)?;
+        writeln!(out, "{}{}", args.separator, escape_attr_output(&meta.preview))?;
     }
     Ok(())
 }
