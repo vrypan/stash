@@ -226,9 +226,7 @@ fn bench_cat_dir() -> &'static Path {
 
 fn bench_cat(c: &mut Criterion) {
     let dir = bench_cat_dir();
-    c.bench_function("BenchmarkCat10MB", |b| {
-        b.iter(|| run_cli(dir, &["cat"]))
-    });
+    c.bench_function("BenchmarkCat10MB", |b| b.iter(|| run_cli(dir, &["cat"])));
 }
 
 fn bench_config() -> Criterion {

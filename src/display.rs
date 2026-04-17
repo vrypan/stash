@@ -38,7 +38,15 @@ pub fn decorate_entries(
         .iter()
         .enumerate()
         .map(|(idx, item)| {
-            decorate_entry(item, idx, id_mode, date_mode, preview_chars, meta_sel, now_secs)
+            decorate_entry(
+                item,
+                idx,
+                id_mode,
+                date_mode,
+                preview_chars,
+                meta_sel,
+                now_secs,
+            )
         })
         .collect()
 }
@@ -113,7 +121,10 @@ pub(crate) fn display_id(item: &Meta, idx: usize, mode: &str) -> String {
 // because it has no special meaning outside the storage format.
 pub(crate) fn escape_attr_output(input: &str) -> Cow<'_, str> {
     // Fast path: most attribute values have no special chars — borrow directly.
-    if !input.bytes().any(|b| matches!(b, b'\\' | b'\n' | b'\r' | b'\t')) {
+    if !input
+        .bytes()
+        .any(|b| matches!(b, b'\\' | b'\n' | b'\r' | b'\t'))
+    {
         return Cow::Borrowed(input);
     }
     let mut out = String::with_capacity(input.len());
@@ -410,12 +421,7 @@ fn civil_to_days(year: i32, month: u32, day: u32) -> i64 {
 // Structured listing output
 // ---------------------------------------------------------------------------
 
-pub fn print_entries_json<W: Write>(
-    out: &mut W,
-    items: &[Meta],
-    date_mode: &str,
-    chars: usize,
-) {
+pub fn print_entries_json<W: Write>(out: &mut W, items: &[Meta], date_mode: &str, chars: usize) {
     #[derive(Serialize)]
     struct LogJsonEntry {
         id: String,

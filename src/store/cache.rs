@@ -10,12 +10,7 @@ use super::Meta;
 const LIST_CACHE_VERSION: u32 = 3;
 
 #[derive(
-    Debug,
-    SerdeSerialize,
-    SerdeDeserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
+    Debug, SerdeSerialize, SerdeDeserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
 struct ListCacheFile {
     version: u32,
@@ -59,8 +54,8 @@ fn read_list_cache_file() -> io::Result<ListCacheFile> {
     let current_attr = dir_mtime_key(&super::attr_dir()?)?;
 
     let data = fs::read(path)?;
-    let cache = rkyv::from_bytes::<ListCacheFile, rkyv::rancor::Error>(&data)
-        .map_err(io::Error::other)?;
+    let cache =
+        rkyv::from_bytes::<ListCacheFile, rkyv::rancor::Error>(&data).map_err(io::Error::other)?;
     if cache.version != LIST_CACHE_VERSION {
         return Err(io::Error::other("stale list cache"));
     }
@@ -81,8 +76,7 @@ pub(super) fn write_list_cache(items: Vec<Meta>) -> io::Result<Vec<Meta>> {
         items,
         attr_keys,
     };
-    let encoded =
-        rkyv::to_bytes::<rkyv::rancor::Error>(&cache).map_err(io::Error::other)?;
+    let encoded = rkyv::to_bytes::<rkyv::rancor::Error>(&cache).map_err(io::Error::other)?;
     fs::write(path, encoded)?;
     Ok(cache.items)
 }

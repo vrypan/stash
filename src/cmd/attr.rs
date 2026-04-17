@@ -2,8 +2,9 @@ use clap::{ArgAction, Args};
 use std::collections::BTreeMap;
 use std::io::{self, Write};
 
-use crate::display::{attr_value, color_enabled, escape_attr_output, is_writable_attr_key,
-    write_colored};
+use crate::display::{
+    attr_value, color_enabled, escape_attr_output, is_writable_attr_key, write_colored,
+};
 use crate::store;
 
 #[derive(Args, Debug, Clone)]
@@ -154,7 +155,12 @@ pub(super) fn attr_command(args: AttrArgs) -> io::Result<()> {
     }
     if args.preview && !meta.preview.is_empty() {
         write_colored(&mut out, "preview", "36", color)?;
-        writeln!(out, "{}{}", args.separator, escape_attr_output(&meta.preview))?;
+        writeln!(
+            out,
+            "{}{}",
+            args.separator,
+            escape_attr_output(&meta.preview)
+        )?;
     }
     Ok(())
 }
