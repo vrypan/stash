@@ -1,70 +1,63 @@
 #!/usr/bin/env sh
-# chstash.sh — switch between named stashes
+# chstash.sh — switch between stash pockets
 #
 # Source this file in your shell config:
 #   source /path/to/chstash.sh
-#
-# Named stashes live under STASH_BASE (default: ~/.stashes).
-# A bare name like "work" resolves to $STASH_BASE/work.
-# An absolute or home-relative path is used as-is.
+
+_chstash_list_pockets() {
+    if command -v stash >/dev/null 2>&1; then
+        STASH_POCKET= stash attrs pocket 2>/dev/null
+    fi
+}
 
 chstash() {
-    local base="${STASH_BASE:-$HOME/.stashes}"
-
     case "$1" in
         "")
-            if [ -n "$STASH_DIR" ]; then
-                echo "$STASH_DIR"
+            if [ -n "${STASH_POCKET:-}" ]; then
+                echo "$STASH_POCKET"
             else
-                echo "(default: $HOME/.stash)"
+                echo "(all pockets)"
             fi
             return 0
             ;;
         -)
-            unset STASH_DIR
-            echo "stash: using default ($HOME/.stash)"
+            unset STASH_POCKET
+            echo "stash: all pockets"
             return 0
             ;;
         -l|--list)
-            if [ -d "$base" ]; then
-                ls "$base"
+            local pockets
+            pockets="$(_chstash_list_pockets)"
+            if [ -n "$pockets" ]; then
+                printf '%s\n' "$pockets"
             else
-                echo "(no named stashes in $base)"
+                echo "(no pockets)"
             fi
             return 0
             ;;
         -h|--help)
             cat <<'EOF'
-usage: chstash [name|path|-|--list]
+usage: chstash [pocket|-|--list]
 
-  (no args)    show active stash
-  name         switch to $STASH_BASE/name (created if needed)
-  /path        switch to absolute path (created if needed)
-  -            reset to default (~/.stash)
-  -l, --list   list named stashes in $STASH_BASE
+  (no args)    show active pocket
+  pocket       set STASH_POCKET=pocket
+  -            clear STASH_POCKET
+  -l, --list   list known pocket values via `stash attrs pocket`
   -h, --help   show this help
 EOF
             return 0
             ;;
     esac
 
-    local dir
-    case "$1" in
-        /*|~*) dir="$1" ;;
-        *)     dir="$base/$1" ;;
-    esac
-
-    mkdir -p "$dir" || return 1
-    export STASH_DIR="$dir"
-    echo "stash: $dir"
+    export STASH_POCKET="$1"
+    echo "stash pocket: $STASH_POCKET"
 }
 
 # Completion — zsh
 if [ -n "$ZSH_VERSION" ]; then
     _chstash() {
-        local base="${STASH_BASE:-$HOME/.stashes}"
         local -a names
-        [[ -d "$base" ]] && names=("${(@f)$(ls "$base" 2>/dev/null)}")
+        names=("${(@f)$(_chstash_list_pockets)}")
         compadd -a names
     }
     compdef _chstash chstash
@@ -72,10 +65,9 @@ if [ -n "$ZSH_VERSION" ]; then
 # Completion — bash
 elif [ -n "$BASH_VERSION" ]; then
     _chstash_complete() {
-        local base="${STASH_BASE:-$HOME/.stashes}"
         local cur="${COMP_WORDS[COMP_CWORD]}"
         local names
-        names=$(ls "$base" 2>/dev/null)
+        names="$(_chstash_list_pockets)"
         COMPREPLY=($(compgen -W "$names" -- "$cur"))
     }
     complete -F _chstash_complete chstash

@@ -8,31 +8,33 @@ inspiration for integrating `stash` into your own workflows and shell setup.
 ## Starship
 
 If you use [Starship](https://starship.rs/), you can add a custom prompt module
-that shows the number of items currently stored in your stash.
+that shows the number of items currently visible in your stash, and the active
+pocket when one is selected.
 
 Add this to `~/.config/starship.toml`:
 
 ```toml
-[custom.stash_count]
-description = "Show stash item count"
+[custom.stash]
+description = "Show stash item count and active pocket"
 command = '''
-count=$(find "${STASH_DIR:-$HOME/.stash}/attr" -type f 2>/dev/null | wc -l | tr -d ' ')
-if [ -n "$STASH_DIR" ] && [ "$STASH_DIR" != "$HOME/.stash" ]; then
-  printf '%s~{@ %s' "$(basename "$STASH_DIR")" "$count" 
+if [ -n "${STASH_POCKET:-}" ]; then
+  count=$(stash attrs pocket --count 2>/dev/null | awk -F '\t' -v pocket="$STASH_POCKET" '$1 == pocket { print $2 }')
+  count=${count:-0}
+  printf '%s~{@ %s' "$STASH_POCKET" "$count"
 else
+  count=$(find "${STASH_DIR:-$HOME/.stash}/attr" -type f 2>/dev/null | wc -l | tr -d ' ')
   printf '~{@ %s' "$count"
 fi
 '''
-when = 'test -d "${STASH_DIR:-$HOME/.stash}/attr"'
+when = 'command -v stash >/dev/null 2>&1'
 shell = ["bash", "--noprofile", "--norc"]
 style = "bold cyan"
 format = "[$output]($style)"
 ```
 
-Shows `~{@ 42` when using the default stash, and `~{@ 12 (work)` when a
-named stash is active.
+Shows `~{@ 42` when viewing all pockets, and `work~{@ 12` when `STASH_POCKET=work`.
 
-Then add `${custom.stash_count}` to your main Starship `format`.
+Then add `${custom.stash}` to your main Starship `format`.
 
 ## `stash-copy`
 
@@ -129,7 +131,7 @@ Behavior:
 
 ## `chstash.sh`
 
-Switches between named stashes by setting `STASH_DIR`. Works with both
+Switches between stash pockets by setting `STASH_POCKET`. Works with both
 bash and zsh, and activates tab completion automatically based on the
 running shell.
 
@@ -144,22 +146,14 @@ source /path/to/scripts/chstash.sh
 Usage:
 
 ```sh
-chstash           # show the active stash (or default)
-chstash work      # switch to ~/.stashes/work (created if needed)
-chstash /tmp/foo  # switch to an absolute path (created if needed)
-chstash -         # reset to default (~/.stash)
-chstash --list    # list named stashes in $STASH_BASE
+chstash           # show the active pocket (or all pockets)
+chstash work      # set STASH_POCKET=work
+chstash -         # clear STASH_POCKET
+chstash --list    # list known pocket values
 ```
 
-Named stashes live under `~/.stashes` by default. Override with
-`STASH_BASE`:
-
-```sh
-export STASH_BASE=~/projects
-chstash myapp     # switches to ~/projects/myapp
-```
-
-Tab completion lists existing named stashes in `$STASH_BASE`.
+`chstash --list` and tab completion use `stash attrs pocket`, so they show
+known pocket values already present in the stash.
 
 ## zsh-specific
 
