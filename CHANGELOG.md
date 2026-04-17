@@ -2,10 +2,12 @@
 
 All notable changes to `stash` are documented in this file.
 
-## Unreleased
+## 0.9.0
 
 - Color attribute keys in `stash attr` output (cyan when stdout is a
   terminal; disable with `--color false`).
+- Add attribute value listing, so attribute-oriented workflows can inspect
+  the distinct values stored for a given key.
 - Performance improvements in listing hot paths:
   - Replace sort + reverse with a single descending sort in
     `list_entry_ids`.
@@ -18,6 +20,13 @@ All notable changes to `stash` are documented in this file.
 - Add in-process Criterion benchmarks (`BenchmarkLsLib1000`,
   `BenchmarkLsLibAll1000`, `BenchmarkLsJsonLib1000`) for reliable
   regression detection without process-spawn variance.
+- Improve `stash rm` confirmation output:
+  - show entry previews before deletion
+  - reuse the long-listing rendering for a more informative confirmation
+- Expand stash-switching workflows:
+  - add `chstash.sh` helper for switching between named stashes
+  - add pocket-based stash selection (STASH_POCKET)
+  - update `chstash` to use pockets in the selector flow
 
 ## 0.8.1
 
