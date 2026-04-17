@@ -318,6 +318,16 @@ pub fn all_attr_keys() -> io::Result<Vec<(String, usize)>> {
     Ok(cache::attr_key_index_vec(&items))
 }
 
+pub fn attr_values(key: &str) -> io::Result<Vec<(String, usize)>> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for item in visible_list()? {
+        if let Some(value) = item.attrs.get(key) {
+            *counts.entry(value.clone()).or_default() += 1;
+        }
+    }
+    Ok(counts.into_iter().collect())
+}
+
 pub fn newest() -> io::Result<Meta> {
     visible_list()?
         .into_iter()

@@ -72,6 +72,9 @@ struct CatArgs {
 
 #[derive(Args, Debug, Clone)]
 struct AttrsArgs {
+    #[arg(help = "Optional attribute key to list distinct values for")]
+    key: Option<String>,
+
     #[arg(long, help = "Include entry count")]
     count: bool,
 }
@@ -265,6 +268,17 @@ fn pop_command() -> io::Result<()> {
 }
 
 fn attrs_command(args: AttrsArgs) -> io::Result<()> {
+    if let Some(key) = args.key.as_deref() {
+        for (value, count) in store::attr_values(key)? {
+            if args.count {
+                println!("{value}\t{count}");
+            } else {
+                println!("{value}");
+            }
+        }
+        return Ok(());
+    }
+
     for (key, count) in store::all_attr_keys()? {
         if args.count {
             println!("{key}\t{count}");

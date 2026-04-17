@@ -107,12 +107,16 @@ List attribute keys seen across the stash:
 
 ```bash
 stash attrs
+stash attrs <key>
 stash attrs --count
+stash attrs <key> --count
 ```
 
 Notes:
 - `stash attrs` prints one attribute key per line
 - `stash attrs --count` prints `key<TAB>count`
+- `stash attrs <key>` prints distinct values for that attribute, one per line
+- `stash attrs <key> --count` prints `value<TAB>count`
 - this command lists user-defined attribute keys stored in entry attrs
 - use `stash ls -a key` to see matching entries
 - use `stash attr <ref>` to inspect the attributes of one specific entry

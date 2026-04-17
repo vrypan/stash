@@ -327,6 +327,24 @@ fn ls_log_and_attrs_cover_current_listing_modes() {
         .success()
         .stdout("filename\t1\nkind\t1\nlabel\t1\nnote\t1\ntype\t2\n");
 
+    stash_cmd(dir.path())
+        .args(["attrs", "type"])
+        .assert()
+        .success()
+        .stdout("text\n");
+
+    stash_cmd(dir.path())
+        .args(["attrs", "note"])
+        .assert()
+        .success()
+        .stdout("report\n");
+
+    stash_cmd(dir.path())
+        .args(["attrs", "type", "--count"])
+        .assert()
+        .success()
+        .stdout("text\t2\n");
+
     let mut ls_json_cmd = stash_cmd(dir.path());
     ls_json_cmd.args(["ls", "--json", "-a", "kind"]);
     let ls_json = stdout_string(&mut ls_json_cmd);
@@ -492,6 +510,27 @@ fn pocket_alias_maps_to_attr_filter_and_write() {
         .assert()
         .success()
         .stdout("gamma\n");
+}
+
+#[test]
+fn attrs_key_lists_distinct_values_within_active_pocket() {
+    let dir = test_stash_dir();
+    let _ = push_text(dir.path(), "a1\n", &["kind=note", "pocket=alpha"]);
+    let _ = push_text(dir.path(), "a2\n", &["kind=note", "pocket=alpha"]);
+    let _ = push_text(dir.path(), "a3\n", &["kind=task", "pocket=alpha"]);
+    let _ = push_text(dir.path(), "b1\n", &["kind=note", "pocket=beta"]);
+
+    stash_cmd_in_pocket(dir.path(), "alpha")
+        .args(["attrs", "kind"])
+        .assert()
+        .success()
+        .stdout("note\ntask\n");
+
+    stash_cmd_in_pocket(dir.path(), "alpha")
+        .args(["attrs", "kind", "--count"])
+        .assert()
+        .success()
+        .stdout("note\t2\ntask\t1\n");
 }
 
 #[cfg(feature = "completion")]

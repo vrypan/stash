@@ -113,6 +113,7 @@ In that model:
   attribute flag, and preview
 - `stash ls --headers ...` adds column labels to tabular output
 - `stash attrs --count` shows which user-defined attributes exist across the stash
+- `stash attrs <key>` lists the distinct values seen for one attribute
 - `stash cat` reads an entry by stack ref or ID
 - `stash rm` deletes an entry by stack ref or ID, or removes entries relative
   to a ref with `--before` or `--after`
