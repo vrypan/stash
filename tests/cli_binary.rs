@@ -418,13 +418,18 @@ fn rm_and_pop_remove_expected_entries() {
 }
 
 #[test]
-fn rm_confirmation_lists_preview_text() {
+fn rm_confirmation_uses_long_listing_view() {
     let dir = test_stash_dir();
     let first = push_text(dir.path(), "first preview body\n", &[]);
     let second = push_text(dir.path(), "second preview body\n", &[]);
 
+    let mut ls_cmd = stash_cmd(dir.path());
+    ls_cmd.args(["ls", "-l", "--color=false"]);
+    let ls_out = stdout_string(&mut ls_cmd);
+    let ls_lines: Vec<&str> = ls_out.lines().take(2).collect();
+
     let output = stash_cmd(dir.path())
-        .args(["rm", &first, &second])
+        .args(["rm", &second, &first])
         .write_stdin("n\n")
         .assert()
         .success()
@@ -432,8 +437,8 @@ fn rm_confirmation_lists_preview_text() {
         .clone();
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("first preview body"));
-    assert!(stderr.contains("second preview body"));
+    assert!(stderr.contains(ls_lines[0]));
+    assert!(stderr.contains(ls_lines[1]));
     assert!(stderr.contains("Continue? [y/N]"));
 }
 

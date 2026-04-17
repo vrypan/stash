@@ -2,7 +2,7 @@ use clap::{ArgAction, Args};
 use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Write};
 
-use crate::display::preview_snippet;
+use crate::display::render_long_entry_lines;
 use crate::store;
 use crate::store::Meta;
 
@@ -97,27 +97,8 @@ fn confirm_rm_entries(reason: &str, entries: &[Meta]) -> io::Result<bool> {
         if entries.len() == 1 { "y" } else { "ies" },
         reason
     );
-    for entry in entries {
-        let preview = preview_snippet(&entry.preview, 80);
-        if let Some(name) = entry.attrs.get("filename") {
-            if preview.is_empty() {
-                eprintln!("  {}  {}  {}", entry.short_id(), entry.ts, name);
-            } else {
-                eprintln!(
-                    "  {}  {}  {}  {}",
-                    entry.short_id(),
-                    entry.ts,
-                    name,
-                    preview
-                );
-            }
-        } else {
-            if preview.is_empty() {
-                eprintln!("  {}  {}", entry.short_id(), entry.ts);
-            } else {
-                eprintln!("  {}  {}  {}", entry.short_id(), entry.ts, preview);
-            }
-        }
+    for line in render_long_entry_lines(entries) {
+        eprintln!("  {line}");
     }
     eprint!("Continue? [y/N] ");
     io::stderr().flush()?;

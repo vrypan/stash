@@ -51,6 +51,52 @@ pub fn decorate_entries(
         .collect()
 }
 
+pub fn render_long_entry_lines(items: &[Meta]) -> Vec<String> {
+    let meta_sel = MetaSelection::default();
+    let decorated = decorate_entries(items, "short", "ls", 0, &meta_sel);
+    let mut rows = Vec::with_capacity(decorated.len());
+
+    let mut max_id = 0usize;
+    let mut max_size = 0usize;
+    let mut max_date = 0usize;
+    let mut max_attr_flag = 0usize;
+
+    for (row, item) in decorated.iter().zip(items.iter()) {
+        max_id = max_id.max(row.id.len());
+        max_size = max_size.max(row.size_human.len());
+        max_date = max_date.max(row.date.len());
+        if !item.attrs.is_empty() {
+            max_attr_flag = max_attr_flag.max(1);
+        }
+    }
+
+    let term_width = terminal_width().unwrap_or(80);
+    let fixed = max_id + 2 + max_size + 2 + max_date + 2 + max_attr_flag;
+    let preview_chars = term_width.saturating_sub(fixed + 2).max(20);
+    let decorated = decorate_entries(items, "short", "ls", preview_chars, &meta_sel);
+
+    for (row, item) in decorated.into_iter().zip(items.iter()) {
+        let mut line = String::new();
+        line.push_str(&pad_right(&row.id, max_id));
+        line.push_str("  ");
+        line.push_str(&pad_left(&row.size_human, max_size));
+        line.push_str("  ");
+        line.push_str(&pad_left(&row.date, max_date));
+        if max_attr_flag > 0 {
+            line.push_str("  ");
+            let attr_flag = if item.attrs.is_empty() { "" } else { "*" };
+            line.push_str(&pad_left(attr_flag, max_attr_flag));
+        }
+        if !row.preview.is_empty() {
+            line.push_str("  ");
+            line.push_str(&row.preview);
+        }
+        rows.push(line);
+    }
+
+    rows
+}
+
 fn decorate_entry(
     item: &Meta,
     idx: usize,
