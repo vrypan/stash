@@ -2,6 +2,7 @@ use clap::{ArgAction, Args};
 use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Write};
 
+use crate::display::preview_snippet;
 use crate::store;
 use crate::store::Meta;
 
@@ -97,10 +98,25 @@ fn confirm_rm_entries(reason: &str, entries: &[Meta]) -> io::Result<bool> {
         reason
     );
     for entry in entries {
+        let preview = preview_snippet(&entry.preview, 80);
         if let Some(name) = entry.attrs.get("filename") {
-            eprintln!("  {}  {}  {}", entry.short_id(), entry.ts, name);
+            if preview.is_empty() {
+                eprintln!("  {}  {}  {}", entry.short_id(), entry.ts, name);
+            } else {
+                eprintln!(
+                    "  {}  {}  {}  {}",
+                    entry.short_id(),
+                    entry.ts,
+                    name,
+                    preview
+                );
+            }
         } else {
-            eprintln!("  {}  {}", entry.short_id(), entry.ts);
+            if preview.is_empty() {
+                eprintln!("  {}  {}", entry.short_id(), entry.ts);
+            } else {
+                eprintln!("  {}  {}  {}", entry.short_id(), entry.ts, preview);
+            }
         }
     }
     eprint!("Continue? [y/N] ");

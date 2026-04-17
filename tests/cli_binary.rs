@@ -418,6 +418,26 @@ fn rm_and_pop_remove_expected_entries() {
 }
 
 #[test]
+fn rm_confirmation_lists_preview_text() {
+    let dir = test_stash_dir();
+    let first = push_text(dir.path(), "first preview body\n", &[]);
+    let second = push_text(dir.path(), "second preview body\n", &[]);
+
+    let output = stash_cmd(dir.path())
+        .args(["rm", &first, &second])
+        .write_stdin("n\n")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("first preview body"));
+    assert!(stderr.contains("second preview body"));
+    assert!(stderr.contains("Continue? [y/N]"));
+}
+
+#[test]
 fn active_pocket_auto_tags_push_and_scopes_positional_refs() {
     let dir = test_stash_dir();
 
