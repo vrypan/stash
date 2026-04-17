@@ -16,6 +16,9 @@ pub(crate) struct LsArgs {
     #[arg(short = 'a', long = "attr", value_name = "name|name=value|+name|++name|++name=value", action = ArgAction::Append, help = "name filters, name=value filters by value, +name shows, ++name is alias for name + +name (repeatable)")]
     attr: Vec<String>,
 
+    #[arg(long = "pocket", value_name = "VALUE", action = ArgAction::Append, help = "Alias for --attr pocket=VALUE (repeatable)")]
+    pocket: Vec<String>,
+
     #[arg(
         short = 'A',
         long = "attrs",
@@ -107,7 +110,13 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
     if let Some(mode) = args.date.as_deref() {
         args.date = Some(normalize_date_mode(mode)?.to_string());
     }
-    let meta_sel = parse_meta_selection(&args.attr, attrs_mode == Some(AttrsMode::List))?;
+    let mut attr_filters = args.attr.clone();
+    attr_filters.extend(
+        args.pocket
+            .iter()
+            .map(|value| format!("{}={value}", crate::store::POCKET_ATTR)),
+    );
+    let meta_sel = parse_meta_selection(&attr_filters, attrs_mode == Some(AttrsMode::List))?;
     let items = super::collect_entries(&meta_sel, args.reverse, args.number)?;
     let ls_date_mode = args.date.as_deref().unwrap_or("ls");
     if args.json {
@@ -332,11 +341,21 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         push_colorized(&mut line, &pad_right(header_id, max_id), "1", style_color);
         if has_size {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(header_size, max_size), "1", style_color);
+            push_colorized(
+                &mut line,
+                &pad_right(header_size, max_size),
+                "1",
+                style_color,
+            );
         }
         if has_date {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(header_date, max_date), "1", style_color);
+            push_colorized(
+                &mut line,
+                &pad_right(header_date, max_date),
+                "1",
+                style_color,
+            );
         }
         if show_count {
             line.push_str("  ");
@@ -358,11 +377,21 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
         if show_name {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(header_name, max_name), "1", style_color);
+            push_colorized(
+                &mut line,
+                &pad_right(header_name, max_name),
+                "1",
+                style_color,
+            );
         }
         for (idx, key) in meta_sel.display_tags.iter().enumerate() {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(key, meta_widths[idx]), "1", style_color);
+            push_colorized(
+                &mut line,
+                &pad_right(key, meta_widths[idx]),
+                "1",
+                style_color,
+            );
         }
         if show_all_meta {
             line.push_str("  ");
@@ -425,7 +454,12 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
         }
         for (idx, value) in row.meta_vals.iter().enumerate() {
             line.push_str("  ");
-            push_colorized(&mut line, &pad_right(value, meta_widths[idx]), "36", style_color);
+            push_colorized(
+                &mut line,
+                &pad_right(value, meta_widths[idx]),
+                "36",
+                style_color,
+            );
         }
         if max_inline_meta > 0 {
             line.push_str("  ");

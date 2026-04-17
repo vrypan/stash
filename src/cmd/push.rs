@@ -11,7 +11,14 @@ pub(crate) struct PushArgs {
     #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     pub(crate) attr: Vec<String>,
 
-    #[arg(long, default_value = "null", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
+    #[arg(long = "pocket", value_name = "VALUE", action = ArgAction::Append, help = "Alias for --attr pocket=VALUE (repeatable)")]
+    pub(crate) pocket: Vec<String>,
+
+    #[arg(
+        long,
+        default_value = "null",
+        help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0"
+    )]
     pub(crate) print: String,
 
     #[arg(help = "Optional file to stash; reads stdin when omitted")]
@@ -23,7 +30,14 @@ pub(crate) struct TeeArgs {
     #[arg(short = 'a', long = "attr", value_name = "key=value", action = ArgAction::Append, help = "Set attribute key=value (repeatable)")]
     pub(crate) attr: Vec<String>,
 
-    #[arg(long, default_value = "null", help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0")]
+    #[arg(long = "pocket", value_name = "VALUE", action = ArgAction::Append, help = "Alias for --attr pocket=VALUE (repeatable)")]
+    pub(crate) pocket: Vec<String>,
+
+    #[arg(
+        long,
+        default_value = "null",
+        help = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0"
+    )]
     pub(crate) print: String,
 
     #[arg(long, num_args = 0..=1, default_value_t = true, default_missing_value = "true", help = "Save captured input when an upstream or processing error happens: true or false")]
@@ -84,8 +98,28 @@ fn parse_meta_flags(values: &[String]) -> io::Result<BTreeMap<String, String>> {
     Ok(attrs)
 }
 
+fn merge_pocket_aliases(attrs: &mut Vec<String>, pockets: &[String]) {
+    attrs.extend(
+        pockets
+            .iter()
+            .map(|value| format!("{}={value}", store::POCKET_ATTR)),
+    );
+}
+
+fn apply_active_pocket(attrs: &mut BTreeMap<String, String>) {
+    if attrs.contains_key(store::POCKET_ATTR) {
+        return;
+    }
+    if let Some(pocket) = store::active_pocket() {
+        attrs.insert(store::POCKET_ATTR.to_string(), pocket);
+    }
+}
+
 pub(super) fn push_command(args: PushArgs) -> io::Result<()> {
-    let mut attrs = parse_meta_flags(&args.attr)?;
+    let mut attr_args = args.attr;
+    merge_pocket_aliases(&mut attr_args, &args.pocket);
+    let mut attrs = parse_meta_flags(&attr_args)?;
+    apply_active_pocket(&mut attrs);
     let print_target = parse_print_target(&args.print)?;
     let id = if let Some(path) = args.file {
         let mut file = File::open(&path)?;
@@ -101,7 +135,10 @@ pub(super) fn push_command(args: PushArgs) -> io::Result<()> {
 }
 
 pub(super) fn tee_command(args: TeeArgs) -> io::Result<()> {
-    let attrs = parse_meta_flags(&args.attr)?;
+    let mut attr_args = args.attr;
+    merge_pocket_aliases(&mut attr_args, &args.pocket);
+    let mut attrs = parse_meta_flags(&attr_args)?;
+    apply_active_pocket(&mut attrs);
     let print_target = parse_print_target(&args.print)?;
     let stdin = io::stdin();
     let mut input = stdin.lock();

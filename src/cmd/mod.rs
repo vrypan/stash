@@ -6,9 +6,9 @@ use clap_complete::{Shell, generate};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use std::io::{self, IsTerminal};
 
-use crate::store::{matches_meta, MetaSelection};
 use crate::store;
 use crate::store::Meta;
+use crate::store::{MetaSelection, matches_meta};
 
 mod attr;
 mod ls;
@@ -62,6 +62,9 @@ struct CatArgs {
 
     #[arg(short = 'a', long = "attr", value_name = "name|name=value", action = ArgAction::Append, help = "Print entries where an attribute is set, or equals a value (repeatable)")]
     attr: Vec<String>,
+
+    #[arg(long = "pocket", value_name = "VALUE", action = ArgAction::Append, help = "Alias for --attr pocket=VALUE (repeatable)")]
+    pocket: Vec<String>,
 
     #[arg(short = 'r', long = "reverse", help = "Print entries in reverse order")]
     reverse: bool,
@@ -129,6 +132,7 @@ pub fn run() -> io::Result<()> {
             if smart_mode_uses_tee(&cli.push) {
                 push::tee_command(push::TeeArgs {
                     attr: cli.push.attr,
+                    pocket: cli.push.pocket,
                     print: cli.push.print,
                     save_on_error: true,
                 })
@@ -145,7 +149,7 @@ fn smart_mode_uses_tee(args: &push::PushArgs) -> bool {
 
 // Shared by ls and log: filter, order, and limit the entry list.
 fn collect_entries(sel: &MetaSelection, reverse: bool, limit: usize) -> io::Result<Vec<Meta>> {
-    let mut items = store::list()?
+    let mut items = store::visible_list()?
         .into_iter()
         .filter(|m| matches_meta(&m.attrs, sel))
         .collect::<Vec<_>>();
@@ -162,15 +166,17 @@ fn cat_command(args: CatArgs) -> io::Result<()> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
-    if !args.attr.is_empty() {
+    let attr_filters = merged_pocket_filters(&args.attr, &args.pocket);
+
+    if !attr_filters.is_empty() {
         if !args.refs.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "cat accepts either <ref>... or --attr",
             ));
         }
-        let filters = parse_attr_match_filters(&args.attr)?;
-        let mut items = store::list()?
+        let filters = parse_attr_match_filters(&attr_filters)?;
+        let mut items = store::visible_list()?
             .into_iter()
             .filter(|meta| matches_attr_match_filters(&meta.attrs, &filters))
             .collect::<Vec<_>>();
@@ -228,6 +234,16 @@ fn parse_attr_match_filters(values: &[String]) -> io::Result<Vec<AttrMatchFilter
         }
     }
     Ok(filters)
+}
+
+fn merged_pocket_filters(attrs: &[String], pockets: &[String]) -> Vec<String> {
+    let mut merged = attrs.to_vec();
+    merged.extend(
+        pockets
+            .iter()
+            .map(|value| format!("{}={value}", store::POCKET_ATTR)),
+    );
+    merged
 }
 
 fn matches_attr_match_filters(

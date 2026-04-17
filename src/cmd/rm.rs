@@ -19,6 +19,9 @@ pub(crate) struct RmArgs {
     #[arg(short = 'a', long = "attr", value_name = "name|name=value", action = ArgAction::Append, help = "Remove entries where an attribute is set, or equals a value (repeatable)")]
     attr: Vec<String>,
 
+    #[arg(long = "pocket", value_name = "VALUE", action = ArgAction::Append, help = "Alias for --attr pocket=VALUE (repeatable)")]
+    pocket: Vec<String>,
+
     #[arg(short = 'f', long = "force", help = "Do not prompt for confirmation")]
     force: bool,
 }
@@ -116,15 +119,22 @@ pub(super) fn rm_command(args: RmArgs) -> io::Result<()> {
         ));
     }
 
-    if !args.attr.is_empty() {
+    let mut attr_filters = args.attr.clone();
+    attr_filters.extend(
+        args.pocket
+            .iter()
+            .map(|value| format!("{}={value}", store::POCKET_ATTR)),
+    );
+
+    if !attr_filters.is_empty() {
         if !args.refs.is_empty() || args.before.is_some() || args.after.is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "rm accepts either <ref>..., --before, --after, or --attr",
             ));
         }
-        let filters = parse_rm_attr_filters(&args.attr)?;
-        let matches: Vec<Meta> = store::list()?
+        let filters = parse_rm_attr_filters(&attr_filters)?;
+        let matches: Vec<Meta> = store::visible_list()?
             .into_iter()
             .filter(|meta| matches_rm_attr_filters(&meta.attrs, &filters))
             .collect();

@@ -18,6 +18,12 @@ fn stash_cmd(stash_dir: &Path) -> Command {
     cmd
 }
 
+fn stash_cmd_in_pocket(stash_dir: &Path, pocket: &str) -> Command {
+    let mut cmd = stash_cmd(stash_dir);
+    cmd.env("STASH_POCKET", pocket);
+    cmd
+}
+
 #[cfg(feature = "completion")]
 fn completion_cmd() -> Command {
     Command::cargo_bin("stash-completion").unwrap()
@@ -119,7 +125,9 @@ fn cat_supports_multiple_refs_and_attr_filters() {
         .args(["cat", &first, "-a", "group=a"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("cat accepts either <ref>... or --attr"));
+        .stderr(predicate::str::contains(
+            "cat accepts either <ref>... or --attr",
+        ));
 }
 
 #[test]
@@ -389,6 +397,101 @@ fn rm_and_pop_remove_expected_entries() {
     assert!(ls_after.contains(&second));
     assert!(ls_after.contains(&first));
     assert!(!ls_after.contains(&third));
+}
+
+#[test]
+fn active_pocket_auto_tags_push_and_scopes_positional_refs() {
+    let dir = test_stash_dir();
+
+    let alpha = {
+        let mut cmd = stash_cmd_in_pocket(dir.path(), "alpha");
+        cmd.args(["push", "--print=stdout"])
+            .write_stdin("alpha-1\n");
+        stdout_string(&mut cmd).trim().to_string()
+    };
+
+    let beta = {
+        let mut cmd = stash_cmd_in_pocket(dir.path(), "beta");
+        cmd.args(["push", "--print=stdout"]).write_stdin("beta-1\n");
+        stdout_string(&mut cmd).trim().to_string()
+    };
+
+    let alpha_newest = {
+        let mut cmd = stash_cmd_in_pocket(dir.path(), "alpha");
+        cmd.args(["push", "--print=stdout"])
+            .write_stdin("alpha-2\n");
+        stdout_string(&mut cmd).trim().to_string()
+    };
+
+    stash_cmd(dir.path())
+        .args(["attr", &alpha, "pocket"])
+        .assert()
+        .success()
+        .stdout("alpha\n");
+
+    stash_cmd(dir.path())
+        .args(["attr", &beta, "pocket"])
+        .assert()
+        .success()
+        .stdout("beta\n");
+
+    stash_cmd_in_pocket(dir.path(), "alpha")
+        .args(["cat"])
+        .assert()
+        .success()
+        .stdout("alpha-2\n");
+
+    stash_cmd_in_pocket(dir.path(), "alpha")
+        .args(["cat", "2"])
+        .assert()
+        .success()
+        .stdout("alpha-1\n");
+
+    stash_cmd_in_pocket(dir.path(), "alpha")
+        .args(["rm", "-f", "1"])
+        .assert()
+        .success();
+
+    stash_cmd_in_pocket(dir.path(), "alpha")
+        .args(["ls", "--id=full", "--color=false"])
+        .assert()
+        .success()
+        .stdout(format!("{alpha}\n"));
+
+    stash_cmd(dir.path())
+        .args(["cat", &alpha_newest])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn pocket_alias_maps_to_attr_filter_and_write() {
+    let dir = test_stash_dir();
+
+    let gamma = {
+        let mut cmd = stash_cmd(dir.path());
+        cmd.args(["push", "--print=stdout", "--pocket=gamma"])
+            .write_stdin("gamma\n");
+        stdout_string(&mut cmd).trim().to_string()
+    };
+
+    stash_cmd(dir.path())
+        .args(["attr", &gamma, "pocket"])
+        .assert()
+        .success()
+        .stdout("gamma\n");
+
+    stash_cmd(dir.path())
+        .args(["ls", "--id=full", "--pocket=gamma", "--color=false"])
+        .assert()
+        .success()
+        .stdout(format!("{gamma}\n"));
+
+    stash_cmd(dir.path())
+        .args(["cat", "--pocket=gamma"])
+        .assert()
+        .success()
+        .stdout("gamma\n");
 }
 
 #[cfg(feature = "completion")]

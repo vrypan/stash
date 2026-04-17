@@ -16,6 +16,8 @@ pub use push::{push_from_reader, tee_from_reader_partial};
 
 pub const SHORT_ID_LEN: usize = 8;
 pub const MIN_ID_LEN: usize = 6;
+pub const POCKET_ATTR: &str = "pocket";
+pub const POCKET_ENV: &str = "STASH_POCKET";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -30,12 +32,7 @@ pub struct PartialSavedError {
 
 impl std::fmt::Display for PartialSavedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "partial entry saved as \"{}\": {}",
-            self.id,
-            self.cause
-        )
+        write!(f, "partial entry saved as \"{}\": {}", self.id, self.cause)
     }
 }
 
@@ -192,6 +189,20 @@ pub fn matches_meta(attrs: &BTreeMap<String, String>, sel: &MetaSelection) -> bo
             .all(|(key, value)| attrs.get(key) == Some(value))
 }
 
+pub fn active_pocket() -> Option<String> {
+    std::env::var(POCKET_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn matches_active_pocket(attrs: &BTreeMap<String, String>) -> bool {
+    match active_pocket() {
+        Some(pocket) => attrs.get(POCKET_ATTR) == Some(&pocket),
+        None => true,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Directory / path helpers
 // ---------------------------------------------------------------------------
@@ -289,6 +300,13 @@ pub fn list() -> io::Result<Vec<Meta>> {
     Ok(out)
 }
 
+pub fn visible_list() -> io::Result<Vec<Meta>> {
+    Ok(list()?
+        .into_iter()
+        .filter(|meta| matches_active_pocket(&meta.attrs))
+        .collect())
+}
+
 pub fn all_attr_keys() -> io::Result<Vec<(String, usize)>> {
     if let Ok(keys) = cache::read_attr_keys() {
         return Ok(keys);
@@ -296,12 +314,12 @@ pub fn all_attr_keys() -> io::Result<Vec<(String, usize)>> {
     // list() will rebuild and write the cache (including attr keys) if it is
     // cold; compute the index directly from the items we already have rather
     // than writing and then re-reading the cache file.
-    let items = list()?;
+    let items = visible_list()?;
     Ok(cache::attr_key_index_vec(&items))
 }
 
 pub fn newest() -> io::Result<Meta> {
-    list()?
+    visible_list()?
         .into_iter()
         .next()
         .ok_or_else(|| io::Error::other("stash is empty"))
@@ -314,7 +332,7 @@ pub fn nth_newest(n: usize) -> io::Result<Meta> {
             "n must be >= 1",
         ));
     }
-    let items = list()?;
+    let items = visible_list()?;
     items
         .into_iter()
         .nth(n - 1)
@@ -322,7 +340,7 @@ pub fn nth_newest(n: usize) -> io::Result<Meta> {
 }
 
 pub fn older_than_ids(id: &str) -> io::Result<Vec<String>> {
-    let items = list()?;
+    let items = visible_list()?;
     for (idx, item) in items.iter().enumerate() {
         if item.id == id {
             return Ok(items[idx + 1..].iter().map(|m| m.id.clone()).collect());
@@ -332,7 +350,7 @@ pub fn older_than_ids(id: &str) -> io::Result<Vec<String>> {
 }
 
 pub fn newer_than_ids(id: &str) -> io::Result<Vec<String>> {
-    let items = list()?;
+    let items = visible_list()?;
     for (idx, item) in items.iter().enumerate() {
         if item.id == id {
             return Ok(items[..idx].iter().map(|m| m.id.clone()).collect());
@@ -362,42 +380,42 @@ pub fn resolve(input: &str) -> io::Result<String> {
     if lower.len() < MIN_ID_LEN {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "id too short"));
     }
-    let ids = list_entry_ids()?;
-    if ids.is_empty() {
+    let items = visible_list()?;
+    if items.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "stash is empty"));
     }
-    if let Some(id) = ids.iter().find(|id| **id == lower) {
-        return Ok(id.clone());
+    if let Some(item) = items.iter().find(|item| item.id == lower) {
+        return Ok(item.id.clone());
     }
-    let mut prefix_match: Option<&String> = None;
-    let mut suffix_match: Option<&String> = None;
+    let mut prefix_match: Option<&Meta> = None;
+    let mut suffix_match: Option<&Meta> = None;
     let mut prefix_ambig = false;
     let mut suffix_ambig = false;
-    for id in &ids {
-        if id.starts_with(&lower) {
+    for item in &items {
+        if item.id.starts_with(&lower) {
             if prefix_match.is_some() {
                 prefix_ambig = true;
             } else {
-                prefix_match = Some(id);
+                prefix_match = Some(item);
             }
         }
-        if id.ends_with(&lower) {
+        if item.id.ends_with(&lower) {
             if suffix_match.is_some() {
                 suffix_ambig = true;
             } else {
-                suffix_match = Some(id);
+                suffix_match = Some(item);
             }
         }
     }
-    if let Some(id) = prefix_match {
+    if let Some(item) = prefix_match {
         if !prefix_ambig {
-            return Ok(id.clone());
+            return Ok(item.id.clone());
         }
         return Err(io::Error::other("ambiguous id"));
     }
-    if let Some(id) = suffix_match {
+    if let Some(item) = suffix_match {
         if !suffix_ambig {
-            return Ok(id.clone());
+            return Ok(item.id.clone());
         }
         return Err(io::Error::other("ambiguous id"));
     }
