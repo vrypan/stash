@@ -471,16 +471,16 @@ pub fn cat_to_writer<W: Write>(id: &str, mut writer: W) -> io::Result<()> {
 
 pub fn remove(id: &str) -> io::Result<()> {
     let data_result = fs::remove_file(entry_data_path(id)?);
-    if let Err(ref e) = data_result {
-        if e.kind() != io::ErrorKind::NotFound {
-            return data_result;
-        }
+    if let Err(ref e) = data_result
+        && e.kind() != io::ErrorKind::NotFound
+    {
+        return data_result;
     }
     let attr_result = fs::remove_file(entry_attr_path(id)?);
-    if let Err(ref e) = attr_result {
-        if e.kind() != io::ErrorKind::NotFound {
-            return attr_result;
-        }
+    if let Err(ref e) = attr_result
+        && e.kind() != io::ErrorKind::NotFound
+    {
+        return attr_result;
     }
     cache::invalidate_list_cache();
     Ok(())

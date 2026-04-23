@@ -7,7 +7,7 @@ pub(super) fn encode_attr(meta: &Meta) -> String {
     let mut out = String::new();
     write_attr_line(&mut out, "id", &meta.id);
     write_attr_line(&mut out, "ts", &meta.ts);
-    let _ = write!(out, "size={}\n", meta.size);
+    let _ = writeln!(out, "size={}", meta.size);
     if !meta.preview.trim().is_empty() {
         write_attr_line(&mut out, "preview", &meta.preview);
     }

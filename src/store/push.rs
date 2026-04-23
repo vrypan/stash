@@ -156,26 +156,26 @@ fn run_read_loop<R: Read>(
             return Err(err);
         }
         total += n as i64;
-        if let Some(ref mut out) = tee {
-            if let Err(err) = out.write_all(&buf[..n]) {
-                drop(data);
-                if err.kind() == io::ErrorKind::BrokenPipe {
-                    return super::finalize_saved_entry(id, data_path, &sample, total, attrs);
-                }
-                return save_or_abort_partial(
-                    id,
-                    data_path,
-                    &sample,
-                    total,
-                    attrs,
-                    err,
-                    PartialSaveOptions {
-                        save_on_error,
-                        save_empty: false,
-                        signal: None,
-                    },
-                );
+        if let Some(ref mut out) = tee
+            && let Err(err) = out.write_all(&buf[..n])
+        {
+            drop(data);
+            if err.kind() == io::ErrorKind::BrokenPipe {
+                return super::finalize_saved_entry(id, data_path, &sample, total, attrs);
             }
+            return save_or_abort_partial(
+                id,
+                data_path,
+                &sample,
+                total,
+                attrs,
+                err,
+                PartialSaveOptions {
+                    save_on_error,
+                    save_empty: false,
+                    signal: None,
+                },
+            );
         }
     }
     drop(data);
