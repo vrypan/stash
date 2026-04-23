@@ -1,0 +1,299 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v stash >/dev/null 2>&1; then
+  echo "error: stash is required" >&2
+  exit 1
+fi
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  bookmark <url>
+  bookmark add <url>
+  bookmark ls
+  bookmark grep <pattern> [rg args...]
+  bookmark find <pattern> [rg args...]
+EOF
+  exit 1
+}
+
+bookmark_add() {
+  local url="$1"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "error: curl is required" >&2
+    exit 1
+  fi
+
+  if ! command -v html2text >/dev/null 2>&1; then
+    echo "error: html2text is required" >&2
+    exit 1
+  fi
+
+  local text
+  text="$(
+    curl -fsSL "$url" \
+      | html2text -width 1000
+  )"
+
+  local title
+  title="$(
+    printf '%s\n' "$text" \
+      | sed -e 's/\r$//' \
+      | awk 'NF { print; exit }'
+  )"
+
+  if [[ -z "$title" ]]; then
+    title="$url"
+  fi
+
+  printf '%s\n' "$text" \
+    | stash push \
+        --attr "url=$url" \
+        --attr "title=$title" \
+        --attr "pocket=bookmarks"
+}
+
+bookmark_ls() {
+  stash ls --date -a +title -a +url -a pocket=bookmarks
+}
+
+bookmark_grep() {
+  if [[ $# -lt 1 ]]; then
+    usage
+  fi
+
+  if ! command -v rg >/dev/null 2>&1; then
+    echo "error: rg is required" >&2
+    exit 1
+  fi
+
+  local pattern="$1"
+  shift
+  local rg_args=("$@")
+
+  local stash_dir="${STASH_DIR:-$HOME/.stash}"
+  local attr_dir="$stash_dir/attr"
+  local data_dir="$stash_dir/data"
+
+  if [[ ! -d "$attr_dir" || ! -d "$data_dir" ]]; then
+    echo "error: stash directories not found under $stash_dir" >&2
+    exit 1
+  fi
+
+  local -a data_paths=()
+  local attr_file id pocket line key value
+
+  shopt -s nullglob
+  for attr_file in "$attr_dir"/*; do
+    [[ -f "$attr_file" ]] || continue
+    id="${attr_file##*/}"
+    pocket=""
+    while IFS= read -r line; do
+      [[ "$line" == *=* ]] || continue
+      key="${line%%=*}"
+      value="${line#*=}"
+      if [[ "$key" == "pocket" ]]; then
+        pocket="$value"
+        break
+      fi
+    done < "$attr_file"
+
+    if [[ "$pocket" == "bookmarks" && -f "$data_dir/$id" ]]; then
+      data_paths+=("$data_dir/$id")
+    fi
+  done
+  shopt -u nullglob
+
+  if [[ ${#data_paths[@]} -eq 0 ]]; then
+    exit 0
+  fi
+
+  strip_ansi() {
+    printf '%s' "$1" | sed -E $'s/\x1B\\[[0-9;]*m//g'
+  }
+
+  bookmark_meta() {
+    local id="$1"
+    local attr_file="$attr_dir/$id"
+    local ts=""
+    local url=""
+    local line key value
+
+    [[ -f "$attr_file" ]] || return 1
+
+    while IFS= read -r line; do
+      [[ "$line" == *=* ]] || continue
+      key="${line%%=*}"
+      value="${line#*=}"
+      case "$key" in
+        ts) ts="$value" ;;
+        url) url="$value" ;;
+      esac
+    done < "$attr_file"
+
+    printf '%s\t%s\n' "${ts%%T*}" "$url"
+  }
+
+  local path rest match id id_short meta date url
+  while IFS= read -r line; do
+    path="${line%%:*}"
+    rest="${line#*:}"
+    match="${rest#*:}"
+    path="$(strip_ansi "$path")"
+    id="${path##*/}"
+    id_short="${id: -8}"
+    meta="$(bookmark_meta "$id")" || continue
+    date="${meta%%	*}"
+    url="${meta#*	}"
+    printf '%s\t%s\t%s\t%b\n' \
+      "$id_short" \
+      "$date" \
+      "$url" \
+      "$match"
+  done < <(
+    if (( ${#rg_args[@]} == 0 )); then
+      rg -n -H --color=always \
+        --colors 'path:none' \
+        --colors 'line:none' \
+        --colors 'column:none' \
+        -- "$pattern" "${data_paths[@]}" || true
+    else
+      rg -n -H --color=always \
+        --colors 'path:none' \
+        --colors 'line:none' \
+        --colors 'column:none' \
+        "${rg_args[@]}" -- "$pattern" "${data_paths[@]}" || true
+    fi
+  )
+}
+
+bookmark_find() {
+  if [[ $# -lt 1 ]]; then
+    usage
+  fi
+
+  if ! command -v rg >/dev/null 2>&1; then
+    echo "error: rg is required" >&2
+    exit 1
+  fi
+
+  local pattern="$1"
+  shift
+  local rg_args=("$@")
+
+  local stash_dir="${STASH_DIR:-$HOME/.stash}"
+  local attr_dir="$stash_dir/attr"
+  local data_dir="$stash_dir/data"
+
+  if [[ ! -d "$attr_dir" || ! -d "$data_dir" ]]; then
+    echo "error: stash directories not found under $stash_dir" >&2
+    exit 1
+  fi
+
+  bookmark_summary() {
+    local id="$1"
+    local attr_file="$attr_dir/$id"
+    local pocket=""
+    local ts=""
+    local title=""
+    local url=""
+    local line key value
+
+    [[ -f "$attr_file" ]] || return 1
+
+    while IFS= read -r line; do
+      [[ "$line" == *=* ]] || continue
+      key="${line%%=*}"
+      value="${line#*=}"
+      case "$key" in
+        pocket) pocket="$value" ;;
+        ts) ts="$value" ;;
+        title) title="$value" ;;
+        url) url="$value" ;;
+      esac
+    done < "$attr_file"
+
+    [[ "$pocket" == "bookmarks" ]] || return 1
+    printf '%s\t%s\t%s\n' "${ts%%T*}" "$title" "$url"
+  }
+
+  local -a data_paths=()
+  local attr_file id pocket line key value
+
+  shopt -s nullglob
+  for attr_file in "$attr_dir"/*; do
+    [[ -f "$attr_file" ]] || continue
+    id="${attr_file##*/}"
+    pocket=""
+    while IFS= read -r line; do
+      [[ "$line" == *=* ]] || continue
+      key="${line%%=*}"
+      value="${line#*=}"
+      if [[ "$key" == "pocket" ]]; then
+        pocket="$value"
+        break
+      fi
+    done < "$attr_file"
+
+    if [[ "$pocket" == "bookmarks" && -f "$data_dir/$id" ]]; then
+      data_paths+=("$data_dir/$id")
+    fi
+  done
+  shopt -u nullglob
+
+  if [[ ${#data_paths[@]} -eq 0 ]]; then
+    exit 0
+  fi
+
+  local path id_short summary date title url
+  while IFS= read -r path; do
+    id="${path##*/}"
+    id_short="${id: -8}"
+    summary="$(bookmark_summary "$id")" || continue
+    date="${summary%%	*}"
+    summary="${summary#*	}"
+    title="${summary%%	*}"
+    url="${summary#*	}"
+    printf '%s\t%s\t%s\t%s\n' "$id_short" "$date" "$title" "$url"
+  done < <(
+    if (( ${#rg_args[@]} == 0 )); then
+      rg -l --color=never -- "$pattern" "${data_paths[@]}" || true
+    else
+      rg -l --color=never "${rg_args[@]}" -- "$pattern" "${data_paths[@]}" || true
+    fi
+  )
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+fi
+
+case "$1" in
+  ls)
+    shift
+    [[ $# -eq 0 ]] || usage
+    bookmark_ls
+    ;;
+  add)
+    shift
+    [[ $# -eq 1 ]] || usage
+    bookmark_add "$1"
+    ;;
+  grep)
+    shift
+    bookmark_grep "$@"
+    ;;
+  find)
+    shift
+    bookmark_find "$@"
+    ;;
+  -*)
+    usage
+    ;;
+  *)
+    [[ $# -eq 1 ]] || usage
+    bookmark_add "$1"
+    ;;
+esac
