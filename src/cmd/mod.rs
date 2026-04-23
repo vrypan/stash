@@ -150,12 +150,39 @@ fn smart_mode_uses_tee(args: &push::PushArgs) -> bool {
     args.file.is_none() && !io::stdin().is_terminal() && !io::stdout().is_terminal()
 }
 
-// Shared by ls and log: filter, order, and limit the entry list.
-fn collect_entries(sel: &MetaSelection, reverse: bool, limit: usize) -> io::Result<Vec<Meta>> {
-    let mut items = store::visible_list()?
-        .into_iter()
+// Filter, order, and limit the entry list.
+// before_id: if set, only include entries older than this ID (exclusive).
+// after_id:  if set, only include entries newer than this ID (exclusive).
+fn collect_entries(
+    sel: &MetaSelection,
+    reverse: bool,
+    limit: usize,
+    before_id: Option<&str>,
+    after_id: Option<&str>,
+) -> io::Result<Vec<Meta>> {
+    let all = store::visible_list()?;
+    let slice: &[Meta] = match (before_id, after_id) {
+        (Some(id), None) => {
+            let pos = all
+                .iter()
+                .position(|m| m.id == id)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "entry not found"))?;
+            &all[pos + 1..]
+        }
+        (None, Some(id)) => {
+            let pos = all
+                .iter()
+                .position(|m| m.id == id)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "entry not found"))?;
+            &all[..pos]
+        }
+        _ => &all,
+    };
+    let mut items: Vec<Meta> = slice
+        .iter()
         .filter(|m| matches_meta(&m.attrs, sel))
-        .collect::<Vec<_>>();
+        .cloned()
+        .collect();
     if reverse {
         items.reverse();
     }

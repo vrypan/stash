@@ -37,6 +37,12 @@ pub(crate) struct LsArgs {
     )]
     number: usize,
 
+    #[arg(long, help = "Show entries older than the referenced entry")]
+    before: Option<String>,
+
+    #[arg(long, help = "Show entries newer than the referenced entry")]
+    after: Option<String>,
+
     #[arg(short = 'r', long = "reverse", help = "Show oldest first")]
     reverse: bool,
 
@@ -96,6 +102,12 @@ fn parse_attrs_mode(value: Option<&str>) -> io::Result<Option<AttrsMode>> {
 }
 
 pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
+    if args.before.is_some() && args.after.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "ls accepts at most one of --before or --after",
+        ));
+    }
     if args.long {
         args.date.get_or_insert_with(|| "ls".into());
         args.size.get_or_insert_with(|| "human".into());
@@ -117,7 +129,23 @@ pub(super) fn ls_command(mut args: LsArgs) -> io::Result<()> {
             .map(|value| format!("{}={value}", crate::store::POCKET_ATTR)),
     );
     let meta_sel = parse_meta_selection(&attr_filters, attrs_mode == Some(AttrsMode::List))?;
-    let items = super::collect_entries(&meta_sel, args.reverse, args.number)?;
+    let before_id = args
+        .before
+        .as_deref()
+        .map(crate::store::resolve)
+        .transpose()?;
+    let after_id = args
+        .after
+        .as_deref()
+        .map(crate::store::resolve)
+        .transpose()?;
+    let items = super::collect_entries(
+        &meta_sel,
+        args.reverse,
+        args.number,
+        before_id.as_deref(),
+        after_id.as_deref(),
+    )?;
     let ls_date_mode = args.date.as_deref().unwrap_or("ls");
     if args.json {
         print_entries_json(&mut io::stdout(), &items, ls_date_mode, args.chars);
