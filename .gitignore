@@ -3,4 +3,6 @@ dist/
 gitignore/
 .DS_Store
 target/
+zig-out/
+.zig-cache/
 misc/
