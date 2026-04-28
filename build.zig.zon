@@ -1,5 +1,5 @@
 .{
-    .name = .stash_zig,
+    .name = .stash,
     .version = "0.9.1",
     .dependencies = .{
         .cli = .{
@@ -10,7 +10,7 @@
     .minimum_zig_version = "0.16.0",
     .paths = .{
         "build.zig",
-        "src_zig",
+        "src",
     },
-    .fingerprint = 0xa3e9a6019c1f1f97,
+    .fingerprint = 0x92633881df9f61df,
 }

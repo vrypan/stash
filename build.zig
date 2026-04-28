@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "stash",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src_zig/main.zig"),
+            .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         }),
