@@ -5,4 +5,5 @@ gitignore/
 target/
 zig-out/
 .zig-cache/
+zig-pkg/
 misc/

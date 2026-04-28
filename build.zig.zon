@@ -1,6 +1,12 @@
 .{
     .name = .stash_zig,
     .version = "0.9.1",
+    .dependencies = .{
+        .cli = .{
+            .url = "git+https://github.com/sam701/zig-cli#4841cdaed94b920c91ea171beed159976264270a",
+            .hash = "cli-0.10.0-2eKe_1sIAQDecE0Bz5gAm7aLcWz5wBAc8KxlP1YQPEWr",
+        },
+    },
     .minimum_zig_version = "0.16.0",
     .paths = .{
         "build.zig",

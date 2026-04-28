@@ -1,4 +1,6 @@
 const std = @import("std");
+const build_options = @import("build_options");
+const cli = @import("cli");
 const display = @import("display.zig");
 const runtime = @import("runtime.zig");
 const store = @import("store.zig");
@@ -14,6 +16,34 @@ const SizeMode = types.SizeMode;
 const AttrsMode = types.AttrsMode;
 const AttrFilter = types.AttrFilter;
 const MetaSelection = types.MetaSelection;
+const version = build_options.version;
+
+const LsCliOptions = struct {
+    id: IdMode = .short,
+    attr: [][]const u8 = &.{},
+    pocket: [][]const u8 = &.{},
+    attrs: AttrsMode = .none,
+    attrs_list: bool = false,
+    number: usize = 0,
+    before: ?[]const u8 = null,
+    after: ?[]const u8 = null,
+    reverse: bool = false,
+    json: bool = false,
+    headers: bool = false,
+    date: bool = false,
+    size: bool = false,
+    bytes: bool = false,
+    name: bool = false,
+    preview: bool = false,
+    long: bool = false,
+    chars: usize = 80,
+    color: bool = true,
+};
+
+var active_allocator: Allocator = undefined;
+var active_cli_allocator: Allocator = undefined;
+var ls_cli_options = LsCliOptions{};
+
 pub fn errorMessage(err: anyerror) []const u8 {
     return switch (err) {
         error.InvalidArgument => "invalid argument",
@@ -28,7 +58,9 @@ pub fn errorMessage(err: anyerror) []const u8 {
     };
 }
 
-pub fn run(allocator: Allocator, args: []const [:0]const u8) !u8 {
+pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:0]const u8) !u8 {
+    active_allocator = allocator;
+    active_cli_allocator = init.gpa;
     if (args.len <= 1) {
         return cmdPush(allocator, args[1..], false);
     }
@@ -38,7 +70,7 @@ pub fn run(allocator: Allocator, args: []const [:0]const u8) !u8 {
         return 0;
     }
     if (std.mem.eql(u8, first, "--version") or std.mem.eql(u8, first, "-V")) {
-        try runtime.stdoutWriter().writeAll("stash-cli 0.9.1\n");
+        try runtime.stdoutWriter().print("stash {s}\n", .{version});
         return 0;
     }
     if (std.mem.eql(u8, first, "push")) return cmdPush(allocator, args[2..], false);
@@ -47,7 +79,7 @@ pub fn run(allocator: Allocator, args: []const [:0]const u8) !u8 {
     if (std.mem.eql(u8, first, "path")) return cmdPath(allocator, args[2..]);
     if (std.mem.eql(u8, first, "attr")) return cmdAttr(allocator, args[2..]);
     if (std.mem.eql(u8, first, "attrs")) return cmdAttrs(allocator, args[2..]);
-    if (std.mem.eql(u8, first, "ls")) return cmdLs(allocator, args[2..]);
+    if (std.mem.eql(u8, first, "ls")) return runLsCli(init, allocator);
     if (std.mem.eql(u8, first, "rm")) return cmdRm(allocator, args[2..]);
     if (std.mem.eql(u8, first, "pop")) return cmdPop(allocator);
 
@@ -63,6 +95,164 @@ fn printHelp() !void {
         \\Commands: push, tee, cat, ls, attr, attrs, path, rm, pop
         \\
     );
+}
+
+fn runLsCli(init: *const std.process.Init, allocator: Allocator) !u8 {
+    _ = allocator;
+    ls_cli_options = .{};
+
+    var runner = cli.AppRunner.init(init);
+    const ls_command = cli.Command{
+        .name = "ls",
+        .description = .{ .one_line = "List entries" },
+        .options = try runner.allocOptions(&.{
+            .{
+                .long_name = "id",
+                .help = "ID display: short, full, or pos",
+                .value_name = "ID",
+                .value_ref = runner.mkRef(&ls_cli_options.id),
+            },
+            .{
+                .long_name = "attr",
+                .short_alias = 'a',
+                .help = "'name' filters, 'name=value' filters by value, '+name' shows, '++name' filters and shows",
+                .value_name = "attribute filter",
+                .value_ref = runner.mkRef(&ls_cli_options.attr),
+            },
+            .{
+                .long_name = "pocket",
+                .help = "Alias for --attr pocket=VALUE",
+                .value_name = "VALUE",
+                .value_ref = runner.mkRef(&ls_cli_options.pocket),
+            },
+            .{
+                .long_name = "attrs",
+                .help = "Attribute display: list, count, or flag",
+                .value_name = "list|count|flag",
+                .value_ref = runner.mkRef(&ls_cli_options.attrs),
+            },
+            .{
+                .long_name = "all-attrs",
+                .short_alias = 'A',
+                .help = "Alias for --attrs=list",
+                .value_ref = runner.mkRef(&ls_cli_options.attrs_list),
+            },
+            .{
+                .long_name = "number",
+                .short_alias = 'n',
+                .help = "Limit number of entries shown (0 = all)",
+                .value_name = "NUMBER",
+                .value_ref = runner.mkRef(&ls_cli_options.number),
+            },
+            .{
+                .long_name = "before",
+                .help = "Show entries older than the referenced entry",
+                .value_name = "BEFORE",
+                .value_ref = runner.mkRef(&ls_cli_options.before),
+            },
+            .{
+                .long_name = "after",
+                .help = "Show entries newer than the referenced entry",
+                .value_name = "AFTER",
+                .value_ref = runner.mkRef(&ls_cli_options.after),
+            },
+            .{
+                .long_name = "reverse",
+                .short_alias = 'r',
+                .help = "Show oldest first",
+                .value_ref = runner.mkRef(&ls_cli_options.reverse),
+            },
+            .{
+                .long_name = "json",
+                .help = "Output listing as rich JSON",
+                .value_ref = runner.mkRef(&ls_cli_options.json),
+            },
+            .{
+                .long_name = "headers",
+                .help = "Print a header row for tabular output",
+                .value_ref = runner.mkRef(&ls_cli_options.headers),
+            },
+            .{
+                .long_name = "date",
+                .short_alias = 'D',
+                .help = "Include date column using ls-style dates",
+                .value_ref = runner.mkRef(&ls_cli_options.date),
+            },
+            .{
+                .long_name = "size",
+                .help = "Include human-readable size column",
+                .value_ref = runner.mkRef(&ls_cli_options.size),
+            },
+            .{
+                .long_name = "bytes",
+                .help = "Use raw byte counts for the size column",
+                .value_ref = runner.mkRef(&ls_cli_options.bytes),
+            },
+            .{
+                .long_name = "name",
+                .help = "Include filename (attribute) if available, or else full ULID column",
+                .value_ref = runner.mkRef(&ls_cli_options.name),
+            },
+            .{
+                .long_name = "preview",
+                .short_alias = 'p',
+                .help = "Append compact preview text",
+                .value_ref = runner.mkRef(&ls_cli_options.preview),
+            },
+            .{
+                .long_name = "long",
+                .short_alias = 'l',
+                .help = "Alias for -D --size --attrs=flag --preview",
+                .value_ref = runner.mkRef(&ls_cli_options.long),
+            },
+            .{
+                .long_name = "chars",
+                .help = "Preview character limit",
+                .value_name = "CHARS",
+                .value_ref = runner.mkRef(&ls_cli_options.chars),
+            },
+            .{
+                .long_name = "color",
+                .help = "Color output: true or false",
+                .value_name = "COLOR",
+                .value_ref = runner.mkRef(&ls_cli_options.color),
+            },
+        }),
+        .target = .{
+            .action = .{
+                .exec = execLsCli,
+            },
+        },
+    };
+    const app = cli.App{
+        .command = .{
+            .name = "stash",
+            .description = .{ .one_line = "A local store for pipeline output and ad hoc file snapshots" },
+            .target = .{
+                .subcommands = try runner.allocCommands(&.{ls_command}),
+            },
+        },
+        .version = version,
+        .help_config = .{ .color_usage = .never },
+    };
+
+    try runner.run(&app);
+    return 0;
+}
+
+fn execLsCli() !void {
+    defer freeLsCliOptions(active_cli_allocator, &ls_cli_options);
+    try cmdLsFromOptions(active_allocator, &ls_cli_options);
+}
+
+fn freeLsCliOptions(allocator: Allocator, opts: *LsCliOptions) void {
+    for (opts.attr) |value| allocator.free(value);
+    allocator.free(opts.attr);
+    for (opts.pocket) |value| allocator.free(value);
+    allocator.free(opts.pocket);
+    if (opts.before) |value| allocator.free(value);
+    if (opts.after) |value| allocator.free(value);
+    opts.* = .{};
 }
 
 fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, tee_mode: bool) !u8 {
@@ -386,110 +576,31 @@ fn cmdAttrs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     return 0;
 }
 
-fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
-    var id_mode: IdMode = .short;
-    var date_mode: ?DateMode = null;
-    var size_mode: ?SizeMode = null;
-    var attrs_mode: AttrsMode = .none;
-    var show_name = false;
-    var show_preview = false;
-    var headers = false;
-    var json = false;
-    var reverse = false;
-    var number: usize = 0;
-    var chars: usize = 80;
-    var color = true;
-    var before_ref: ?[]const u8 = null;
-    var after_ref: ?[]const u8 = null;
+fn cmdLsFromOptions(allocator: Allocator, opts: *const LsCliOptions) !void {
+    const id_mode = opts.id;
+    var date_mode: ?DateMode = if (opts.date) .ls else null;
+    var size_mode: ?SizeMode = if (opts.bytes) .bytes else if (opts.size) .human else null;
+    var attrs_mode: AttrsMode = opts.attrs;
+    var show_preview = opts.preview;
     var selection = MetaSelection{};
 
-    var i: usize = 0;
-    while (i < raw_args.len) : (i += 1) {
-        const arg = raw_args[i];
-        if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--long")) {
-            date_mode = .ls;
-            size_mode = .human;
-            attrs_mode = .flag;
-            show_preview = true;
-        } else if (std.mem.eql(u8, arg, "--json")) json = true else if (std.mem.eql(u8, arg, "--headers")) headers = true else if (std.mem.eql(u8, arg, "--name")) show_name = true else if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--preview")) show_preview = true else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--reverse")) reverse = true else if (std.mem.eql(u8, arg, "-A")) {
-            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-") and isAttrsMode(raw_args[i + 1])) {
-                i += 1;
-                attrs_mode = try parseAttrsMode(raw_args[i]);
-            } else {
-                attrs_mode = .list;
-            }
-            if (attrs_mode == .list) selection.show_all = true;
-        } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--attr")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            try parseMetaSelectionArg(allocator, &selection, raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "--id=")) id_mode = parseIdMode(arg["--id=".len..]) else if (std.mem.eql(u8, arg, "--id")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            id_mode = parseIdMode(raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "--date=")) date_mode = try parseDateMode(arg["--date=".len..]) else if (std.mem.eql(u8, arg, "--date")) {
-            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-") and isDateMode(raw_args[i + 1])) {
-                i += 1;
-                date_mode = try parseDateMode(raw_args[i]);
-            } else {
-                date_mode = .ls;
-            }
-        } else if (std.mem.startsWith(u8, arg, "--size=")) size_mode = try parseSizeMode(arg["--size=".len..]) else if (std.mem.eql(u8, arg, "--size")) {
-            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-") and isSizeMode(raw_args[i + 1])) {
-                i += 1;
-                size_mode = try parseSizeMode(raw_args[i]);
-            } else {
-                size_mode = .human;
-            }
-        } else if (std.mem.startsWith(u8, arg, "--attrs=")) {
-            attrs_mode = try parseAttrsMode(arg["--attrs=".len..]);
-            if (attrs_mode == .list) selection.show_all = true;
-        } else if (std.mem.eql(u8, arg, "--attrs")) {
-            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-") and isAttrsMode(raw_args[i + 1])) {
-                i += 1;
-                attrs_mode = try parseAttrsMode(raw_args[i]);
-            } else {
-                attrs_mode = .list;
-            }
-            if (attrs_mode == .list) selection.show_all = true;
-        } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--number")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            number = try std.fmt.parseInt(usize, raw_args[i], 10);
-        } else if (std.mem.eql(u8, arg, "--before")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            before_ref = raw_args[i];
-        } else if (std.mem.startsWith(u8, arg, "--before=")) {
-            before_ref = arg["--before=".len..];
-        } else if (std.mem.eql(u8, arg, "--after")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            after_ref = raw_args[i];
-        } else if (std.mem.startsWith(u8, arg, "--after=")) {
-            after_ref = arg["--after=".len..];
-        } else if (std.mem.startsWith(u8, arg, "--chars=")) {
-            chars = try std.fmt.parseInt(usize, arg["--chars=".len..], 10);
-        } else if (std.mem.eql(u8, arg, "--chars")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            chars = try std.fmt.parseInt(usize, raw_args[i], 10);
-        } else if (std.mem.startsWith(u8, arg, "--pocket=")) {
-            try selection.filter_values.append(allocator, .{ .key = types.pocket_attr, .value = arg["--pocket=".len..] });
-        } else if (std.mem.eql(u8, arg, "--pocket")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            try selection.filter_values.append(allocator, .{ .key = types.pocket_attr, .value = raw_args[i] });
-        } else if (std.mem.startsWith(u8, arg, "--color=")) {
-            color = try parseBoolFlag(arg["--color=".len..]);
-        } else if (std.mem.eql(u8, arg, "--color")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            color = try parseBoolFlag(raw_args[i]);
-        } else {
-            return error.InvalidArgument;
-        }
+    if (opts.long) {
+        date_mode = .ls;
+        size_mode = .human;
+        if (attrs_mode == .none and !opts.attrs_list) attrs_mode = .flag;
+        show_preview = true;
     }
+    if (opts.attrs_list) attrs_mode = .list;
+    if (attrs_mode == .list) selection.show_all = true;
+
+    for (opts.attr) |value| {
+        try parseMetaSelectionArg(allocator, &selection, value);
+    }
+    for (opts.pocket) |value| {
+        try selection.filter_values.append(allocator, .{ .key = types.pocket_attr, .value = value });
+    }
+    const before_ref = opts.before;
+    const after_ref = opts.after;
     if (before_ref != null and after_ref != null) return error.InvalidArgument;
 
     var items = try store.visibleList(allocator);
@@ -501,15 +612,14 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
         keepNewerThan(&items, id);
     }
     filterItems(&items, &selection);
-    if (reverse) std.mem.reverse(Meta, items.items);
-    if (number > 0 and items.items.len > number) items.items.len = number;
+    if (opts.reverse) std.mem.reverse(Meta, items.items);
+    if (opts.number > 0 and items.items.len > opts.number) items.items.len = opts.number;
 
-    if (json) {
-        try display.printLsJson(allocator, runtime.stdoutWriter(), items.items, date_mode orelse .ls, chars);
+    if (opts.json) {
+        try display.printLsJson(allocator, runtime.stdoutWriter(), items.items, date_mode orelse .ls, opts.chars);
     } else {
-        try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, size_mode, attrs_mode, show_name, show_preview, headers, chars, color, &selection);
+        try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, size_mode, attrs_mode, opts.name, show_preview, opts.headers, opts.chars, opts.color, &selection);
     }
-    return 0;
 }
 
 fn filterItems(items: *std.ArrayList(Meta), selection: *const MetaSelection) void {
@@ -638,52 +748,6 @@ fn parseMetaSelectionArg(allocator: Allocator, sel: *MetaSelection, value: []con
     } else {
         try sel.filter_tags.append(allocator, value);
     }
-}
-
-fn parseIdMode(value: []const u8) IdMode {
-    if (std.mem.eql(u8, value, "full")) return .full;
-    if (std.mem.eql(u8, value, "pos")) return .pos;
-    return .short;
-}
-
-fn parseDateMode(value: []const u8) !DateMode {
-    if (std.mem.eql(u8, value, "iso") or std.mem.eql(u8, value, "absolute")) return .iso;
-    if (std.mem.eql(u8, value, "ago") or std.mem.eql(u8, value, "relative")) return .ago;
-    if (std.mem.eql(u8, value, "ls")) return .ls;
-    return error.InvalidArgument;
-}
-
-fn parseSizeMode(value: []const u8) !SizeMode {
-    if (std.mem.eql(u8, value, "human")) return .human;
-    if (std.mem.eql(u8, value, "bytes")) return .bytes;
-    return error.InvalidArgument;
-}
-
-fn parseAttrsMode(value: []const u8) !AttrsMode {
-    if (std.mem.eql(u8, value, "list")) return .list;
-    if (std.mem.eql(u8, value, "count")) return .count;
-    if (std.mem.eql(u8, value, "flag")) return .flag;
-    return error.InvalidArgument;
-}
-
-fn isDateMode(value: []const u8) bool {
-    return std.mem.eql(u8, value, "iso") or std.mem.eql(u8, value, "absolute") or
-        std.mem.eql(u8, value, "ago") or std.mem.eql(u8, value, "relative") or
-        std.mem.eql(u8, value, "ls");
-}
-
-fn isSizeMode(value: []const u8) bool {
-    return std.mem.eql(u8, value, "human") or std.mem.eql(u8, value, "bytes");
-}
-
-fn isAttrsMode(value: []const u8) bool {
-    return std.mem.eql(u8, value, "list") or std.mem.eql(u8, value, "count") or std.mem.eql(u8, value, "flag");
-}
-
-fn parseBoolFlag(value: []const u8) !bool {
-    if (std.mem.eql(u8, value, "true")) return true;
-    if (std.mem.eql(u8, value, "false")) return false;
-    return error.InvalidArgument;
 }
 
 fn ascSlices(_: void, a: []const u8, b: []const u8) bool {

@@ -4,6 +4,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const cli_dep = b.dependency("cli", .{});
+    const version = packageVersion(b);
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "version", version);
+
     const exe = b.addExecutable(.{
         .name = "stash",
         .root_module = b.createModule(.{
@@ -12,6 +17,8 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    exe.root_module.addImport("cli", cli_dep.module("cli"));
+    exe.root_module.addOptions("build_options", build_options);
 
     b.installArtifact(exe);
 
@@ -22,4 +29,26 @@ pub fn build(b: *std.Build) void {
     }
     const run_step = b.step("run", "Run the Zig stash binary");
     run_step.dependOn(&run_cmd.step);
+}
+
+fn packageVersion(b: *std.Build) []const u8 {
+    const Manifest = struct {
+        version: []const u8,
+    };
+    const source = b.build_root.handle.readFileAllocOptions(
+        b.graph.io,
+        "build.zig.zon",
+        b.allocator,
+        .limited(64 * 1024),
+        .of(u8),
+        0,
+    ) catch @panic("failed to read build.zig.zon");
+    const manifest = std.zon.parse.fromSliceAlloc(
+        Manifest,
+        b.allocator,
+        source,
+        null,
+        .{ .ignore_unknown_fields = true },
+    ) catch @panic("failed to parse build.zig.zon");
+    return manifest.version;
 }
