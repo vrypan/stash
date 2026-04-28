@@ -398,6 +398,7 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var reverse = false;
     var number: usize = 0;
     var chars: usize = 80;
+    var color = true;
     var before_ref: ?[]const u8 = null;
     var after_ref: ?[]const u8 = null;
     var selection = MetaSelection{};
@@ -411,8 +412,13 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
             attrs_mode = .flag;
             show_preview = true;
         } else if (std.mem.eql(u8, arg, "--json")) json = true else if (std.mem.eql(u8, arg, "--headers")) headers = true else if (std.mem.eql(u8, arg, "--name")) show_name = true else if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--preview")) show_preview = true else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--reverse")) reverse = true else if (std.mem.eql(u8, arg, "-A")) {
-            attrs_mode = .list;
-            selection.show_all = true;
+            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-") and isAttrsMode(raw_args[i + 1])) {
+                i += 1;
+                attrs_mode = try parseAttrsMode(raw_args[i]);
+            } else {
+                attrs_mode = .list;
+            }
+            if (attrs_mode == .list) selection.show_all = true;
         } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--attr")) {
             i += 1;
             if (i >= raw_args.len) return error.InvalidArgument;
@@ -421,12 +427,31 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
             i += 1;
             if (i >= raw_args.len) return error.InvalidArgument;
             id_mode = parseIdMode(raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "--date=")) date_mode = parseDateMode(arg["--date=".len..]) else if (std.mem.eql(u8, arg, "--date")) date_mode = .ls else if (std.mem.startsWith(u8, arg, "--size=")) size_mode = parseSizeMode(arg["--size=".len..]) else if (std.mem.eql(u8, arg, "--size")) size_mode = .human else if (std.mem.startsWith(u8, arg, "--attrs=")) {
-            attrs_mode = parseAttrsMode(arg["--attrs=".len..]);
+        } else if (std.mem.startsWith(u8, arg, "--date=")) date_mode = try parseDateMode(arg["--date=".len..]) else if (std.mem.eql(u8, arg, "--date")) {
+            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-") and isDateMode(raw_args[i + 1])) {
+                i += 1;
+                date_mode = try parseDateMode(raw_args[i]);
+            } else {
+                date_mode = .ls;
+            }
+        } else if (std.mem.startsWith(u8, arg, "--size=")) size_mode = try parseSizeMode(arg["--size=".len..]) else if (std.mem.eql(u8, arg, "--size")) {
+            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-") and isSizeMode(raw_args[i + 1])) {
+                i += 1;
+                size_mode = try parseSizeMode(raw_args[i]);
+            } else {
+                size_mode = .human;
+            }
+        } else if (std.mem.startsWith(u8, arg, "--attrs=")) {
+            attrs_mode = try parseAttrsMode(arg["--attrs=".len..]);
             if (attrs_mode == .list) selection.show_all = true;
         } else if (std.mem.eql(u8, arg, "--attrs")) {
-            attrs_mode = .list;
-            selection.show_all = true;
+            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-") and isAttrsMode(raw_args[i + 1])) {
+                i += 1;
+                attrs_mode = try parseAttrsMode(raw_args[i]);
+            } else {
+                attrs_mode = .list;
+            }
+            if (attrs_mode == .list) selection.show_all = true;
         } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--number")) {
             i += 1;
             if (i >= raw_args.len) return error.InvalidArgument;
@@ -445,14 +470,22 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
             after_ref = arg["--after=".len..];
         } else if (std.mem.startsWith(u8, arg, "--chars=")) {
             chars = try std.fmt.parseInt(usize, arg["--chars=".len..], 10);
+        } else if (std.mem.eql(u8, arg, "--chars")) {
+            i += 1;
+            if (i >= raw_args.len) return error.InvalidArgument;
+            chars = try std.fmt.parseInt(usize, raw_args[i], 10);
         } else if (std.mem.startsWith(u8, arg, "--pocket=")) {
             try selection.filter_values.append(allocator, .{ .key = types.pocket_attr, .value = arg["--pocket=".len..] });
         } else if (std.mem.eql(u8, arg, "--pocket")) {
             i += 1;
             if (i >= raw_args.len) return error.InvalidArgument;
             try selection.filter_values.append(allocator, .{ .key = types.pocket_attr, .value = raw_args[i] });
-        } else if (std.mem.startsWith(u8, arg, "--color")) {
-            // Formatting colors are intentionally ignored in the first Zig port.
+        } else if (std.mem.startsWith(u8, arg, "--color=")) {
+            color = try parseBoolFlag(arg["--color=".len..]);
+        } else if (std.mem.eql(u8, arg, "--color")) {
+            i += 1;
+            if (i >= raw_args.len) return error.InvalidArgument;
+            color = try parseBoolFlag(raw_args[i]);
         } else {
             return error.InvalidArgument;
         }
@@ -474,7 +507,7 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     if (json) {
         try display.printLsJson(allocator, runtime.stdoutWriter(), items.items, date_mode orelse .ls, chars);
     } else {
-        try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, size_mode, attrs_mode, show_name, show_preview, headers, chars, &selection);
+        try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, size_mode, attrs_mode, show_name, show_preview, headers, chars, color, &selection);
     }
     return 0;
 }
@@ -613,21 +646,44 @@ fn parseIdMode(value: []const u8) IdMode {
     return .short;
 }
 
-fn parseDateMode(value: []const u8) DateMode {
+fn parseDateMode(value: []const u8) !DateMode {
+    if (std.mem.eql(u8, value, "iso") or std.mem.eql(u8, value, "absolute")) return .iso;
     if (std.mem.eql(u8, value, "ago") or std.mem.eql(u8, value, "relative")) return .ago;
     if (std.mem.eql(u8, value, "ls")) return .ls;
-    return .iso;
+    return error.InvalidArgument;
 }
 
-fn parseSizeMode(value: []const u8) SizeMode {
+fn parseSizeMode(value: []const u8) !SizeMode {
+    if (std.mem.eql(u8, value, "human")) return .human;
     if (std.mem.eql(u8, value, "bytes")) return .bytes;
-    return .human;
+    return error.InvalidArgument;
 }
 
-fn parseAttrsMode(value: []const u8) AttrsMode {
+fn parseAttrsMode(value: []const u8) !AttrsMode {
+    if (std.mem.eql(u8, value, "list")) return .list;
     if (std.mem.eql(u8, value, "count")) return .count;
     if (std.mem.eql(u8, value, "flag")) return .flag;
-    return .list;
+    return error.InvalidArgument;
+}
+
+fn isDateMode(value: []const u8) bool {
+    return std.mem.eql(u8, value, "iso") or std.mem.eql(u8, value, "absolute") or
+        std.mem.eql(u8, value, "ago") or std.mem.eql(u8, value, "relative") or
+        std.mem.eql(u8, value, "ls");
+}
+
+fn isSizeMode(value: []const u8) bool {
+    return std.mem.eql(u8, value, "human") or std.mem.eql(u8, value, "bytes");
+}
+
+fn isAttrsMode(value: []const u8) bool {
+    return std.mem.eql(u8, value, "list") or std.mem.eql(u8, value, "count") or std.mem.eql(u8, value, "flag");
+}
+
+fn parseBoolFlag(value: []const u8) !bool {
+    if (std.mem.eql(u8, value, "true")) return true;
+    if (std.mem.eql(u8, value, "false")) return false;
+    return error.InvalidArgument;
 }
 
 fn ascSlices(_: void, a: []const u8, b: []const u8) bool {
