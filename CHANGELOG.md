@@ -2,6 +2,28 @@
 
 All notable changes to `stash` are documented in this file.
 
+## 0.10.0
+
+This is a **major** update: `stash` has been ported to Zig.
+
+- Migrate the Zig CLI help/command metadata from `zig-cli` to `zli`.
+- Restore smart bare `stash` behavior:
+  - in a pipeline, `stash` forwards input like `stash tee`
+  - otherwise, `stash` stores input like `stash push`
+- Restore file stashing for `stash <file>` and `stash push <file>`.
+- Restore automatic `filename` attributes when stashing files directly.
+- Restore partial-save handling for interrupted stdin input:
+  - captured bytes are saved when `--save-on-error=true`
+  - partial entries are marked with `partial=true`
+  - interrupted saves exit non-zero after writing the entry
+- Parse `--save-on-error=true|false` for `stash tee` and stdin-driven
+  push paths.
+- Make `stash ls --size` and `stash ls --bytes` independent columns so they
+  can be shown separately or together.
+- Keep `stash tee <file>` invalid so explicit tee remains stdin-only.
+- Fix a list-cache temporary-file race when multiple commands rebuild the
+  cache concurrently.
+
 ## 0.9.0
 
 - Color attribute keys in `stash attr` output (cyan when stdout is a

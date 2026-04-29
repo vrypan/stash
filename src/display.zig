@@ -7,7 +7,6 @@ const Meta = types.Meta;
 const MetaSelection = types.MetaSelection;
 const IdMode = types.IdMode;
 const DateMode = types.DateMode;
-const SizeMode = types.SizeMode;
 const AttrsMode = types.AttrsMode;
 
 pub fn attrValue(meta: *const Meta, key: []const u8, include_preview: bool) ?[]const u8 {
@@ -51,7 +50,8 @@ pub fn printLsTable(
     items: []const Meta,
     id_mode: IdMode,
     date_mode: ?DateMode,
-    size_mode: ?SizeMode,
+    show_size: bool,
+    show_bytes: bool,
     attrs_mode: AttrsMode,
     show_name: bool,
     show_preview: bool,
@@ -60,14 +60,13 @@ pub fn printLsTable(
     color: bool,
     selection: *const MetaSelection,
 ) !void {
-    const has_size = size_mode != null;
     const has_date = date_mode != null;
     const show_count = attrs_mode == .count;
     const show_flag = attrs_mode == .flag;
     const has_display_tags = selection.display_tags.items.len > 0;
     const show_all_meta = selection.show_all;
 
-    const simple_ids_only = !has_date and !has_size and !show_name and !show_preview and
+    const simple_ids_only = !has_date and !show_size and !show_bytes and !show_name and !show_preview and
         !show_count and !show_flag and !show_all_meta and !has_display_tags;
     if (simple_ids_only and !headers) {
         for (items, 0..) |*meta, idx| {
@@ -80,6 +79,7 @@ pub fn printLsTable(
     const LsRow = struct {
         id: []u8,
         size: []u8,
+        bytes: []u8,
         date: []u8,
         name: []u8,
         attr_count: []u8,
@@ -95,6 +95,7 @@ pub fn printLsTable(
 
     var max_id: usize = 0;
     var max_size: usize = 0;
+    var max_bytes: usize = 0;
     var max_date: usize = 0;
     var max_name: usize = 0;
     var max_attr_count: usize = 0;
@@ -107,9 +108,15 @@ pub fn printLsTable(
         const id = try displayIdAlloc(allocator, meta, idx, id_mode);
         max_id = @max(max_id, visibleLen(id));
 
-        const size_val = if (size_mode) |mode| blk: {
-            const s = if (mode == .bytes) try std.fmt.allocPrint(allocator, "{}", .{meta.size}) else try humanSize(allocator, meta.size);
+        const size_val = if (show_size) blk: {
+            const s = try humanSize(allocator, meta.size);
             max_size = @max(max_size, visibleLen(s));
+            break :blk s;
+        } else try allocator.dupe(u8, "");
+
+        const bytes_val = if (show_bytes) blk: {
+            const s = try std.fmt.allocPrint(allocator, "{}", .{meta.size});
+            max_bytes = @max(max_bytes, visibleLen(s));
             break :blk s;
         } else try allocator.dupe(u8, "");
 
@@ -162,6 +169,7 @@ pub fn printLsTable(
         try rows.append(allocator, .{
             .id = id,
             .size = size_val,
+            .bytes = bytes_val,
             .date = date_val,
             .name = name_val,
             .attr_count = attr_count_val,
@@ -174,13 +182,15 @@ pub fn printLsTable(
 
     const header_id = "id";
     const header_size = "size";
+    const header_bytes = "bytes";
     const header_date = "date";
     const header_name = "name";
     const header_attrs = "attrs";
     const header_preview = "preview";
     if (headers) {
         max_id = @max(max_id, header_id.len);
-        if (has_size) max_size = @max(max_size, header_size.len);
+        if (show_size) max_size = @max(max_size, header_size.len);
+        if (show_bytes) max_bytes = @max(max_bytes, header_bytes.len);
         if (has_date) max_date = @max(max_date, header_date.len);
         if (show_name) max_name = @max(max_name, header_name.len);
         if (show_count) max_attr_count = @max(max_attr_count, header_attrs.len);
@@ -196,6 +206,7 @@ pub fn printLsTable(
         const term_width = width orelse 80;
         var fixed = max_id;
         if (max_size > 0) fixed += 2 + max_size;
+        if (max_bytes > 0) fixed += 2 + max_bytes;
         if (max_date > 0) fixed += 2 + max_date;
         if (max_name > 0) fixed += 2 + max_name;
         if (max_attr_count > 0) fixed += 2 + max_attr_count;
@@ -211,9 +222,13 @@ pub fn printLsTable(
     var line: std.ArrayList(u8) = .empty;
     if (headers) {
         try appendStyledRight(allocator, &line, header_id, max_id, "1", color);
-        if (has_size) {
+        if (show_size) {
             try line.appendSlice(allocator, "  ");
             try appendStyledRight(allocator, &line, header_size, max_size, "1", color);
+        }
+        if (show_bytes) {
+            try line.appendSlice(allocator, "  ");
+            try appendStyledRight(allocator, &line, header_bytes, max_bytes, "1", color);
         }
         if (has_date) {
             try line.appendSlice(allocator, "  ");
@@ -252,6 +267,10 @@ pub fn printLsTable(
         if (row.size.len > 0) {
             try line.appendSlice(allocator, "  ");
             try appendRawLeft(allocator, &line, row.size, max_size);
+        }
+        if (row.bytes.len > 0) {
+            try line.appendSlice(allocator, "  ");
+            try appendRawLeft(allocator, &line, row.bytes, max_bytes);
         }
         if (row.date.len > 0) {
             try line.appendSlice(allocator, "  ");

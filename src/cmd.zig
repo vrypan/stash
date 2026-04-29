@@ -12,7 +12,6 @@ const Meta = types.Meta;
 const PrintTarget = types.PrintTarget;
 const IdMode = types.IdMode;
 const DateMode = types.DateMode;
-const SizeMode = types.SizeMode;
 const AttrsMode = types.AttrsMode;
 const AttrFilter = types.AttrFilter;
 const MetaSelection = types.MetaSelection;
@@ -695,14 +694,15 @@ fn cmdAttrs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
 fn cmdLsFromOptions(allocator: Allocator, opts: *const LsCliOptions) !void {
     const id_mode = opts.id;
     var date_mode: ?DateMode = if (opts.date) .ls else null;
-    var size_mode: ?SizeMode = if (opts.bytes) .bytes else if (opts.size) .human else null;
+    var show_size = opts.size;
+    const show_bytes = opts.bytes;
     var attrs_mode: AttrsMode = opts.attrs;
     var show_preview = opts.preview;
     var selection = MetaSelection{};
 
     if (opts.long) {
         date_mode = .ls;
-        size_mode = .human;
+        show_size = true;
         if (attrs_mode == .none and !opts.attrs_list) attrs_mode = .flag;
         show_preview = true;
     }
@@ -734,7 +734,7 @@ fn cmdLsFromOptions(allocator: Allocator, opts: *const LsCliOptions) !void {
     if (opts.json) {
         try display.printLsJson(allocator, runtime.stdoutWriter(), items.items, date_mode orelse .ls, opts.chars);
     } else {
-        try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, size_mode, attrs_mode, opts.name, show_preview, opts.headers, opts.chars, opts.color, &selection);
+        try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, show_size, show_bytes, attrs_mode, opts.name, show_preview, opts.headers, opts.chars, opts.color, &selection);
     }
 }
 

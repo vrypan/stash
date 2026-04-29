@@ -141,7 +141,8 @@ stash ls --name
 stash ls --preview
 stash ls --headers --date --size
 stash ls --json
-stash ls --size=bytes --name
+stash ls --bytes --name
+stash ls --size --bytes
 stash ls -a +source -a +stage
 stash ls -a source -a +source
 ```
@@ -153,10 +154,10 @@ stash ls -l
 ```
 
 Notes:
-- `--date` defaults to `ls` if no value is given
-- `--size` defaults to `human` if no value is given
-- `--date` accepts `iso`, `ago`, or `ls`
-- `--size` accepts `human` or `bytes`
+- `--date` shows an ls-style date column
+- `--size` shows a human-readable size column
+- `--bytes` shows a raw byte-count column
+- `--size` and `--bytes` can be used together
 - `--headers` prints a header row for tabular output
 - `-A` and `--attrs=list` show attribute values inline
 - `--attrs=count` shows a per-entry count of user-defined attrs

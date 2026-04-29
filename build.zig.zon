@@ -1,6 +1,6 @@
 .{
     .name = .stash,
-    .version = "0.9.1",
+    .version = "0.10.0",
     .dependencies = .{
         .zli = .{
             .url = "git+https://github.com/xcaeser/zli#e8a6b9d2c8d7432aea552a24a9a94c0f552c34ce",

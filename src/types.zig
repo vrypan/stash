@@ -70,7 +70,6 @@ pub const Meta = struct {
 pub const PrintTarget = enum { stdout, stderr, none };
 pub const IdMode = enum { short, full, pos };
 pub const DateMode = enum { iso, ago, ls };
-pub const SizeMode = enum { human, bytes };
 pub const AttrsMode = enum { none, list, count, flag };
 
 pub const AttrFilter = struct {
