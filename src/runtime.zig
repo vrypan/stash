@@ -15,12 +15,21 @@ pub const FileWriter = struct {
     }
 
     pub fn writeByteNTimes(self: FileWriter, byte: u8, n: usize) !void {
-        var i: usize = 0;
-        while (i < n) : (i += 1) try self.writeByte(byte);
+        var buf: [256]u8 = undefined;
+        @memset(&buf, byte);
+        var remaining = n;
+        while (remaining > 0) {
+            const chunk = @min(remaining, buf.len);
+            try self.writeAll(buf[0..chunk]);
+            remaining -= chunk;
+        }
     }
 
     pub fn print(self: FileWriter, comptime fmt: []const u8, args: anytype) !void {
-        const data = try std.fmt.allocPrint(std.heap.page_allocator, fmt, args);
+        var sfb = std.heap.stackFallback(4096, std.heap.page_allocator);
+        const ally = sfb.get();
+        const data = try std.fmt.allocPrint(ally, fmt, args);
+        defer ally.free(data);
         try self.writeAll(data);
     }
 };

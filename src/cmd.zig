@@ -700,7 +700,9 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     if (filters.items.len > 0) {
         if (refs.items.len > 0 or before_ref != null or after_ref != null) return error.InvalidArgument;
         const items = try store.visibleList(allocator);
-        for (items.items) |*meta| if (matchesFilters(meta, filters.items)) try store.removeId(allocator, meta.id);
+        var to_remove: std.ArrayList([]const u8) = .empty;
+        for (items.items) |*meta| if (matchesFilters(meta, filters.items)) try to_remove.append(allocator, meta.id);
+        try store.removeIds(allocator, to_remove.items);
         return 0;
     }
     if (before_ref) |reference| {
@@ -708,7 +710,9 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
         const id = try store.resolve(allocator, reference);
         var items = try store.visibleList(allocator);
         keepOlderThan(&items, id);
-        for (items.items) |meta| try store.removeId(allocator, meta.id);
+        var to_remove: std.ArrayList([]const u8) = .empty;
+        for (items.items) |meta| try to_remove.append(allocator, meta.id);
+        try store.removeIds(allocator, to_remove.items);
         return 0;
     }
     if (after_ref) |reference| {
@@ -716,7 +720,9 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
         const id = try store.resolve(allocator, reference);
         var items = try store.visibleList(allocator);
         keepNewerThan(&items, id);
-        for (items.items) |meta| try store.removeId(allocator, meta.id);
+        var to_remove: std.ArrayList([]const u8) = .empty;
+        for (items.items) |meta| try to_remove.append(allocator, meta.id);
+        try store.removeIds(allocator, to_remove.items);
         return 0;
     }
     if (refs.items.len == 0) return error.InvalidArgument;

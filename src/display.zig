@@ -363,8 +363,10 @@ fn visibleLen(value: []const u8) usize {
 }
 
 fn appendSpaces(allocator: Allocator, line: *std.ArrayList(u8), count: usize) !void {
-    var i: usize = 0;
-    while (i < count) : (i += 1) try line.append(allocator, ' ');
+    const old_len = line.items.len;
+    try line.ensureUnusedCapacity(allocator, count);
+    line.items.len += count;
+    @memset(line.items[old_len..], ' ');
 }
 
 fn appendRawRight(allocator: Allocator, line: *std.ArrayList(u8), value: []const u8, width: usize) !void {
