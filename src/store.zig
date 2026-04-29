@@ -10,6 +10,11 @@ const Paths = types.Paths;
 const list_cache_name = "list.z.cache";
 const list_cache_magic = "stash-list-z-cache-v2\n";
 
+pub const PushResult = struct {
+    id: []u8,
+    interrupted: bool = false,
+};
+
 pub fn basePaths(allocator: Allocator) !Paths {
     const base = if (runtime.envOwned(allocator, "STASH_DIR")) |dir|
         dir
@@ -66,7 +71,7 @@ fn visible(meta: *const Meta, pocket: ?[]const u8) bool {
     return true;
 }
 
-pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Attr, tee_mode: bool) ![]u8 {
+pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Attr, tee_mode: bool, save_on_error: bool) !PushResult {
     const p = try initStore(allocator);
     const id = try newUlid(allocator);
 
@@ -75,11 +80,17 @@ pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Att
     const tmp_data_name = std.fmt.bufPrint(&tmp_name_buf, "{s}.data", .{id}) catch return error.Overflow;
     const tmp_data = try std.fs.path.join(allocator, &.{ p.tmp, tmp_data_name });
     var out_file = try runtime.cwd().createFile(runtime.process_io, tmp_data, .{});
+    var out_file_open = true;
+    errdefer {
+        if (out_file_open) out_file.close(runtime.process_io);
+        runtime.cwd().deleteFile(runtime.process_io, tmp_data) catch {};
+    }
 
     // Use a fixed 512-byte stack buffer for the preview sample
     var sample_buf: [512]u8 = undefined;
     var sample_len: usize = 0;
     var total: i64 = 0;
+    var interrupted = false;
     var buf: [65536]u8 = undefined;
     const stdout = runtime.stdoutWriter();
 
@@ -99,8 +110,20 @@ pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Att
         }
     } else {
         const stdin = std.Io.File.stdin();
+        var signals = runtime.installInterruptHandlers();
+        defer signals.deinit();
         while (true) {
-            const n = runtime.fileRead(stdin, &buf) catch return error.ReadFailed;
+            if (runtime.interrupted()) {
+                interrupted = true;
+                break;
+            }
+            const n = runtime.fileRead(stdin, &buf) catch |err| {
+                if (save_on_error and total > 0) {
+                    interrupted = true;
+                    break;
+                }
+                return err;
+            };
             if (n == 0) break;
             if (sample_len < sample_buf.len) {
                 const need = @min(sample_buf.len - sample_len, n);
@@ -108,14 +131,16 @@ pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Att
                 sample_len += need;
             }
             try out_file.writeStreamingAll(runtime.process_io, buf[0..n]);
+            total += @intCast(n);
             if (tee_mode) stdout.writeAll(buf[0..n]) catch |err| {
                 if (err == error.BrokenPipe) break;
                 return err;
             };
-            total += @intCast(n);
         }
     }
+    if (interrupted and (!save_on_error or total == 0)) return error.InputInterrupted;
     out_file.close(runtime.process_io);
+    out_file_open = false;
 
     var meta = Meta.init();
     meta.id = id;
@@ -123,6 +148,7 @@ pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Att
     meta.size = total;
     meta.preview = try buildPreview(allocator, sample_buf[0..sample_len], 128);
     for (attrs) |item| try meta.setAttr(allocator, item.key, item.value);
+    if (interrupted) try meta.setAttr(allocator, "partial", "true");
 
     var tmp_attr_name_buf: [64]u8 = undefined;
     const tmp_attr_name = std.fmt.bufPrint(&tmp_attr_name_buf, "{s}.attr", .{id}) catch return error.Overflow;
@@ -131,7 +157,7 @@ pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Att
     try runtime.cwd().rename(tmp_data, runtime.cwd(), try std.fs.path.join(allocator, &.{ p.data, id }), runtime.process_io);
     try runtime.cwd().rename(tmp_attr, runtime.cwd(), try std.fs.path.join(allocator, &.{ p.attr, id }), runtime.process_io);
     invalidateCacheWithPaths(allocator, &p);
-    return id;
+    return .{ .id = id, .interrupted = interrupted };
 }
 
 pub fn catId(allocator: Allocator, id: []const u8, writer: anytype) !void {
@@ -234,11 +260,16 @@ fn readListCache(allocator: Allocator, p: *const Paths) !std.ArrayList(Meta) {
 fn writeListCache(allocator: Allocator, p: *const Paths, items: []const Meta) !void {
     try runtime.cwd().createDirPath(runtime.process_io, p.tmp);
     try runtime.cwd().createDirPath(runtime.process_io, p.cache);
-    const tmp_path = try std.fs.path.join(allocator, &.{ p.tmp, list_cache_name ++ ".tmp" });
+    const tmp_name = try std.fmt.allocPrint(allocator, "{s}.{s}.tmp", .{ list_cache_name, try newUlid(allocator) });
+    const tmp_path = try std.fs.path.join(allocator, &.{ p.tmp, tmp_name });
     const cache_path = try listCachePath(allocator, p);
 
     var file = try runtime.cwd().createFile(runtime.process_io, tmp_path, .{});
-    errdefer file.close(runtime.process_io);
+    var file_open = true;
+    errdefer {
+        if (file_open) file.close(runtime.process_io);
+        runtime.cwd().deleteFile(runtime.process_io, tmp_path) catch {};
+    }
     const writer = runtime.FileWriter{ .file = file };
     try writer.writeAll(list_cache_magic);
     try writeCacheU32(writer, @intCast(items.len));
@@ -254,6 +285,7 @@ fn writeListCache(allocator: Allocator, p: *const Paths, items: []const Meta) !v
         }
     }
     file.close(runtime.process_io);
+    file_open = false;
     try runtime.cwd().rename(tmp_path, runtime.cwd(), cache_path, runtime.process_io);
 }
 

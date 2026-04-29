@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const cli_dep = b.dependency("cli", .{});
+    const zli_dep = b.dependency("zli", .{ .target = target, .optimize = optimize });
     const version = packageVersion(b);
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "version", version);
@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    exe.root_module.addImport("cli", cli_dep.module("cli"));
+    exe.root_module.addImport("zli", zli_dep.module("zli"));
     exe.root_module.addOptions("build_options", build_options);
 
     b.installArtifact(exe);

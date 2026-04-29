@@ -1,6 +1,6 @@
 const std = @import("std");
 const build_options = @import("build_options");
-const cli = @import("cli");
+const zli = @import("zli");
 const display = @import("display.zig");
 const runtime = @import("runtime.zig");
 const store = @import("store.zig");
@@ -17,6 +17,8 @@ const AttrsMode = types.AttrsMode;
 const AttrFilter = types.AttrFilter;
 const MetaSelection = types.MetaSelection;
 const version = build_options.version;
+
+const PushMode = enum { push, tee, auto };
 
 const LsCliOptions = struct {
     id: IdMode = .short,
@@ -41,8 +43,6 @@ const LsCliOptions = struct {
 };
 
 var active_allocator: Allocator = undefined;
-var active_cli_allocator: Allocator = undefined;
-var ls_cli_options = LsCliOptions{};
 
 pub fn errorMessage(err: anyerror) []const u8 {
     return switch (err) {
@@ -54,241 +54,314 @@ pub fn errorMessage(err: anyerror) []const u8 {
         error.InvalidAttr => "invalid attribute",
         error.InvalidRef => "invalid stack ref",
         error.ReadOnlyAttr => "only user-defined attributes are writable",
+        error.InputInterrupted => "input interrupted",
+        error.InputInterruptedSaved => "input interrupted; saved partial entry",
         else => @errorName(err),
     };
 }
 
 pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:0]const u8) !u8 {
     active_allocator = allocator;
-    active_cli_allocator = init.gpa;
     if (args.len <= 1) {
-        return runRootCli(init);
+        return runZli(init);
     }
     const first = args[1];
     if (std.mem.eql(u8, first, "--help") or std.mem.eql(u8, first, "-h")) {
-        return runRootCli(init);
+        return runZli(init);
     }
     if (std.mem.eql(u8, first, "--version") or std.mem.eql(u8, first, "-V")) {
         try runtime.stdoutWriter().print("stash {s}\n", .{version});
         return 0;
     }
-    if (args.len > 2 and (std.mem.eql(u8, args[2], "--help") or std.mem.eql(u8, args[2], "-h")) and !std.mem.eql(u8, first, "ls")) {
-        return runRootCli(init);
+    if (args.len > 2 and (std.mem.eql(u8, args[2], "--help") or std.mem.eql(u8, args[2], "-h"))) {
+        return runZli(init);
     }
-    if (std.mem.eql(u8, first, "push")) return cmdPush(allocator, args[2..], false);
+    if (std.mem.startsWith(u8, first, "-")) {
+        return cmdPush(allocator, args[1..], .auto);
+    }
+    if (std.mem.eql(u8, first, "push")) return cmdPush(allocator, args[2..], .push);
     if (std.mem.eql(u8, first, "tee")) return cmdTee(allocator, args[2..]);
     if (std.mem.eql(u8, first, "cat")) return cmdCat(allocator, args[2..]);
     if (std.mem.eql(u8, first, "path")) return cmdPath(allocator, args[2..]);
     if (std.mem.eql(u8, first, "attr")) return cmdAttr(allocator, args[2..]);
     if (std.mem.eql(u8, first, "attrs")) return cmdAttrs(allocator, args[2..]);
-    if (std.mem.eql(u8, first, "ls")) return runLsCli(init, allocator);
+    if (std.mem.eql(u8, first, "ls")) return cmdLs(allocator, args[2..]);
     if (std.mem.eql(u8, first, "rm")) return cmdRm(allocator, args[2..]);
     if (std.mem.eql(u8, first, "pop")) return cmdPop(allocator);
 
-    return runRootCli(init);
+    return cmdPush(allocator, args[1..], .auto);
 }
 
-fn noopCli() !void {}
+fn zliRoot(ctx: zli.CommandContext) !void {
+    _ = ctx;
+    _ = try cmdPush(active_allocator, &.{}, .auto);
+}
 
-fn rootSubcommand(name: []const u8, help: []const u8) cli.Command {
-    return .{
+fn zliHelp(ctx: zli.CommandContext) !void {
+    try ctx.command.printHelp();
+}
+
+fn semanticVersion() ?std.SemanticVersion {
+    return std.SemanticVersion.parse(version) catch null;
+}
+
+fn addBoolFlag(cmd: *zli.Command, name: []const u8, shortcut: ?[]const u8, description: []const u8, default: bool) !void {
+    try cmd.addFlag(.{
         .name = name,
-        .description = .{ .one_line = help },
-        .target = .{
-            .action = .{ .exec = noopCli },
-        },
-    };
+        .shortcut = shortcut,
+        .description = description,
+        .type = .Bool,
+        .default_value = .{ .Bool = default },
+    });
 }
 
-fn runRootCli(init: *const std.process.Init) !u8 {
-    var runner = cli.AppRunner.init(init);
-    const app = cli.App{
-        .command = .{
-            .name = "stash",
-            .description = .{ .one_line = "A local store for pipeline output and ad hoc file snapshots." },
-            .target = .{
-                .subcommands = try runner.allocCommands(&.{
-                    rootSubcommand("push", "Store and return the entry key"),
-                    rootSubcommand("tee", "Store and forward to stdout"),
-                    rootSubcommand("cat", "Print an entry's raw data to stdout"),
-                    rootSubcommand("ls", "List entries"),
-                    rootSubcommand("attr", "Show or update entry attributes"),
-                    rootSubcommand("attrs", "List attribute keys across the stash"),
-                    rootSubcommand("path", "Print stash paths"),
-                    rootSubcommand("rm", "Remove entries"),
-                    rootSubcommand("pop", "Print the newest entry and remove it"),
-                }),
-            },
-        },
-        .version = version,
-        .help_config = .{ .color_usage = .never },
+fn addStringFlag(cmd: *zli.Command, name: []const u8, shortcut: ?[]const u8, description: []const u8, default: []const u8) !void {
+    try cmd.addFlag(.{
+        .name = name,
+        .shortcut = shortcut,
+        .description = description,
+        .type = .String,
+        .default_value = .{ .String = default },
+    });
+}
+
+fn addIntFlag(cmd: *zli.Command, name: []const u8, shortcut: ?[]const u8, description: []const u8, default: i32) !void {
+    try cmd.addFlag(.{
+        .name = name,
+        .shortcut = shortcut,
+        .description = description,
+        .type = .Int,
+        .default_value = .{ .Int = default },
+    });
+}
+
+fn zliCommand(init_opts: zli.InitOptions, name: []const u8, description: []const u8) !*zli.Command {
+    return zli.Command.init(init_opts, .{
+        .name = name,
+        .description = description,
+    }, zliHelp);
+}
+
+fn buildZli(init_opts: zli.InitOptions) !*zli.Command {
+    const root = try zli.Command.init(init_opts, .{
+        .name = "stash",
+        .description = "A local store for piped output and files.",
+        .version = semanticVersion(),
+        .help = "More info: https://github.com/vrypan/stash",
+    }, zliRoot);
+    try addStringFlag(root, "attr", "a", "Set attribute key=value", "");
+    try addStringFlag(root, "pocket", null, "Alias for --attr pocket=VALUE", "");
+    try addStringFlag(root, "print", null, "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", "null");
+    try root.addPositionalArg(.{ .name = "FILE", .description = "Optional file to stash; reads stdin when omitted", .required = false });
+
+    const push = try zliCommand(init_opts, "push", "Store stdin and return the entry key");
+    try addStringFlag(push, "attr", "a", "Set attribute key=value", "");
+    try addStringFlag(push, "pocket", null, "Alias for --attr pocket=VALUE", "");
+    try addStringFlag(push, "print", null, "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", "null");
+    try push.addPositionalArg(.{ .name = "FILE", .description = "Optional file to stash; reads stdin when omitted", .required = false });
+
+    const tee = try zliCommand(init_opts, "tee", "Store stdin and forward it to stdout");
+    try addStringFlag(tee, "attr", "a", "Set attribute key=value", "");
+    try addStringFlag(tee, "pocket", null, "Alias for --attr pocket=VALUE", "");
+    try addStringFlag(tee, "print", null, "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", "null");
+    try addBoolFlag(tee, "save-on-error", null, "Save captured input if the input stream is interrupted", true);
+
+    const cat = try zliCommand(init_opts, "cat", "Print an entry's raw data to stdout");
+    try addStringFlag(cat, "attr", "a", "Attribute filter: name or name=value", "");
+    try addStringFlag(cat, "pocket", null, "Alias for --attr pocket=VALUE", "");
+    try addBoolFlag(cat, "reverse", "r", "Print matching refs oldest first", false);
+    try cat.addPositionalArg(.{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .required = false, .variadic = true });
+
+    const ls = try zliCommand(init_opts, "ls", "List entries");
+    try addStringFlag(ls, "id", null, "ID display: short, full, or pos", "short");
+    try addStringFlag(ls, "attr", "a", "Filter or display attributes", "");
+    try addStringFlag(ls, "pocket", null, "Alias for --attr pocket=VALUE", "");
+    try addStringFlag(ls, "attrs", null, "Attribute display: list, count, or flag", "none");
+    try addBoolFlag(ls, "all-attrs", "A", "Alias for --attrs=list", false);
+    try addIntFlag(ls, "number", "n", "Limit number of entries shown", 0);
+    try addStringFlag(ls, "before", null, "Show entries older than the referenced entry", "");
+    try addStringFlag(ls, "after", null, "Show entries newer than the referenced entry", "");
+    try addBoolFlag(ls, "reverse", "r", "Show oldest first", false);
+    try addBoolFlag(ls, "json", null, "Output listing as rich JSON", false);
+    try addBoolFlag(ls, "headers", null, "Print a header row for tabular output", false);
+    try addBoolFlag(ls, "date", "D", "Include date column using ls-style dates", false);
+    try addBoolFlag(ls, "size", null, "Include human-readable size column", false);
+    try addBoolFlag(ls, "bytes", null, "Use raw byte counts for the size column", false);
+    try addBoolFlag(ls, "name", null, "Include filename attribute if available", false);
+    try addBoolFlag(ls, "preview", "p", "Append compact preview text", false);
+    try addBoolFlag(ls, "long", "l", "Alias for -D --size --attrs=flag --preview", false);
+    try addIntFlag(ls, "chars", null, "Preview character limit", 80);
+    try addBoolFlag(ls, "color", null, "Color output", true);
+
+    const attr = try zliCommand(init_opts, "attr", "Show or update entry attributes");
+    try addBoolFlag(attr, "json", null, "Print attributes as JSON", false);
+    try addBoolFlag(attr, "preview", "p", "Include the preview pseudo-attribute", false);
+    try addStringFlag(attr, "separator", null, "Separator for text output", "\t");
+    try addStringFlag(attr, "unset", null, "Remove a writable attribute", "");
+    try attr.addPositionalArg(.{ .name = "ARG", .description = "Entry ref followed by attribute names or key=value assignments", .required = false, .variadic = true });
+
+    const attrs = try zliCommand(init_opts, "attrs", "List attribute keys across the stash");
+    try addBoolFlag(attrs, "count", null, "Print counts", false);
+    try attrs.addPositionalArg(.{ .name = "KEY", .description = "Attribute key to list distinct values for", .required = false });
+
+    const path = try zliCommand(init_opts, "path", "Print stash paths");
+    try addBoolFlag(path, "attr", "a", "Print attr path instead of data path", false);
+    try addBoolFlag(path, "dir", "d", "Print stash root directory", false);
+    try path.addPositionalArg(.{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .required = false });
+
+    const rm = try zliCommand(init_opts, "rm", "Remove entries");
+    try addBoolFlag(rm, "force", "f", "Skip confirmation prompts", false);
+    try addStringFlag(rm, "attr", "a", "Attribute filter: name or name=value", "");
+    try addStringFlag(rm, "before", null, "Remove entries older than the referenced entry", "");
+    try addStringFlag(rm, "after", null, "Remove entries newer than the referenced entry", "");
+    try rm.addPositionalArg(.{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .required = false, .variadic = true });
+
+    const pop = try zliCommand(init_opts, "pop", "Print the newest entry and remove it");
+
+    try root.addCommands(&.{ push, tee, cat, ls, attr, attrs, path, rm, pop });
+    return root;
+}
+
+fn runZli(init: *const std.process.Init) !u8 {
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(runtime.process_io, &stdout_buf);
+    var stdin_buf: [4096]u8 = undefined;
+    var stdin_reader = std.Io.File.stdin().reader(runtime.process_io, &stdin_buf);
+
+    const init_opts = zli.InitOptions{
+        .io = runtime.process_io,
+        .writer = &stdout_writer.interface,
+        .reader = &stdin_reader.interface,
+        .allocator = active_allocator,
     };
-    try runner.run(&app);
+    var root = try buildZli(init_opts);
+    defer root.deinit();
+    var args_iter = try init.minimal.args.iterateAllocator(active_allocator);
+    defer args_iter.deinit();
+    try root.execute(&args_iter, .{});
+    try stdout_writer.interface.flush();
     return 0;
 }
 
-fn runLsCli(init: *const std.process.Init, allocator: Allocator) !u8 {
-    _ = allocator;
-    ls_cli_options = .{};
-
-    var runner = cli.AppRunner.init(init);
-    const ls_command = cli.Command{
-        .name = "ls",
-        .description = .{ .one_line = "List entries" },
-        .options = try runner.allocOptions(&.{
-            .{
-                .long_name = "id",
-                .help = "ID display: short, full, or pos",
-                .value_name = "ID",
-                .value_ref = runner.mkRef(&ls_cli_options.id),
-            },
-            .{
-                .long_name = "attr",
-                .short_alias = 'a',
-                .help = "'name' filters, 'name=value' filters by value, '+name' shows, '++name' filters and shows",
-                .value_name = "attribute filter",
-                .value_ref = runner.mkRef(&ls_cli_options.attr),
-            },
-            .{
-                .long_name = "pocket",
-                .help = "Alias for --attr pocket=VALUE",
-                .value_name = "VALUE",
-                .value_ref = runner.mkRef(&ls_cli_options.pocket),
-            },
-            .{
-                .long_name = "attrs",
-                .help = "Attribute display: list, count, or flag",
-                .value_name = "list|count|flag",
-                .value_ref = runner.mkRef(&ls_cli_options.attrs),
-            },
-            .{
-                .long_name = "all-attrs",
-                .short_alias = 'A',
-                .help = "Alias for --attrs=list",
-                .value_ref = runner.mkRef(&ls_cli_options.attrs_list),
-            },
-            .{
-                .long_name = "number",
-                .short_alias = 'n',
-                .help = "Limit number of entries shown (0 = all)",
-                .value_name = "NUMBER",
-                .value_ref = runner.mkRef(&ls_cli_options.number),
-            },
-            .{
-                .long_name = "before",
-                .help = "Show entries older than the referenced entry",
-                .value_name = "BEFORE",
-                .value_ref = runner.mkRef(&ls_cli_options.before),
-            },
-            .{
-                .long_name = "after",
-                .help = "Show entries newer than the referenced entry",
-                .value_name = "AFTER",
-                .value_ref = runner.mkRef(&ls_cli_options.after),
-            },
-            .{
-                .long_name = "reverse",
-                .short_alias = 'r',
-                .help = "Show oldest first",
-                .value_ref = runner.mkRef(&ls_cli_options.reverse),
-            },
-            .{
-                .long_name = "json",
-                .help = "Output listing as rich JSON",
-                .value_ref = runner.mkRef(&ls_cli_options.json),
-            },
-            .{
-                .long_name = "headers",
-                .help = "Print a header row for tabular output",
-                .value_ref = runner.mkRef(&ls_cli_options.headers),
-            },
-            .{
-                .long_name = "date",
-                .short_alias = 'D',
-                .help = "Include date column using ls-style dates",
-                .value_ref = runner.mkRef(&ls_cli_options.date),
-            },
-            .{
-                .long_name = "size",
-                .help = "Include human-readable size column",
-                .value_ref = runner.mkRef(&ls_cli_options.size),
-            },
-            .{
-                .long_name = "bytes",
-                .help = "Use raw byte counts for the size column",
-                .value_ref = runner.mkRef(&ls_cli_options.bytes),
-            },
-            .{
-                .long_name = "name",
-                .help = "Include filename (attribute) if available, or else full ULID column",
-                .value_ref = runner.mkRef(&ls_cli_options.name),
-            },
-            .{
-                .long_name = "preview",
-                .short_alias = 'p',
-                .help = "Append compact preview text",
-                .value_ref = runner.mkRef(&ls_cli_options.preview),
-            },
-            .{
-                .long_name = "long",
-                .short_alias = 'l',
-                .help = "Alias for -D --size --attrs=flag --preview",
-                .value_ref = runner.mkRef(&ls_cli_options.long),
-            },
-            .{
-                .long_name = "chars",
-                .help = "Preview character limit",
-                .value_name = "CHARS",
-                .value_ref = runner.mkRef(&ls_cli_options.chars),
-            },
-            .{
-                .long_name = "color",
-                .help = "Color output: true or false",
-                .value_name = "COLOR",
-                .value_ref = runner.mkRef(&ls_cli_options.color),
-            },
-        }),
-        .target = .{
-            .action = .{
-                .exec = execLsCli,
-            },
-        },
-    };
-    const app = cli.App{
-        .command = .{
-            .name = "stash",
-            .description = .{ .one_line = "A local store for pipeline output and ad hoc file snapshots" },
-            .target = .{
-                .subcommands = try runner.allocCommands(&.{ls_command}),
-            },
-        },
-        .version = version,
-        .help_config = .{ .color_usage = .never },
-    };
-
-    try runner.run(&app);
+fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
+    var opts = LsCliOptions{};
+    var i: usize = 0;
+    while (i < raw_args.len) : (i += 1) {
+        const arg = raw_args[i];
+        if (std.mem.eql(u8, arg, "--id")) {
+            i += 1;
+            if (i >= raw_args.len) return error.InvalidArgument;
+            opts.id = try parseIdMode(raw_args[i]);
+        } else if (std.mem.startsWith(u8, arg, "--id=")) {
+            opts.id = try parseIdMode(arg["--id=".len..]);
+        } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--attr")) {
+            try appendConstSlice(allocator, &opts.attr, try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "-a") and arg.len > 2) {
+            try appendConstSlice(allocator, &opts.attr, arg[2..]);
+        } else if (std.mem.startsWith(u8, arg, "--attr=")) {
+            try appendConstSlice(allocator, &opts.attr, arg["--attr=".len..]);
+        } else if (std.mem.eql(u8, arg, "--pocket")) {
+            try appendConstSlice(allocator, &opts.pocket, try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "--pocket=")) {
+            try appendConstSlice(allocator, &opts.pocket, arg["--pocket=".len..]);
+        } else if (std.mem.eql(u8, arg, "--attrs")) {
+            opts.attrs = try parseAttrsMode(try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "--attrs=")) {
+            opts.attrs = try parseAttrsMode(arg["--attrs=".len..]);
+        } else if (std.mem.eql(u8, arg, "-A") or std.mem.eql(u8, arg, "--all-attrs")) {
+            opts.attrs_list = true;
+        } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--number")) {
+            opts.number = try parseUsize(try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "-n") and arg.len > 2) {
+            opts.number = try parseUsize(arg[2..]);
+        } else if (std.mem.startsWith(u8, arg, "--number=")) {
+            opts.number = try parseUsize(arg["--number=".len..]);
+        } else if (std.mem.eql(u8, arg, "--before")) {
+            opts.before = try allocator.dupe(u8, try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "--before=")) {
+            opts.before = try allocator.dupe(u8, arg["--before=".len..]);
+        } else if (std.mem.eql(u8, arg, "--after")) {
+            opts.after = try allocator.dupe(u8, try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "--after=")) {
+            opts.after = try allocator.dupe(u8, arg["--after=".len..]);
+        } else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--reverse")) {
+            opts.reverse = true;
+        } else if (std.mem.eql(u8, arg, "--json")) {
+            opts.json = true;
+        } else if (std.mem.eql(u8, arg, "--headers")) {
+            opts.headers = true;
+        } else if (std.mem.eql(u8, arg, "-D") or std.mem.eql(u8, arg, "--date")) {
+            opts.date = true;
+        } else if (std.mem.eql(u8, arg, "--size")) {
+            opts.size = true;
+        } else if (std.mem.eql(u8, arg, "--bytes")) {
+            opts.bytes = true;
+        } else if (std.mem.eql(u8, arg, "--name")) {
+            opts.name = true;
+        } else if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--preview")) {
+            opts.preview = true;
+        } else if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--long")) {
+            opts.long = true;
+        } else if (std.mem.eql(u8, arg, "--chars")) {
+            opts.chars = try parseUsize(try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "--chars=")) {
+            opts.chars = try parseUsize(arg["--chars=".len..]);
+        } else if (std.mem.eql(u8, arg, "--color")) {
+            opts.color = try parseBool(try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "--color=")) {
+            opts.color = try parseBool(arg["--color=".len..]);
+        } else {
+            return error.InvalidArgument;
+        }
+    }
+    try cmdLsFromOptions(allocator, &opts);
     return 0;
 }
 
-fn execLsCli() !void {
-    defer freeLsCliOptions(active_cli_allocator, &ls_cli_options);
-    try cmdLsFromOptions(active_allocator, &ls_cli_options);
+fn nextArgValue(raw_args: []const [:0]const u8, index: *usize) ![]const u8 {
+    index.* += 1;
+    if (index.* >= raw_args.len) return error.InvalidArgument;
+    return raw_args[index.*];
 }
 
-fn freeLsCliOptions(allocator: Allocator, opts: *LsCliOptions) void {
-    for (opts.attr) |value| allocator.free(value);
-    allocator.free(opts.attr);
-    for (opts.pocket) |value| allocator.free(value);
-    allocator.free(opts.pocket);
-    if (opts.before) |value| allocator.free(value);
-    if (opts.after) |value| allocator.free(value);
-    opts.* = .{};
+fn appendConstSlice(allocator: Allocator, list: *[][]const u8, value: []const u8) !void {
+    const old = list.*;
+    const next = try allocator.alloc([]const u8, old.len + 1);
+    std.mem.copyForwards([]const u8, next[0..old.len], old);
+    next[old.len] = value;
+    list.* = next;
 }
 
-fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, tee_mode: bool) !u8 {
+fn parseIdMode(value: []const u8) !IdMode {
+    if (std.mem.eql(u8, value, "short")) return .short;
+    if (std.mem.eql(u8, value, "full")) return .full;
+    if (std.mem.eql(u8, value, "pos")) return .pos;
+    return error.InvalidArgument;
+}
+
+fn parseAttrsMode(value: []const u8) !AttrsMode {
+    if (std.mem.eql(u8, value, "none")) return .none;
+    if (std.mem.eql(u8, value, "list")) return .list;
+    if (std.mem.eql(u8, value, "count")) return .count;
+    if (std.mem.eql(u8, value, "flag")) return .flag;
+    return error.InvalidArgument;
+}
+
+fn parseUsize(value: []const u8) !usize {
+    return std.fmt.parseInt(usize, value, 10) catch return error.InvalidArgument;
+}
+
+fn parseBool(value: []const u8) !bool {
+    if (std.ascii.eqlIgnoreCase(value, "true") or std.mem.eql(u8, value, "1") or std.ascii.eqlIgnoreCase(value, "yes")) return true;
+    if (std.ascii.eqlIgnoreCase(value, "false") or std.mem.eql(u8, value, "0") or std.ascii.eqlIgnoreCase(value, "no")) return false;
+    return error.InvalidArgument;
+}
+
+fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, mode: PushMode) !u8 {
     var attrs: std.ArrayList(Attr) = .empty;
     var print_target: PrintTarget = .none;
     var file_arg: ?[]const u8 = null;
+    var save_on_error = true;
 
     var i: usize = 0;
     while (i < raw_args.len) : (i += 1) {
@@ -299,6 +372,8 @@ fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, tee_mode: bool)
             try appendAttrFlag(allocator, &attrs, raw_args[i]);
         } else if (std.mem.startsWith(u8, arg, "-a") and arg.len > 2) {
             try appendAttrFlag(allocator, &attrs, arg[2..]);
+        } else if (std.mem.startsWith(u8, arg, "--attr=")) {
+            try appendAttrFlag(allocator, &attrs, arg["--attr=".len..]);
         } else if (std.mem.eql(u8, arg, "--pocket")) {
             i += 1;
             if (i >= raw_args.len) return error.InvalidArgument;
@@ -311,10 +386,16 @@ fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, tee_mode: bool)
             print_target = try parsePrintTarget(raw_args[i]);
         } else if (std.mem.startsWith(u8, arg, "--print=")) {
             print_target = try parsePrintTarget(arg["--print=".len..]);
-        } else if (std.mem.startsWith(u8, arg, "--save-on-error")) {
-            // Accepted for documented tee compatibility; partial signal saving is
-            // handled in a later slice.
-        } else if (file_arg == null and !tee_mode) {
+        } else if (std.mem.eql(u8, arg, "--save-on-error")) {
+            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-")) {
+                i += 1;
+                save_on_error = try parseBool(raw_args[i]);
+            } else {
+                save_on_error = true;
+            }
+        } else if (std.mem.startsWith(u8, arg, "--save-on-error=")) {
+            save_on_error = try parseBool(arg["--save-on-error=".len..]);
+        } else if (mode != .tee and file_arg == null) {
             file_arg = arg;
         } else {
             return error.InvalidArgument;
@@ -325,18 +406,23 @@ fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, tee_mode: bool)
         if (store.activePocket(allocator)) |pocket| try setAttrList(allocator, &attrs, types.pocket_attr, pocket);
     }
     if (file_arg) |path| {
-        if (std.fs.path.basename(path).len > 0) {
-            try setAttrList(allocator, &attrs, "filename", std.fs.path.basename(path));
-        }
+        const basename = std.fs.path.basename(path);
+        if (basename.len > 0) try setAttrList(allocator, &attrs, "filename", basename);
     }
 
-    const id = try store.pushInput(allocator, file_arg, attrs.items, tee_mode);
-    try emitId(print_target, id);
+    const tee_mode = mode == .tee or (mode == .auto and file_arg == null and rootShouldTee());
+    const result = try store.pushInput(allocator, file_arg, attrs.items, tee_mode, save_on_error);
+    try emitId(print_target, result.id);
+    if (result.interrupted) return error.InputInterruptedSaved;
     return 0;
 }
 
 fn cmdTee(allocator: Allocator, args: []const [:0]const u8) !u8 {
-    return cmdPush(allocator, args, true);
+    return cmdPush(allocator, args, .tee);
+}
+
+fn rootShouldTee() bool {
+    return !runtime.stdinIsTty() and !runtime.stdoutIsTty();
 }
 
 fn appendAttrFlag(allocator: Allocator, attrs: *std.ArrayList(Attr), pair: []const u8) !void {

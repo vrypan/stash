@@ -2,9 +2,9 @@
     .name = .stash,
     .version = "0.9.1",
     .dependencies = .{
-        .cli = .{
-            .url = "git+https://github.com/sam701/zig-cli#4841cdaed94b920c91ea171beed159976264270a",
-            .hash = "cli-0.10.0-2eKe_1sIAQDecE0Bz5gAm7aLcWz5wBAc8KxlP1YQPEWr",
+        .zli = .{
+            .url = "git+https://github.com/xcaeser/zli#e8a6b9d2c8d7432aea552a24a9a94c0f552c34ce",
+            .hash = "zli-5.0.0-LeUjptjnAABe9O89P9qIBXz37dzFVpcoG2Pw6G4RfM_5",
         },
     },
     .minimum_zig_version = "0.16.0",
