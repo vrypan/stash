@@ -62,16 +62,18 @@ pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:
     active_allocator = allocator;
     active_cli_allocator = init.gpa;
     if (args.len <= 1) {
-        return cmdPush(allocator, args[1..], false);
+        return runRootCli(init);
     }
     const first = args[1];
     if (std.mem.eql(u8, first, "--help") or std.mem.eql(u8, first, "-h")) {
-        try printHelp();
-        return 0;
+        return runRootCli(init);
     }
     if (std.mem.eql(u8, first, "--version") or std.mem.eql(u8, first, "-V")) {
         try runtime.stdoutWriter().print("stash {s}\n", .{version});
         return 0;
+    }
+    if (args.len > 2 and (std.mem.eql(u8, args[2], "--help") or std.mem.eql(u8, args[2], "-h")) and !std.mem.eql(u8, first, "ls")) {
+        return runRootCli(init);
     }
     if (std.mem.eql(u8, first, "push")) return cmdPush(allocator, args[2..], false);
     if (std.mem.eql(u8, first, "tee")) return cmdTee(allocator, args[2..]);
@@ -83,18 +85,46 @@ pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:
     if (std.mem.eql(u8, first, "rm")) return cmdRm(allocator, args[2..]);
     if (std.mem.eql(u8, first, "pop")) return cmdPop(allocator);
 
-    return cmdPush(allocator, args[1..], false);
+    return runRootCli(init);
 }
 
-fn printHelp() !void {
-    try runtime.stdoutWriter().writeAll(
-        \\A local store for pipeline output and ad hoc file snapshots.
-        \\
-        \\Usage: stash [COMMAND] [ARGS]
-        \\
-        \\Commands: push, tee, cat, ls, attr, attrs, path, rm, pop
-        \\
-    );
+fn noopCli() !void {}
+
+fn rootSubcommand(name: []const u8, help: []const u8) cli.Command {
+    return .{
+        .name = name,
+        .description = .{ .one_line = help },
+        .target = .{
+            .action = .{ .exec = noopCli },
+        },
+    };
+}
+
+fn runRootCli(init: *const std.process.Init) !u8 {
+    var runner = cli.AppRunner.init(init);
+    const app = cli.App{
+        .command = .{
+            .name = "stash",
+            .description = .{ .one_line = "A local store for pipeline output and ad hoc file snapshots." },
+            .target = .{
+                .subcommands = try runner.allocCommands(&.{
+                    rootSubcommand("push", "Store and return the entry key"),
+                    rootSubcommand("tee", "Store and forward to stdout"),
+                    rootSubcommand("cat", "Print an entry's raw data to stdout"),
+                    rootSubcommand("ls", "List entries"),
+                    rootSubcommand("attr", "Show or update entry attributes"),
+                    rootSubcommand("attrs", "List attribute keys across the stash"),
+                    rootSubcommand("path", "Print stash paths"),
+                    rootSubcommand("rm", "Remove entries"),
+                    rootSubcommand("pop", "Print the newest entry and remove it"),
+                }),
+            },
+        },
+        .version = version,
+        .help_config = .{ .color_usage = .never },
+    };
+    try runner.run(&app);
+    return 0;
 }
 
 fn runLsCli(init: *const std.process.Init, allocator: Allocator) !u8 {
