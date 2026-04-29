@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
+const runtime = @import("runtime.zig");
 
 const Allocator = std.mem.Allocator;
 const Meta = types.Meta;
@@ -334,7 +335,7 @@ fn displayIdAlloc(allocator: Allocator, meta: *const Meta, idx: usize, mode: IdM
 }
 
 fn stdoutIsTerminal() bool {
-    return std.c.isatty(std.posix.STDOUT_FILENO) == 1;
+    return std.Io.File.stdout().isTty(runtime.process_io) catch false;
 }
 
 fn colorEnabled(value: bool) bool {
@@ -344,12 +345,14 @@ fn colorEnabled(value: bool) bool {
 fn terminalWidth() ?usize {
     if (!stdoutIsTerminal()) return null;
     var ws: std.posix.winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
-    const rc = ioctl(std.posix.STDOUT_FILENO, @intCast(std.posix.T.IOCGWINSZ), &ws);
+    const rc = (runtime.process_io.operate(.{ .device_io_control = .{
+        .file = .stdout(),
+        .code = @intCast(std.posix.T.IOCGWINSZ),
+        .arg = &ws,
+    } }) catch return null).device_io_control;
     if (rc == 0 and ws.col > 0) return ws.col;
     return null;
 }
-
-extern "c" fn ioctl(fd: std.c.fd_t, request: c_ulong, ...) c_int;
 
 fn visibleLen(value: []const u8) usize {
     var view = std.unicode.Utf8View.init(value) catch return value.len;
@@ -536,9 +539,7 @@ fn unixFromParts(p: DateParts) i64 {
 }
 
 fn nowNs() i128 {
-    var ts: std.c.timespec = undefined;
-    if (std.c.clock_gettime(.REALTIME, &ts) != 0) return 0;
-    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
+    return std.Io.Clock.real.now(runtime.process_io).toNanoseconds();
 }
 
 fn previewSnippet(allocator: Allocator, preview: []const u8, chars: usize) ![]u8 {

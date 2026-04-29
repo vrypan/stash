@@ -87,10 +87,9 @@ pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Att
             total += @intCast(n);
         }
     } else {
+        const stdin = std.Io.File.stdin();
         while (true) {
-            const n_raw = std.c.read(std.posix.STDIN_FILENO, &buf, buf.len);
-            if (n_raw < 0) return error.ReadFailed;
-            const n: usize = @intCast(n_raw);
+            const n = runtime.fileRead(stdin, &buf) catch return error.ReadFailed;
             if (n == 0) break;
             if (sample.items.len < 512) {
                 const need = @min(512 - sample.items.len, n);
@@ -299,9 +298,7 @@ fn unescapeAttr(allocator: Allocator, input: []const u8) ![]u8 {
 }
 
 fn nowNs() i128 {
-    var ts: std.c.timespec = undefined;
-    if (std.c.clock_gettime(.REALTIME, &ts) != 0) return 0;
-    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
+    return std.Io.Clock.real.now(runtime.process_io).toNanoseconds();
 }
 
 fn newUlid(allocator: Allocator) ![]u8 {

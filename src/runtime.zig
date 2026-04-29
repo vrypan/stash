@@ -3,34 +3,6 @@ const std = @import("std");
 pub var process_env: std.process.Environ = .empty;
 pub var process_io: std.Io = undefined;
 
-pub const PosixWriter = struct {
-    fd: std.c.fd_t,
-
-    pub fn writeAll(self: PosixWriter, data: []const u8) !void {
-        var off: usize = 0;
-        while (off < data.len) {
-            const n = std.c.write(self.fd, data[off..].ptr, data.len - off);
-            if (n < 0) return error.WriteFailed;
-            if (n == 0) return error.WriteFailed;
-            off += @intCast(n);
-        }
-    }
-
-    pub fn writeByte(self: PosixWriter, byte: u8) !void {
-        try self.writeAll(&.{byte});
-    }
-
-    pub fn writeByteNTimes(self: PosixWriter, byte: u8, n: usize) !void {
-        var i: usize = 0;
-        while (i < n) : (i += 1) try self.writeByte(byte);
-    }
-
-    pub fn print(self: PosixWriter, comptime fmt: []const u8, args: anytype) !void {
-        const data = try std.fmt.allocPrint(std.heap.page_allocator, fmt, args);
-        try self.writeAll(data);
-    }
-};
-
 pub const FileWriter = struct {
     file: std.Io.File,
 
@@ -42,18 +14,23 @@ pub const FileWriter = struct {
         try self.writeAll(&.{byte});
     }
 
+    pub fn writeByteNTimes(self: FileWriter, byte: u8, n: usize) !void {
+        var i: usize = 0;
+        while (i < n) : (i += 1) try self.writeByte(byte);
+    }
+
     pub fn print(self: FileWriter, comptime fmt: []const u8, args: anytype) !void {
         const data = try std.fmt.allocPrint(std.heap.page_allocator, fmt, args);
         try self.writeAll(data);
     }
 };
 
-pub fn stdoutWriter() PosixWriter {
-    return .{ .fd = std.posix.STDOUT_FILENO };
+pub fn stdoutWriter() FileWriter {
+    return .{ .file = .stdout() };
 }
 
-pub fn stderrWriter() PosixWriter {
-    return .{ .fd = std.posix.STDERR_FILENO };
+pub fn stderrWriter() FileWriter {
+    return .{ .file = .stderr() };
 }
 
 pub fn envOwned(allocator: std.mem.Allocator, key: []const u8) ?[]u8 {
