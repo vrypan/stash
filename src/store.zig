@@ -7,6 +7,9 @@ const Attr = types.Attr;
 const Meta = types.Meta;
 const Paths = types.Paths;
 
+const list_cache_name = "list.z.cache";
+const list_cache_magic = "stash-list-z-cache-v2\n";
+
 pub fn basePaths(allocator: Allocator) !Paths {
     const base = if (runtime.envOwned(allocator, "STASH_DIR")) |dir|
         dir
@@ -34,8 +37,10 @@ fn initStore(allocator: Allocator) !Paths {
 
 fn invalidateCache(allocator: Allocator) void {
     const p = basePaths(allocator) catch return;
-    const cache_path = std.fs.path.join(allocator, &.{ p.cache, "list.cache" }) catch return;
-    runtime.cwd().deleteFile(runtime.process_io, cache_path) catch {};
+    const rust_cache_path = std.fs.path.join(allocator, &.{ p.cache, "list.cache" }) catch return;
+    runtime.cwd().deleteFile(runtime.process_io, rust_cache_path) catch {};
+    const zig_cache_path = std.fs.path.join(allocator, &.{ p.cache, list_cache_name }) catch return;
+    runtime.cwd().deleteFile(runtime.process_io, zig_cache_path) catch {};
 }
 
 pub fn dataPath(allocator: Allocator, id: []const u8) ![]u8 {
@@ -55,9 +60,9 @@ pub fn activePocket(allocator: Allocator) ?[]u8 {
     return allocator.dupe(u8, trimmed) catch null;
 }
 
-fn visible(meta: *const Meta, allocator: Allocator) bool {
-    if (activePocket(allocator)) |pocket| {
-        return if (meta.attr(types.pocket_attr)) |value| std.mem.eql(u8, value, pocket) else false;
+fn visible(meta: *const Meta, pocket: ?[]const u8) bool {
+    if (pocket) |pocket_value| {
+        return if (meta.attr(types.pocket_attr)) |value| std.mem.eql(u8, value, pocket_value) else false;
     }
     return true;
 }
@@ -138,18 +143,24 @@ pub fn removeId(allocator: Allocator, id: []const u8) !void {
 }
 
 pub fn visibleList(allocator: Allocator) !std.ArrayList(Meta) {
+    const p = try basePaths(allocator);
+    const pocket = activePocket(allocator);
+    const items = readListCache(allocator, &p) catch blk: {
+        const rebuilt = try listAll(allocator, &p);
+        writeListCache(allocator, &p, rebuilt.items) catch {};
+        break :blk rebuilt;
+    };
+    if (pocket == null) return items;
+
     var out: std.ArrayList(Meta) = .empty;
-    const ids = try listEntryIds(allocator);
-    for (ids.items) |id| {
-        var meta = getMeta(allocator, id) catch continue;
-        if (visible(&meta, allocator)) try out.append(allocator, meta);
+    for (items.items) |*meta| {
+        if (visible(meta, pocket)) try out.append(allocator, meta.*);
     }
     return out;
 }
 
-fn listEntryIds(allocator: Allocator) !std.ArrayList([]u8) {
-    var out: std.ArrayList([]u8) = .empty;
-    const p = try basePaths(allocator);
+fn listAll(allocator: Allocator, p: *const Paths) !std.ArrayList(Meta) {
+    var out: std.ArrayList(Meta) = .empty;
     var dir = runtime.cwd().openDir(runtime.process_io, p.attr, .{ .iterate = true }) catch |err| {
         if (err == error.FileNotFound) return out;
         return err;
@@ -157,10 +168,122 @@ fn listEntryIds(allocator: Allocator) !std.ArrayList([]u8) {
     defer dir.close(runtime.process_io);
     var it = dir.iterate();
     while (try it.next(runtime.process_io)) |entry| {
-        if (entry.kind == .file) try out.append(allocator, try allocator.dupe(u8, entry.name));
+        if (entry.kind != .file) continue;
+        const data = dir.readFileAlloc(runtime.process_io, entry.name, allocator, .limited(16 * 1024 * 1024)) catch continue;
+        const meta = parseAttrFile(allocator, data) catch continue;
+        try out.append(allocator, meta);
     }
-    std.mem.sort([]u8, out.items, {}, descSlices);
+    std.mem.sort(Meta, out.items, {}, descMeta);
     return out;
+}
+
+fn listCachePath(allocator: Allocator, p: *const Paths) ![]u8 {
+    return std.fs.path.join(allocator, &.{ p.cache, list_cache_name });
+}
+
+fn readListCache(allocator: Allocator, p: *const Paths) !std.ArrayList(Meta) {
+    const path = try listCachePath(allocator, p);
+    const data = try runtime.cwd().readFileAlloc(runtime.process_io, path, allocator, .limited(64 * 1024 * 1024));
+    var reader = CacheReader{ .data = data };
+    try reader.expect(list_cache_magic);
+    var out: std.ArrayList(Meta) = .empty;
+    const count = try reader.readU32();
+    try out.ensureTotalCapacity(allocator, count);
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        var meta = Meta.init();
+        meta.id = try reader.readBytes(allocator);
+        meta.ts = try reader.readBytes(allocator);
+        meta.size = try reader.readI64();
+        meta.preview = try reader.readBytes(allocator);
+        const attr_count = try reader.readU32();
+        try meta.attrs.ensureTotalCapacity(allocator, attr_count);
+        var attr_i: u32 = 0;
+        while (attr_i < attr_count) : (attr_i += 1) {
+            try meta.attrs.append(allocator, .{
+                .key = try reader.readBytes(allocator),
+                .value = try reader.readBytes(allocator),
+            });
+        }
+        try out.append(allocator, meta);
+    }
+    if (reader.pos != reader.data.len) return error.InvalidCache;
+    return out;
+}
+
+fn writeListCache(allocator: Allocator, p: *const Paths, items: []const Meta) !void {
+    try runtime.cwd().createDirPath(runtime.process_io, p.tmp);
+    try runtime.cwd().createDirPath(runtime.process_io, p.cache);
+    const tmp_path = try std.fs.path.join(allocator, &.{ p.tmp, list_cache_name ++ ".tmp" });
+    const cache_path = try listCachePath(allocator, p);
+
+    var file = try runtime.cwd().createFile(runtime.process_io, tmp_path, .{});
+    errdefer file.close(runtime.process_io);
+    const writer = runtime.FileWriter{ .file = file };
+    try writer.writeAll(list_cache_magic);
+    try writeCacheU32(writer, @intCast(items.len));
+    for (items) |*meta| {
+        try writeCacheBytes(writer, meta.id);
+        try writeCacheBytes(writer, meta.ts);
+        try writeCacheI64(writer, meta.size);
+        try writeCacheBytes(writer, meta.preview);
+        try writeCacheU32(writer, @intCast(meta.attrs.items.len));
+        for (meta.attrs.items) |attr| {
+            try writeCacheBytes(writer, attr.key);
+            try writeCacheBytes(writer, attr.value);
+        }
+    }
+    file.close(runtime.process_io);
+    try runtime.cwd().rename(tmp_path, runtime.cwd(), cache_path, runtime.process_io);
+}
+
+const CacheReader = struct {
+    data: []const u8,
+    pos: usize = 0,
+
+    fn expect(self: *CacheReader, expected: []const u8) !void {
+        if (self.data.len < expected.len or !std.mem.eql(u8, self.data[0..expected.len], expected)) return error.InvalidCache;
+        self.pos = expected.len;
+    }
+
+    fn readU32(self: *CacheReader) !u32 {
+        if (self.pos + 4 > self.data.len) return error.InvalidCache;
+        const value = std.mem.readInt(u32, self.data[self.pos..][0..4], .little);
+        self.pos += 4;
+        return value;
+    }
+
+    fn readI64(self: *CacheReader) !i64 {
+        if (self.pos + 8 > self.data.len) return error.InvalidCache;
+        const value = std.mem.readInt(i64, self.data[self.pos..][0..8], .little);
+        self.pos += 8;
+        return value;
+    }
+
+    fn readBytes(self: *CacheReader, allocator: Allocator) ![]u8 {
+        const len = try self.readU32();
+        if (self.pos + len > self.data.len) return error.InvalidCache;
+        const bytes = self.data[self.pos .. self.pos + len];
+        self.pos += len;
+        return allocator.dupe(u8, bytes);
+    }
+};
+
+fn writeCacheU32(writer: anytype, value: u32) !void {
+    var buf: [4]u8 = undefined;
+    std.mem.writeInt(u32, &buf, value, .little);
+    try writer.writeAll(&buf);
+}
+
+fn writeCacheI64(writer: anytype, value: i64) !void {
+    var buf: [8]u8 = undefined;
+    std.mem.writeInt(i64, &buf, value, .little);
+    try writer.writeAll(&buf);
+}
+
+fn writeCacheBytes(writer: anytype, value: []const u8) !void {
+    try writeCacheU32(writer, @intCast(value.len));
+    try writer.writeAll(value);
 }
 
 pub fn resolve(allocator: Allocator, input: []const u8) ![]u8 {
@@ -226,7 +349,11 @@ pub fn writeMeta(allocator: Allocator, id: []const u8, meta: *const Meta) !void 
 fn writeMetaFile(allocator: Allocator, path: []const u8, meta: *const Meta) !void {
     var file = try runtime.cwd().createFile(runtime.process_io, path, .{});
     defer file.close(runtime.process_io);
-    var writer = runtime.FileWriter{ .file = file };
+    const writer = runtime.FileWriter{ .file = file };
+    try writeMetaLines(allocator, writer, meta);
+}
+
+fn writeMetaLines(allocator: Allocator, writer: anytype, meta: *const Meta) !void {
     try writeAttrLine(allocator, writer, "id", meta.id);
     try writeAttrLine(allocator, writer, "ts", meta.ts);
     try writer.print("size={}\n", .{meta.size});
@@ -418,6 +545,6 @@ fn allDigits(value: []const u8) bool {
     return true;
 }
 
-fn descSlices(_: void, a: []u8, b: []u8) bool {
-    return std.mem.lessThan(u8, b, a);
+fn descMeta(_: void, a: Meta, b: Meta) bool {
+    return std.mem.lessThan(u8, b.id, a.id);
 }
