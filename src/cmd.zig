@@ -25,6 +25,7 @@ const root_flags = [_]cli.FlagSpec{
     .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
     .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
     .{ .name = "print", .value = .string, .value_name = "TARGET", .description = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", .default_value = "null" },
+    .{ .name = "save-on-error", .value = .bool_optional, .value_name = "BOOL", .description = "Save captured input if the input stream is interrupted", .default_value = "true" },
     .{ .name = "version", .short = 'V', .description = "Print version" },
 };
 
@@ -32,6 +33,7 @@ const push_flags = [_]cli.FlagSpec{
     .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
     .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
     .{ .name = "print", .value = .string, .value_name = "TARGET", .description = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", .default_value = "null" },
+    .{ .name = "save-on-error", .value = .bool_optional, .value_name = "BOOL", .description = "Save captured input if the input stream is interrupted", .default_value = "true" },
 };
 
 const tee_flags = [_]cli.FlagSpec{
@@ -109,6 +111,56 @@ const commands = [_]cli.CommandEntry{
     .{ .name = "tee", .description = "Store stdin and forward it to stdout" },
 };
 
+const file_argument = [_]cli.ArgumentSpec{
+    .{ .name = "FILE", .description = "Optional file to stash; reads stdin when omitted" },
+};
+
+const ref_arguments = [_]cli.ArgumentSpec{
+    .{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .repeatable = true },
+};
+
+const attr_arguments = [_]cli.ArgumentSpec{
+    .{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .required = true },
+    .{ .name = "ARG", .description = "Attribute names or key=value assignments", .repeatable = true },
+};
+
+const attrs_arguments = [_]cli.ArgumentSpec{
+    .{ .name = "KEY", .description = "Attribute key to list distinct values for" },
+};
+
+const path_arguments = [_]cli.ArgumentSpec{
+    .{ .name = "REF", .description = "Entry ID, stack ref, or stack number" },
+};
+
+const root_spec = cli.CommandSpec{ .name = "stash", .description = "A local store for piped output and files.", .usage = "stash [options] [FILE]", .flags = &root_flags, .arguments = &file_argument };
+const push_spec = cli.CommandSpec{ .name = "push", .description = "Store stdin and return the entry key", .usage = "stash push [options] [FILE]", .flags = &push_flags, .arguments = &file_argument };
+const tee_spec = cli.CommandSpec{ .name = "tee", .description = "Store stdin and forward it to stdout", .usage = "stash tee [options]", .flags = &tee_flags };
+const cat_spec = cli.CommandSpec{ .name = "cat", .description = "Print an entry's raw data to stdout", .usage = "stash cat [options] [REF]...", .flags = &ref_filter_reverse_flags, .arguments = &ref_arguments };
+const ls_spec = cli.CommandSpec{ .name = "ls", .description = "List entries", .usage = "stash ls [options]", .flags = &ls_flags, .extra_help =
+    \\Format tokens:
+    \\  %i       short ID
+    \\  %I       full ID
+    \\  %n       stack position
+    \\  %dt      raw timestamp
+    \\  %dh      ls-style date
+    \\  %di      ISO date
+    \\  %sh      human-readable size
+    \\  %sb      raw byte count
+    \\  %p       preview
+    \\  %a{key}  attribute value
+    \\  %Af      attribute flag
+    \\  %Al      attribute list
+    \\  %Ac      attribute count
+    \\  %%       literal %
+    \\  \n \r \t \\ escapes
+    \\
+};
+const attr_spec = cli.CommandSpec{ .name = "attr", .description = "Show or update entry attributes", .usage = "stash attr [options] REF [KEY|key=value]...", .flags = &attr_flags, .arguments = &attr_arguments };
+const attrs_spec = cli.CommandSpec{ .name = "attrs", .description = "List attribute keys across the stash", .usage = "stash attrs [options] [KEY]", .flags = &attrs_flags, .arguments = &attrs_arguments };
+const path_spec = cli.CommandSpec{ .name = "path", .description = "Print stash paths", .usage = "stash path [options] [REF]", .flags = &path_flags, .arguments = &path_arguments };
+const rm_spec = cli.CommandSpec{ .name = "rm", .description = "Remove entries", .usage = "stash rm [options] [REF]...", .flags = &rm_flags, .arguments = &ref_arguments };
+const pop_spec = cli.CommandSpec{ .name = "pop", .description = "Print the newest entry and remove it", .usage = "stash pop" };
+
 const LsCliOptions = struct {
     id: IdMode = .short,
     attr: [][]const u8 = &.{},
@@ -179,7 +231,7 @@ pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:
     if (std.mem.eql(u8, first, "attrs")) return cmdAttrs(allocator, args[2..]);
     if (std.mem.eql(u8, first, "ls")) return cmdLs(allocator, args[2..]);
     if (std.mem.eql(u8, first, "rm")) return cmdRm(allocator, args[2..]);
-    if (std.mem.eql(u8, first, "pop")) return cmdPop(allocator);
+    if (std.mem.eql(u8, first, "pop")) return cmdPop(allocator, args[2..]);
 
     return cmdPush(allocator, args[1..], .auto);
 }
@@ -202,90 +254,33 @@ fn printHelp(allocator: Allocator, name: CommandName) !void {
     switch (name) {
         .root => {
             try out.print(
-                \\A local store for piped output and files.
+                \\{s}
                 \\v{s}
                 \\
                 \\More info: https://github.com/vrypan/stash
                 \\
-                \\Usage: stash [options] [FILE]
+                \\Usage: {s}
                 \\
-            , .{version});
+            , .{ root_spec.description, version, root_spec.usage });
             try cli.printCommandList(out, &commands);
-            try cli.printOptions(allocator, out, &root_flags, true);
+            try cli.printArguments(out, root_spec.arguments);
+            try cli.printOptions(allocator, out, root_spec.flags, true);
         },
-        .push => try cli.printCommandHelp(allocator, out, .{
-            .name = "push",
-            .description = "Store stdin and return the entry key",
-            .usage = "stash push [options] [FILE]",
-            .flags = &push_flags,
-        }),
-        .tee => try cli.printCommandHelp(allocator, out, .{
-            .name = "tee",
-            .description = "Store stdin and forward it to stdout",
-            .usage = "stash tee [options]",
-            .flags = &tee_flags,
-        }),
-        .cat => try cli.printCommandHelp(allocator, out, .{
-            .name = "cat",
-            .description = "Print an entry's raw data to stdout",
-            .usage = "stash cat [options] [REF]...",
-            .flags = &ref_filter_reverse_flags,
-        }),
-        .ls => try cli.printCommandHelp(allocator, out, .{ .name = "ls", .description = "List entries", .usage = "stash ls [options]", .flags = &ls_flags, .extra =
-            \\Format tokens:
-            \\  %i       short ID
-            \\  %I       full ID
-            \\  %n       stack position
-            \\  %dt      raw timestamp
-            \\  %dh      ls-style date
-            \\  %di      ISO date
-            \\  %sh      human-readable size
-            \\  %sb      raw byte count
-            \\  %p       preview
-            \\  %a{key}  attribute value
-            \\  %Af      attribute flag
-            \\  %Al      attribute list
-            \\  %Ac      attribute count
-            \\  %%       literal %
-            \\  \n \r \t \\ escapes
-            \\
-        }),
-        .attr => try cli.printCommandHelp(allocator, out, .{
-            .name = "attr",
-            .description = "Show or update entry attributes",
-            .usage = "stash attr [options] REF [KEY|key=value]...",
-            .flags = &attr_flags,
-        }),
-        .attrs => try cli.printCommandHelp(allocator, out, .{
-            .name = "attrs",
-            .description = "List attribute keys across the stash",
-            .usage = "stash attrs [options] [KEY]",
-            .flags = &attrs_flags,
-        }),
-        .path => try cli.printCommandHelp(allocator, out, .{
-            .name = "path",
-            .description = "Print stash paths",
-            .usage = "stash path [options] [REF]",
-            .flags = &path_flags,
-        }),
-        .rm => try cli.printCommandHelp(allocator, out, .{
-            .name = "rm",
-            .description = "Remove entries",
-            .usage = "stash rm [options] [REF]...",
-            .flags = &rm_flags,
-        }),
-        .pop => try cli.printCommandHelp(allocator, out, .{
-            .name = "pop",
-            .description = "Print the newest entry and remove it",
-            .usage = "stash pop",
-        }),
+        .push => try cli.printCommandHelp(allocator, out, push_spec),
+        .tee => try cli.printCommandHelp(allocator, out, tee_spec),
+        .cat => try cli.printCommandHelp(allocator, out, cat_spec),
+        .ls => try cli.printCommandHelp(allocator, out, ls_spec),
+        .attr => try cli.printCommandHelp(allocator, out, attr_spec),
+        .attrs => try cli.printCommandHelp(allocator, out, attrs_spec),
+        .path => try cli.printCommandHelp(allocator, out, path_spec),
+        .rm => try cli.printCommandHelp(allocator, out, rm_spec),
+        .pop => try cli.printCommandHelp(allocator, out, pop_spec),
     }
 }
 
 fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var opts = LsCliOptions{};
-    const parsed = try cli.parse(allocator, raw_args, &ls_flags);
-    if (parsed.positionals.items.len > 0) return error.InvalidArgument;
+    const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, ls_spec);
     for (parsed.flags.items) |flag| {
         if (std.mem.eql(u8, flag.name, "after")) {
             opts.after = try allocator.dupe(u8, flag.value.?);
@@ -370,9 +365,8 @@ fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, mode: PushMode)
     var file_arg: ?[]const u8 = null;
     var save_on_error = true;
 
-    const parsed = try cli.parse(allocator, raw_args, &tee_flags);
-    if (parsed.positionals.items.len > 1) return error.InvalidArgument;
-    if (mode == .tee and parsed.positionals.items.len > 0) return error.InvalidArgument;
+    const spec = if (mode == .tee) tee_spec else push_spec;
+    const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, spec);
     if (mode != .tee and parsed.positionals.items.len == 1) file_arg = parsed.positionals.items[0];
 
     for (parsed.flags.items) |flag| {
@@ -483,8 +477,8 @@ fn parseRefsAndFilters(
     reverse: *bool,
     allow_reverse: bool,
 ) !void {
-    const active_specs: []const cli.FlagSpec = if (allow_reverse) &ref_filter_reverse_flags else &ref_filter_flags;
-    const parsed = try cli.parse(allocator, raw_args, active_specs);
+    const spec = if (allow_reverse) cat_spec else cli.CommandSpec{ .name = "cat", .description = cat_spec.description, .usage = cat_spec.usage, .flags = &ref_filter_flags, .arguments = &ref_arguments };
+    const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, spec);
     for (parsed.flags.items) |flag| {
         if (std.mem.eql(u8, flag.name, "attr")) {
             try appendFilter(allocator, filters, flag.value.?);
@@ -520,8 +514,7 @@ fn cmdPath(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var want_attr = false;
     var want_dir = false;
     var ref: ?[]const u8 = null;
-    const parsed = try cli.parse(allocator, raw_args, &path_flags);
-    if (parsed.positionals.items.len > 1) return error.InvalidArgument;
+    const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, path_spec);
     if (parsed.positionals.items.len == 1) ref = parsed.positionals.items[0];
     for (parsed.flags.items) |flag| {
         if (std.mem.eql(u8, flag.name, "attr")) want_attr = true else if (std.mem.eql(u8, flag.name, "dir")) want_dir = true;
@@ -550,8 +543,7 @@ fn cmdAttr(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var unset: std.ArrayList([]const u8) = .empty;
     var items: std.ArrayList([]const u8) = .empty;
 
-    const parsed = try cli.parse(allocator, raw_args, &attr_flags);
-    if (parsed.positionals.items.len == 0) return error.InvalidArgument;
+    const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, attr_spec);
     const id = try store.resolve(allocator, parsed.positionals.items[0]);
     var meta = try store.getMeta(allocator, id);
     for (parsed.positionals.items[1..]) |item| try items.append(allocator, item);
@@ -634,8 +626,7 @@ fn cmdAttr(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
 fn cmdAttrs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var key: ?[]const u8 = null;
     var count = false;
-    const parsed = try cli.parse(allocator, raw_args, &attrs_flags);
-    if (parsed.positionals.items.len > 1) return error.InvalidArgument;
+    const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, attrs_spec);
     if (parsed.positionals.items.len == 1) key = parsed.positionals.items[0];
     count = parsed.present("count");
     const items = try store.visibleList(allocator);
@@ -763,7 +754,7 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var filters: std.ArrayList(AttrFilter) = .empty;
     var before_ref: ?[]const u8 = null;
     var after_ref: ?[]const u8 = null;
-    const parsed = try cli.parse(allocator, raw_args, &rm_flags);
+    const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, rm_spec);
     for (parsed.positionals.items) |ref| try refs.append(allocator, ref);
     for (parsed.flags.items) |flag| {
         if (std.mem.eql(u8, flag.name, "after")) {
@@ -810,7 +801,8 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     return 0;
 }
 
-fn cmdPop(allocator: Allocator) !u8 {
+fn cmdPop(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
+    _ = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, pop_spec);
     const id = try store.resolve(allocator, "");
     try store.catId(allocator, id, runtime.stdoutWriter());
     try store.removeId(allocator, id);

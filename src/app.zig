@@ -9,6 +9,7 @@ pub fn main(init: std.process.Init) !void {
 
     const args = try init.minimal.args.toSlice(allocator);
     const code = cmd.run(&init, allocator, args) catch |err| {
+        if (err == error.ReportedCliError) return std.process.exit(1);
         const stderr = runtime.stderrWriter();
         try stderr.print("error: {s}\n", .{cmd.errorMessage(err)});
         return std.process.exit(1);

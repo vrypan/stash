@@ -7,3 +7,4 @@ zig-out/
 .zig-cache/
 zig-pkg/
 misc/
+CLI.md
