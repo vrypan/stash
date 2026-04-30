@@ -1,6 +1,6 @@
 # ~{@ stash
 
-`sstash` is a small, efficient command line tool that saves data for future reference and integrates nicely
+`stash` is a small, efficient command line tool that saves data for future reference and integrates nicely
 with command line workflows.
 
 Stash piped output or files
@@ -79,25 +79,21 @@ $ file .stash/data/*
 
 ## Documentation
 - Usage guide, and examples: [docs/](docs)
-- Scrips, and cli integrations (bash/zsh/fish, ripgrep, starship, ssh, fzf, etc.): [scripts/](scripts/)
+- Scripts and CLI integrations (ripgrep, starship, ssh, fzf, etc.): [scripts/](scripts/)
 
 
 ## Installation
 
 ### From Source
 
-Build the Rust binary and copy it to a location in your `PATH`:
+Build the Zig binary and copy it to a location in your `PATH`:
 
 ```bash
-cargo build --release
-cp target/release/stash /usr/local/bin/stash
+zig build -Doptimize=ReleaseSmall
+cp zig-out/bin/stash /usr/local/bin/stash
 ```
 
-### With Cargo
-
-```bash
-cargo install stash-cli
-```
+Requires Zig 0.16.0 or newer.
 
 ### Pre-built binaries
 
