@@ -9,6 +9,8 @@ This is a **major** update: `stash` has been ported to Zig.
 - Replace external CLI metadata dependencies with the built-in Zig parser.
 - Generate command help option rows from the same parameter descriptions used
   by the parser.
+- Remove `stash pop`; use `stash cat @1` followed by `stash rm @1` when the
+  newest entry should be printed and removed.
 - Restore smart bare `stash` behavior:
   - in a pipeline, `stash` forwards input like `stash tee`
   - otherwise, `stash` stores input like `stash push`

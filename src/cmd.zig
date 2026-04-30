@@ -19,7 +19,7 @@ const version = build_options.version;
 
 const PushMode = enum { push, tee, auto };
 
-const CommandName = enum { root, push, tee, cat, ls, attr, attrs, path, rm, pop };
+const CommandName = enum { root, push, tee, cat, ls, attr, attrs, path, rm };
 
 const root_flags = [_]cli.FlagSpec{
     .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
@@ -105,7 +105,6 @@ const commands = [_]cli.CommandEntry{
     .{ .name = "cat", .description = "Print an entry's raw data to stdout" },
     .{ .name = "ls", .description = "List entries" },
     .{ .name = "path", .description = "Print stash paths" },
-    .{ .name = "pop", .description = "Print the newest entry and remove it" },
     .{ .name = "push", .description = "Store stdin and return the entry key" },
     .{ .name = "rm", .description = "Remove entries" },
     .{ .name = "tee", .description = "Store stdin and forward it to stdout" },
@@ -159,7 +158,6 @@ const attr_spec = cli.CommandSpec{ .name = "attr", .description = "Show or updat
 const attrs_spec = cli.CommandSpec{ .name = "attrs", .description = "List attribute keys across the stash", .usage = "stash attrs [options] [KEY]", .flags = &attrs_flags, .arguments = &attrs_arguments };
 const path_spec = cli.CommandSpec{ .name = "path", .description = "Print stash paths", .usage = "stash path [options] [REF]", .flags = &path_flags, .arguments = &path_arguments };
 const rm_spec = cli.CommandSpec{ .name = "rm", .description = "Remove entries", .usage = "stash rm [options] [REF]...", .flags = &rm_flags, .arguments = &ref_arguments };
-const pop_spec = cli.CommandSpec{ .name = "pop", .description = "Print the newest entry and remove it", .usage = "stash pop" };
 
 const LsCliOptions = struct {
     id: IdMode = .short,
@@ -231,7 +229,6 @@ pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:
     if (std.mem.eql(u8, first, "attrs")) return cmdAttrs(allocator, args[2..]);
     if (std.mem.eql(u8, first, "ls")) return cmdLs(allocator, args[2..]);
     if (std.mem.eql(u8, first, "rm")) return cmdRm(allocator, args[2..]);
-    if (std.mem.eql(u8, first, "pop")) return cmdPop(allocator, args[2..]);
 
     return cmdPush(allocator, args[1..], .auto);
 }
@@ -245,7 +242,6 @@ fn commandName(value: []const u8) ?CommandName {
     if (std.mem.eql(u8, value, "attrs")) return .attrs;
     if (std.mem.eql(u8, value, "path")) return .path;
     if (std.mem.eql(u8, value, "rm")) return .rm;
-    if (std.mem.eql(u8, value, "pop")) return .pop;
     return null;
 }
 
@@ -274,7 +270,6 @@ fn printHelp(allocator: Allocator, name: CommandName) !void {
         .attrs => try cli.printCommandHelp(allocator, out, attrs_spec),
         .path => try cli.printCommandHelp(allocator, out, path_spec),
         .rm => try cli.printCommandHelp(allocator, out, rm_spec),
-        .pop => try cli.printCommandHelp(allocator, out, pop_spec),
     }
 }
 
@@ -798,14 +793,6 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     }
     if (refs.items.len == 0) return error.InvalidArgument;
     for (refs.items) |r| try store.removeId(allocator, try store.resolve(allocator, r));
-    return 0;
-}
-
-fn cmdPop(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
-    _ = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, pop_spec);
-    const id = try store.resolve(allocator, "");
-    try store.catId(allocator, id, runtime.stdoutWriter());
-    try store.removeId(allocator, id);
     return 0;
 }
 

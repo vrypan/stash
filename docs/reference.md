@@ -11,7 +11,6 @@ stash attr <id|n|@n>
 stash attrs [--count]
 stash cat [id|n|@n]
 stash ls
-stash pop
 stash rm <id|n|@n>...
 stash rm --before <id|@n>
 stash rm -a <name|name=value>

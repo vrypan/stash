@@ -50,7 +50,6 @@ Retrieve data:
 ```bash
 stash cat
 stash cat 2
-stash pop
 stash cat @1
 stash cat @2
 stash cat 01kn2ahqhr738w84t3wpc43xd3
@@ -219,7 +218,8 @@ kubectl get pods -A | stash
 
 stash ls
 stash cat | less
-stash pop | wc -l
+stash cat @1 | wc -l
+stash rm @1
 ```
 
 ### Save intermediate pipeline stages for debugging
