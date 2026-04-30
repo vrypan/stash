@@ -41,7 +41,7 @@ If you want to find the right snapshots first:
 ```bash
 stash attrs --count
 stash ls -a phase -a +phase
-stash ls -A
+stash ls --attrs=list
 ```
 
 ## Keep benchmark runs by default
@@ -71,7 +71,7 @@ Useful follow-up commands:
 ```bash
 stash attrs --count
 stash ls -a ++kind -a ++commit
-stash ls -A
+stash ls --attrs=list
 diff -u <(stash cat @2) <(stash cat @1)
 ```
 
@@ -114,7 +114,7 @@ With a few consistent keys, you can quickly find related runs:
 
 ```bash
 stash ls -a ++kind -a ++phase
-stash ls -A
+stash ls --attrs=list
 stash attrs --count
 ```
 

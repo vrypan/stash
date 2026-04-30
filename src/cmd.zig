@@ -24,7 +24,6 @@ const LsCliOptions = struct {
     attr: [][]const u8 = &.{},
     pocket: [][]const u8 = &.{},
     attrs: AttrsMode = .none,
-    attrs_list: bool = false,
     number: usize = 0,
     before: ?[]const u8 = null,
     after: ?[]const u8 = null,
@@ -36,8 +35,9 @@ const LsCliOptions = struct {
     bytes: bool = false,
     name: bool = false,
     preview: bool = false,
+    format: ?[]const u8 = null,
     long: bool = false,
-    chars: usize = 80,
+    width: usize = 0,
     color: bool = true,
 };
 
@@ -172,25 +172,25 @@ fn buildZli(init_opts: zli.InitOptions) !*zli.Command {
     try cat.addPositionalArg(.{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .required = false, .variadic = true });
 
     const ls = try zliCommand(init_opts, "ls", "List entries");
-    try addStringFlag(ls, "id", null, "ID display: short, full, or pos", "short");
-    try addStringFlag(ls, "attr", "a", "Filter or display attributes", "");
-    try addStringFlag(ls, "pocket", null, "Alias for --attr pocket=VALUE", "");
-    try addStringFlag(ls, "attrs", null, "Attribute display: list, count, or flag", "none");
-    try addBoolFlag(ls, "all-attrs", "A", "Alias for --attrs=list", false);
-    try addIntFlag(ls, "number", "n", "Limit number of entries shown", 0);
-    try addStringFlag(ls, "before", null, "Show entries older than the referenced entry", "");
     try addStringFlag(ls, "after", null, "Show entries newer than the referenced entry", "");
-    try addBoolFlag(ls, "reverse", "r", "Show oldest first", false);
-    try addBoolFlag(ls, "json", null, "Output listing as rich JSON", false);
-    try addBoolFlag(ls, "headers", null, "Print a header row for tabular output", false);
-    try addBoolFlag(ls, "date", "D", "Include date column using ls-style dates", false);
-    try addBoolFlag(ls, "size", null, "Include human-readable size column", false);
+    try addStringFlag(ls, "attr", "a", "Filter or display attributes", "");
+    try addStringFlag(ls, "attrs", null, "Attribute display: list, count, or flag", "none");
+    try addStringFlag(ls, "before", null, "Show entries older than the referenced entry", "");
     try addBoolFlag(ls, "bytes", null, "Use raw byte counts for the size column", false);
-    try addBoolFlag(ls, "name", null, "Include filename attribute if available", false);
-    try addBoolFlag(ls, "preview", "p", "Append compact preview text", false);
-    try addBoolFlag(ls, "long", "l", "Alias for -D --size --attrs=flag --preview", false);
-    try addIntFlag(ls, "chars", null, "Preview character limit", 80);
     try addBoolFlag(ls, "color", null, "Color output", true);
+    try addBoolFlag(ls, "date", null, "Include date column using ls-style dates", false);
+    try addStringFlag(ls, "format", null, "Print entries using a format string", "");
+    try addBoolFlag(ls, "headers", null, "Print a header row for tabular output", false);
+    try addStringFlag(ls, "id", null, "ID display: short, full, or pos", "short");
+    try addBoolFlag(ls, "json", null, "Output listing as rich JSON", false);
+    try addBoolFlag(ls, "long", "l", "Alias for --date --size --attrs=flag --preview", false);
+    try addBoolFlag(ls, "name", null, "Include filename attribute if available", false);
+    try addIntFlag(ls, "number", "n", "Limit number of entries shown", 0);
+    try addStringFlag(ls, "pocket", null, "Alias for --attr pocket=VALUE", "");
+    try addBoolFlag(ls, "preview", "p", "Append compact preview text", false);
+    try addBoolFlag(ls, "reverse", "r", "Show oldest first", false);
+    try addBoolFlag(ls, "size", null, "Include human-readable size column", false);
+    try addIntFlag(ls, "width", "w", "Maximum output line width; 0 uses terminal width", 0);
 
     const attr = try zliCommand(init_opts, "attr", "Show or update entry attributes");
     try addBoolFlag(attr, "json", null, "Print attributes as JSON", false);
@@ -267,8 +267,6 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
             opts.attrs = try parseAttrsMode(try nextArgValue(raw_args, &i));
         } else if (std.mem.startsWith(u8, arg, "--attrs=")) {
             opts.attrs = try parseAttrsMode(arg["--attrs=".len..]);
-        } else if (std.mem.eql(u8, arg, "-A") or std.mem.eql(u8, arg, "--all-attrs")) {
-            opts.attrs_list = true;
         } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--number")) {
             opts.number = try parseUsize(try nextArgValue(raw_args, &i));
         } else if (std.mem.startsWith(u8, arg, "-n") and arg.len > 2) {
@@ -289,7 +287,7 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
             opts.json = true;
         } else if (std.mem.eql(u8, arg, "--headers")) {
             opts.headers = true;
-        } else if (std.mem.eql(u8, arg, "-D") or std.mem.eql(u8, arg, "--date")) {
+        } else if (std.mem.eql(u8, arg, "--date")) {
             opts.date = true;
         } else if (std.mem.eql(u8, arg, "--size")) {
             opts.size = true;
@@ -299,12 +297,18 @@ fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
             opts.name = true;
         } else if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--preview")) {
             opts.preview = true;
+        } else if (std.mem.eql(u8, arg, "--format")) {
+            opts.format = try allocator.dupe(u8, try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "--format=")) {
+            opts.format = try allocator.dupe(u8, arg["--format=".len..]);
         } else if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--long")) {
             opts.long = true;
-        } else if (std.mem.eql(u8, arg, "--chars")) {
-            opts.chars = try parseUsize(try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "--chars=")) {
-            opts.chars = try parseUsize(arg["--chars=".len..]);
+        } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--width")) {
+            opts.width = try parseUsize(try nextArgValue(raw_args, &i));
+        } else if (std.mem.startsWith(u8, arg, "-w") and arg.len > 2) {
+            opts.width = try parseUsize(arg[2..]);
+        } else if (std.mem.startsWith(u8, arg, "--width=")) {
+            opts.width = try parseUsize(arg["--width=".len..]);
         } else if (std.mem.eql(u8, arg, "--color")) {
             opts.color = try parseBool(try nextArgValue(raw_args, &i));
         } else if (std.mem.startsWith(u8, arg, "--color=")) {
@@ -703,10 +707,9 @@ fn cmdLsFromOptions(allocator: Allocator, opts: *const LsCliOptions) !void {
     if (opts.long) {
         date_mode = .ls;
         show_size = true;
-        if (attrs_mode == .none and !opts.attrs_list) attrs_mode = .flag;
+        if (attrs_mode == .none) attrs_mode = .flag;
         show_preview = true;
     }
-    if (opts.attrs_list) attrs_mode = .list;
     if (attrs_mode == .list) selection.show_all = true;
 
     for (opts.attr) |value| {
@@ -731,10 +734,14 @@ fn cmdLsFromOptions(allocator: Allocator, opts: *const LsCliOptions) !void {
     if (opts.reverse) std.mem.reverse(Meta, items.items);
     if (opts.number > 0 and items.items.len > opts.number) items.items.len = opts.number;
 
-    if (opts.json) {
-        try display.printLsJson(allocator, runtime.stdoutWriter(), items.items, date_mode orelse .ls, opts.chars);
+    if (opts.json and opts.format != null) return error.InvalidArgument;
+
+    if (opts.format) |format| {
+        try display.printLsFormat(allocator, runtime.stdoutWriter(), items.items, format, opts.width);
+    } else if (opts.json) {
+        try display.printLsJson(allocator, runtime.stdoutWriter(), items.items, date_mode orelse .ls);
     } else {
-        try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, show_size, show_bytes, attrs_mode, opts.name, show_preview, opts.headers, opts.chars, opts.color, &selection);
+        try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, show_size, show_bytes, attrs_mode, opts.name, show_preview, opts.headers, opts.width, opts.color, &selection);
     }
 }
 

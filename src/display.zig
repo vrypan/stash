@@ -56,7 +56,7 @@ pub fn printLsTable(
     show_name: bool,
     show_preview: bool,
     headers: bool,
-    chars: usize,
+    width: usize,
     color: bool,
     selection: *const MetaSelection,
 ) !void {
@@ -65,13 +65,15 @@ pub fn printLsTable(
     const show_flag = attrs_mode == .flag;
     const has_display_tags = selection.display_tags.items.len > 0;
     const show_all_meta = selection.show_all;
+    const line_width = resolveLineWidth(width);
 
     const simple_ids_only = !has_date and !show_size and !show_bytes and !show_name and !show_preview and
         !show_count and !show_flag and !show_all_meta and !has_display_tags;
     if (simple_ids_only and !headers) {
         for (items, 0..) |*meta, idx| {
-            try writeColored(out, try displayIdAlloc(allocator, meta, idx, id_mode), "1;33", color);
-            try out.writeByte('\n');
+            var line: std.ArrayList(u8) = .empty;
+            try appendColorized(allocator, &line, try displayIdAlloc(allocator, meta, idx, id_mode), "1;33", color);
+            try writeLine(out, allocator, line.items, line_width);
         }
         return;
     }
@@ -89,8 +91,6 @@ pub fn printLsTable(
         preview: []u8,
     };
 
-    const auto_preview = show_preview and chars == 80;
-    const initial_chars: usize = if (auto_preview) 0 else chars;
     var rows: std.ArrayList(LsRow) = .empty;
 
     var max_id: usize = 0;
@@ -162,7 +162,7 @@ pub fn printLsTable(
         }
 
         const preview_val = if (show_preview and meta.preview.len > 0)
-            try previewSnippet(allocator, meta.preview, initial_chars)
+            try allocator.dupe(u8, meta.preview)
         else
             try allocator.dupe(u8, "");
 
@@ -198,24 +198,6 @@ pub fn printLsTable(
         if (show_all_meta) max_inline_meta = @max(max_inline_meta, header_attrs.len);
         for (selection.display_tags.items, 0..) |tag, tag_idx| {
             meta_widths.items[tag_idx] = @max(meta_widths.items[tag_idx], visibleLen(tag));
-        }
-    }
-
-    const width = terminalWidth();
-    if (auto_preview) {
-        const term_width = width orelse 80;
-        var fixed = max_id;
-        if (max_size > 0) fixed += 2 + max_size;
-        if (max_bytes > 0) fixed += 2 + max_bytes;
-        if (max_date > 0) fixed += 2 + max_date;
-        if (max_name > 0) fixed += 2 + max_name;
-        if (max_attr_count > 0) fixed += 2 + max_attr_count;
-        if (max_attr_flag > 0) fixed += 2 + max_attr_flag;
-        for (meta_widths.items) |mw| fixed += 2 + mw;
-        if (max_inline_meta > 0) fixed += 2 + max_inline_meta;
-        const effective_chars = @max(term_width -| (fixed + 2), 20);
-        for (rows.items, items) |*row, *meta| {
-            if (meta.preview.len > 0) row.preview = try previewSnippet(allocator, meta.preview, effective_chars);
         }
     }
 
@@ -258,7 +240,7 @@ pub fn printLsTable(
             try line.appendSlice(allocator, "  ");
             try appendColorized(allocator, &line, header_preview, "1", color);
         }
-        try writeLine(out, allocator, line.items, width);
+        try writeLine(out, allocator, line.items, line_width);
         line.clearRetainingCapacity();
     }
 
@@ -304,12 +286,12 @@ pub fn printLsTable(
             try line.appendSlice(allocator, "  ");
             try line.appendSlice(allocator, row.preview);
         }
-        try writeLine(out, allocator, line.items, width);
+        try writeLine(out, allocator, line.items, line_width);
         line.clearRetainingCapacity();
     }
 }
 
-pub fn printLsJson(allocator: Allocator, out: anytype, items: []const Meta, date_mode: DateMode, chars: usize) !void {
+pub fn printLsJson(allocator: Allocator, out: anytype, items: []const Meta, date_mode: DateMode) !void {
     try out.writeAll("[\n");
     for (items, 0..) |*meta, idx| {
         if (idx > 0) try out.writeAll(",\n");
@@ -325,12 +307,119 @@ pub fn printLsJson(allocator: Allocator, out: anytype, items: []const Meta, date
         for (meta.attrs.items) |attr| try jsonFieldIndented(out, &first, attr.key, attr.value, 4);
         if (meta.preview.len > 0) {
             try out.writeAll(",\n    \"preview\": [");
-            try printJsonString(out, try previewSnippet(allocator, meta.preview, chars));
+            try printJsonString(out, meta.preview);
             try out.writeByte(']');
         }
         try out.writeAll("\n  }");
     }
     try out.writeAll("\n]\n");
+}
+
+pub fn printLsFormat(allocator: Allocator, out: anytype, items: []const Meta, format: []const u8, width: usize) !void {
+    const line_width = resolveLineWidth(width);
+    for (items, 0..) |*meta, idx| {
+        var line: std.ArrayList(u8) = .empty;
+        var i: usize = 0;
+        while (i < format.len) : (i += 1) {
+            const ch = format[i];
+            if (ch == '\\') {
+                i += 1;
+                if (i >= format.len) return error.InvalidArgument;
+                switch (format[i]) {
+                    'n' => {
+                        try writeLine(out, allocator, line.items, line_width);
+                        line.clearRetainingCapacity();
+                    },
+                    'r' => try line.append(allocator, '\r'),
+                    't' => try line.append(allocator, '\t'),
+                    '\\' => try line.append(allocator, '\\'),
+                    else => return error.InvalidArgument,
+                }
+                continue;
+            }
+            if (ch == '\n') {
+                try writeLine(out, allocator, line.items, line_width);
+                line.clearRetainingCapacity();
+                continue;
+            }
+            if (ch != '%') {
+                try line.append(allocator, ch);
+                continue;
+            }
+
+            i += 1;
+            if (i >= format.len) return error.InvalidArgument;
+            switch (format[i]) {
+                '%' => try line.append(allocator, '%'),
+                'i' => try appendEscapedDisplay(allocator, &line, meta.shortId()),
+                'I' => try appendEscapedDisplay(allocator, &line, meta.id),
+                'n' => try appendFmt(allocator, &line, "{}", .{idx + 1}),
+                'p' => try appendEscapedDisplay(allocator, &line, meta.preview),
+                'a' => {
+                    const key = try parseFormatAttrKey(format, &i);
+                    try appendEscapedDisplay(allocator, &line, meta.attr(key) orelse "");
+                },
+                'A' => try appendFormatAttrs(allocator, &line, meta, format, &i),
+                's' => try appendFormatSize(allocator, &line, meta, format, &i),
+                'd' => try appendFormatDate(allocator, &line, meta, format, &i),
+                else => return error.InvalidArgument,
+            }
+        }
+        if (line.items.len > 0) try writeRawLine(out, allocator, line.items, line_width);
+    }
+}
+
+fn appendFormatAttrs(allocator: Allocator, line: *std.ArrayList(u8), meta: *const Meta, format: []const u8, index: *usize) !void {
+    if (index.* + 1 >= format.len) return error.InvalidArgument;
+    index.* += 1;
+    switch (format[index.*]) {
+        'f' => {
+            if (meta.attrs.items.len > 0) try line.append(allocator, '*');
+        },
+        'l' => {
+            for (meta.attrs.items, 0..) |attr, n| {
+                if (n > 0) try line.appendSlice(allocator, "  ");
+                try appendEscapedDisplay(allocator, line, attr.value);
+            }
+        },
+        'c' => try appendFmt(allocator, line, "{}", .{meta.attrs.items.len}),
+        else => return error.InvalidArgument,
+    }
+}
+
+fn appendFormatSize(allocator: Allocator, line: *std.ArrayList(u8), meta: *const Meta, format: []const u8, index: *usize) !void {
+    if (index.* + 1 >= format.len) return error.InvalidArgument;
+    index.* += 1;
+    switch (format[index.*]) {
+        'b' => try appendFmt(allocator, line, "{}", .{meta.size}),
+        'h' => try appendEscapedDisplay(allocator, line, try humanSize(allocator, meta.size)),
+        else => return error.InvalidArgument,
+    }
+}
+
+fn appendFormatDate(allocator: Allocator, line: *std.ArrayList(u8), meta: *const Meta, format: []const u8, index: *usize) !void {
+    if (index.* + 1 >= format.len) return error.InvalidArgument;
+    index.* += 1;
+    switch (format[index.*]) {
+        't' => try appendEscapedDisplay(allocator, line, meta.ts),
+        'h' => try appendEscapedDisplay(allocator, line, try formatDate(allocator, meta.ts, .ls)),
+        'i' => try appendEscapedDisplay(allocator, line, try formatDate(allocator, meta.ts, .iso)),
+        else => return error.InvalidArgument,
+    }
+}
+
+fn parseFormatAttrKey(format: []const u8, index: *usize) ![]const u8 {
+    if (index.* + 1 >= format.len or format[index.* + 1] != '{') return error.InvalidArgument;
+    const start = index.* + 2;
+    var end = start;
+    while (end < format.len and format[end] != '}') end += 1;
+    if (end >= format.len or end == start) return error.InvalidArgument;
+    index.* = end;
+    return format[start..end];
+}
+
+fn appendFmt(allocator: Allocator, line: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
+    try line.appendSlice(allocator, try std.fmt.allocPrint(allocator, fmt, args));
 }
 
 fn jsonFieldIndented(writer: anytype, first: *bool, key: []const u8, value: []const u8, indent: usize) !void {
@@ -362,15 +451,29 @@ fn colorEnabled(value: bool) bool {
 }
 
 fn terminalWidth() ?usize {
-    if (!stdoutIsTerminal()) return null;
-    var ws: std.posix.winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
-    const rc = (runtime.process_io.operate(.{ .device_io_control = .{
-        .file = .stdout(),
-        .code = @intCast(std.posix.T.IOCGWINSZ),
-        .arg = &ws,
-    } }) catch return null).device_io_control;
-    if (rc == 0 and ws.col > 0) return ws.col;
+    const is_tty = stdoutIsTerminal();
+    if (is_tty) {
+        var ws: std.posix.winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
+        const rc = (runtime.process_io.operate(.{ .device_io_control = .{
+            .file = .stdout(),
+            .code = @intCast(std.posix.T.IOCGWINSZ),
+            .arg = &ws,
+        } }) catch null);
+        if (rc) |result| {
+            if (result.device_io_control == 0 and ws.col > 0) return ws.col;
+        }
+    }
+    if (std.process.Environ.getPosix(runtime.process_env, "COLUMNS")) |value| {
+        const columns = std.fmt.parseInt(usize, value, 10) catch 0;
+        if (columns > 0) return columns;
+    }
+    if (is_tty) return 80;
     return null;
+}
+
+fn resolveLineWidth(width: usize) ?usize {
+    if (width > 0) return width;
+    return terminalWidth();
 }
 
 fn visibleLen(value: []const u8) usize {
@@ -432,22 +535,18 @@ fn appendStyledLeft(allocator: Allocator, line: *std.ArrayList(u8), value: []con
     try appendColorEnd(allocator, line, enabled);
 }
 
-fn writeColored(writer: anytype, value: []const u8, code: []const u8, color: bool) !void {
-    if (colorEnabled(color) and value.len > 0) {
-        try writer.print("\x1b[{s}m{s}\x1b[0m", .{ code, value });
-    } else {
-        try writer.writeAll(value);
-    }
+fn writeLine(writer: anytype, allocator: Allocator, line: []const u8, width: ?usize) !void {
+    try writeRawLine(writer, allocator, line, width);
+    try writer.writeByte('\n');
 }
 
-fn writeLine(writer: anytype, allocator: Allocator, line: []const u8, width: ?usize) !void {
+fn writeRawLine(writer: anytype, allocator: Allocator, line: []const u8, width: ?usize) !void {
     if (width) |w| {
         const trimmed = try trimAnsiToWidth(allocator, line, w);
         try writer.writeAll(trimmed);
     } else {
         try writer.writeAll(line);
     }
-    try writer.writeByte('\n');
 }
 
 fn trimAnsiToWidth(allocator: Allocator, value: []const u8, width: usize) ![]u8 {
@@ -455,12 +554,14 @@ fn trimAnsiToWidth(allocator: Allocator, value: []const u8, width: usize) ![]u8 
     var out: std.ArrayList(u8) = .empty;
     var visible: usize = 0;
     var i: usize = 0;
+    var saw_ansi = false;
     while (i < value.len) {
         if (value[i] == 0x1b and i + 1 < value.len and value[i + 1] == '[') {
             var end = i + 2;
             while (end < value.len and !(value[end] >= 0x40 and value[end] <= 0x7e)) end += 1;
             if (end < value.len) end += 1;
             try out.appendSlice(allocator, value[i..end]);
+            saw_ansi = true;
             i = end;
             continue;
         }
@@ -471,7 +572,7 @@ fn trimAnsiToWidth(allocator: Allocator, value: []const u8, width: usize) ![]u8 
         visible += 1;
         i = end;
     }
-    if (visible >= width) try out.appendSlice(allocator, "\x1b[0m");
+    if (visible >= width and saw_ansi) try out.appendSlice(allocator, "\x1b[0m");
     return out.toOwnedSlice(allocator);
 }
 
@@ -561,22 +662,6 @@ fn unixFromParts(p: DateParts) i64 {
 
 fn nowNs() i128 {
     return std.Io.Clock.real.now(runtime.process_io).toNanoseconds();
-}
-
-fn previewSnippet(allocator: Allocator, preview: []const u8, chars: usize) ![]u8 {
-    if (chars == 0) return allocator.dupe(u8, "");
-    var view = try std.unicode.Utf8View.init(preview);
-    var it = view.iterator();
-    var out: std.ArrayList(u8) = .empty;
-    var count: usize = 0;
-    while (count < chars) : (count += 1) {
-        const cp = it.nextCodepoint() orelse return out.toOwnedSlice(allocator);
-        var tmp: [4]u8 = undefined;
-        const n = try std.unicode.utf8Encode(cp, &tmp);
-        try out.appendSlice(allocator, tmp[0..n]);
-    }
-    if (it.nextCodepoint() != null and chars > 3) try out.appendSlice(allocator, "...");
-    return out.toOwnedSlice(allocator);
 }
 
 fn humanSize(allocator: Allocator, n: i64) ![]u8 {

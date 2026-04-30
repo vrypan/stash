@@ -92,7 +92,7 @@ Tag a good version in case you need it in the future.
 ```bash
 $ stash attr @2 status=good
 
-$ stash ls --size --date -A
+$ stash ls --size --date --attrs=list
 myzkd7n0  3.3K  Apr  8 09:32  nginx.conf
 fw72rf7v  3.4K  Apr  8 09:31  nginx.conf  good
 rfpx2e48  3.4K  Apr  8 09:30  nginx.conf

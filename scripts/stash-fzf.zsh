@@ -73,7 +73,7 @@ _stash_fzf_pick_ref() {
   if (( $+commands[jq] )); then
     # fzf must be the last command in $() so its exit status (130 on Escape)
     # is captured; piping through sed|awk after fzf would mask it with awk's 0.
-    raw=$(stash ls --json --chars=120 2>/dev/null \
+    raw=$(stash ls --json 2>/dev/null \
       | jq -j '
           .[]
           | (

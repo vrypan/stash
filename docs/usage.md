@@ -88,7 +88,8 @@ You can also use `stash` like a small flat file store:
 stash ls
 stash ls -l
 stash ls --date --size --name
-stash ls --headers --date --size -A
+stash ls --headers --date --size --attrs=list
+stash ls --format '%i\t%a{filename}\t%sb\n'
 stash attrs --count
 stash cat @1
 stash cat yjvyz3sf
@@ -112,6 +113,9 @@ In that model:
 - `stash ls -l` expands that into a richer summary view with date, size,
   attribute flag, and preview
 - `stash ls --headers ...` adds column labels to tabular output
+- `stash ls --format ...` prints entries with a custom format string
+- `stash ls --width ...` limits each table or format line; `--width=0` uses
+  the terminal width when available
 - `stash attrs --count` shows which user-defined attributes exist across the stash
 - `stash attrs <key>` lists the distinct values seen for one attribute
 - `stash cat` reads an entry by stack ref or ID
@@ -197,7 +201,7 @@ stash attrs --count
 stash ls -a label -a +label
 stash ls -a ++label
 stash ls -a ++label=before
-stash ls -A
+stash ls --attrs=list
 ```
 
 Here, `-a label` filters to matching entries, `-a +label` shows the `label` column,

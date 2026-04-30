@@ -134,13 +134,14 @@ stash ls --id=pos
 Add columns explicitly:
 
 ```bash
-stash ls -A
+stash ls --attrs=list
 stash ls --date
 stash ls --size
 stash ls --name
 stash ls --preview
 stash ls --headers --date --size
 stash ls --json
+stash ls --format '%i\t%dh\t%sh\t%a{filename}\n'
 stash ls --bytes --name
 stash ls --size --bytes
 stash ls -a +source -a +stage
@@ -159,7 +160,9 @@ Notes:
 - `--bytes` shows a raw byte-count column
 - `--size` and `--bytes` can be used together
 - `--headers` prints a header row for tabular output
-- `-A` and `--attrs=list` show attribute values inline
+- `-w` and `--width` limit each table or format line to a display width; `0`
+  uses the terminal width when available
+- `--attrs=list` shows attribute values inline
 - `--attrs=count` shows a per-entry count of user-defined attrs
 - `--attrs=flag` shows `*` when an entry has one or more user attrs
 - `-a name` filters to entries where the attribute is set
@@ -167,7 +170,26 @@ Notes:
 - `-a +name` selects an attribute for display
 - `-a ++name` is shorthand for `-a name -a +name`
 - `-a ++name=value` is shorthand for `-a name=value -a +name`
-- `--id=short|full|pos` controls the first column in all modes
+- `--id=short|full|pos` controls the first column in tabular output
+- `--format FORMAT` prints each entry with a format string instead of the
+  tabular layout; include `\n` in the format when you want one line per entry
+
+Format tokens:
+- `%i` short ID
+- `%I` full ID
+- `%n` stack position
+- `%dt` raw timestamp
+- `%dh` ls-style date
+- `%di` ISO date
+- `%sh` human-readable size
+- `%sb` raw byte count
+- `%p` preview
+- `%a{key}` attribute value
+- `%Af` attribute flag
+- `%Al` attribute list
+- `%Ac` attribute count
+- `%%` literal `%`
+- `\n`, `\r`, `\t`, and `\\` escapes
 
 ## Structured Output
 
