@@ -11,6 +11,10 @@ This is a **major** update: `stash` has been ported to Zig.
   by the parser.
 - Remove `stash pop`; use `stash cat @1` followed by `stash rm @1` when the
   newest entry should be printed and removed.
+- Remove the obsolete `stash-completion` packaging/docs; the Zig port does not
+  ship the separate completion helper.
+- Update release automation to publish Zig-targeted archives and run the
+  Homebrew formula update after release assets are created.
 - Restore smart bare `stash` behavior:
   - in a pipeline, `stash` forwards input like `stash tee`
   - otherwise, `stash` stores input like `stash push`

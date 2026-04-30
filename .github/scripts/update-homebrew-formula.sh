@@ -8,11 +8,11 @@ repo="stash"
 tap_repo="homebrew-tap"
 tap_branch="main"
 formula_name="stash"
-package_name="stash-cli"
+package_name="stash"
 homepage="https://github.com/${owner}/${repo}"
 description="A local store for pipeline output and ad hoc file snapshots."
 license_name="MIT"
-commit_name="Panayotis Vryonis"
+commit_name="Panagiotis Vryonis"
 commit_email="58812+vrypan@users.noreply.github.com"
 
 tag="${1:-${GITHUB_REF_NAME:-}}"
@@ -27,10 +27,10 @@ asset_name() {
   local arch="$2"
   local target=""
   case "${os}/${arch}" in
-    darwin/arm64) target="aarch64-apple-darwin" ;;
-    darwin/x86_64) target="x86_64-apple-darwin" ;;
-    linux/arm64) target="aarch64-unknown-linux-gnu" ;;
-    linux/x86_64) target="x86_64-unknown-linux-gnu" ;;
+    darwin/arm64) target="aarch64-macos" ;;
+    darwin/x86_64) target="x86_64-macos" ;;
+    linux/arm64) target="aarch64-linux-gnu" ;;
+    linux/x86_64) target="x86_64-linux-gnu" ;;
     *)
       echo "unsupported os/arch: ${os}/${arch}" >&2
       exit 1
@@ -99,7 +99,7 @@ class Stash < Formula
 
   def install
     if which("stash")
-      installed = Utils.safe_popen_read("stash", "version").strip
+      installed = Utils.safe_popen_read("stash", "--version").strip
       version_text =
         if installed =~ /\Astash (\S+)\z/
           Regexp.last_match(1)
@@ -121,21 +121,11 @@ class Stash < Formula
     end
 
     bin.install "stash"
-    bin.install "stash-completion"
     pkgshare.install "scripts" if Dir.exist?("scripts")
-    (bash_completion/"stash").write Utils.safe_popen_read(
-      bin/"stash-completion", "bash"
-    )
-    (zsh_completion/"_stash").write Utils.safe_popen_read(
-      bin/"stash-completion", "zsh"
-    )
-    (fish_completion/"stash.fish").write Utils.safe_popen_read(
-      bin/"stash-completion", "fish"
-    )
   end
 
   test do
-    system "#{bin}/stash", "version"
+    system "#{bin}/stash", "--version"
   end
 end
 EOF

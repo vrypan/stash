@@ -111,10 +111,7 @@ brew install vrypan/tap/stash
 
 ### Shell support
 
-For auto-completion and other shell-specific features, check:
-- [docs/bash.md](docs/bash.md)
-- [docs/fish.md](docs/fish.md)
-- [docs/zsh.md](docs/zsh.md)
+For shell-specific helper scripts, check [scripts/](scripts/).
 
 ## ~{@
 

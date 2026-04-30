@@ -24,5 +24,3 @@ This directory contains the main `stash` documentation.
 
 Check [scripts/](../scripts/) for instructions and examples on how to integrate
 `stash` with various command line workflows and tools.
-
-Completion setup: [zsh.md](zsh.md), [bash.md](bash.md), [fish.md](fish.md)

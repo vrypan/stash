@@ -14,7 +14,6 @@ stash ls
 stash rm <id|n|@n>...
 stash rm --before <id|@n>
 stash rm -a <name|name=value>
-stash-completion <bash|zsh|fish>
 ```
 
 Without a subcommand, `stash` uses smart mode:

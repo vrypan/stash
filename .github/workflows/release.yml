@@ -9,6 +9,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     env:
       PACKAGE_NAME: stash
       ZIG_VERSION: 0.16.0
@@ -44,17 +46,6 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
-      - name: Create release tag
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          tag="${{ steps.version.outputs.tag }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$tag" -m "Release $tag"
-          git push origin "$tag"
-
       - name: Build release archives
         shell: bash
         run: |
@@ -89,6 +80,17 @@ jobs:
 
           shasum -a 256 dist/*.tar.xz > dist/SHA256SUMS
 
+      - name: Create release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ steps.version.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag"
+          git push origin "$tag"
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -118,3 +120,10 @@ jobs:
             --notes-file "$notes_file" \
             dist/*.tar.xz \
             dist/SHA256SUMS
+
+  update-homebrew-formula:
+    needs: release
+    uses: ./.github/workflows/update-homebrew-formula.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
