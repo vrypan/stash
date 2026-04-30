@@ -1,6 +1,6 @@
 const std = @import("std");
 const build_options = @import("build_options");
-const zli = @import("zli");
+const cli = @import("cli.zig");
 const display = @import("display.zig");
 const runtime = @import("runtime.zig");
 const store = @import("store.zig");
@@ -18,6 +18,96 @@ const MetaSelection = types.MetaSelection;
 const version = build_options.version;
 
 const PushMode = enum { push, tee, auto };
+
+const CommandName = enum { root, push, tee, cat, ls, attr, attrs, path, rm, pop };
+
+const root_flags = [_]cli.FlagSpec{
+    .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
+    .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
+    .{ .name = "print", .value = .string, .value_name = "TARGET", .description = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", .default_value = "null" },
+    .{ .name = "version", .short = 'V', .description = "Print version" },
+};
+
+const push_flags = [_]cli.FlagSpec{
+    .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
+    .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
+    .{ .name = "print", .value = .string, .value_name = "TARGET", .description = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", .default_value = "null" },
+};
+
+const tee_flags = [_]cli.FlagSpec{
+    .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
+    .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
+    .{ .name = "print", .value = .string, .value_name = "TARGET", .description = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", .default_value = "null" },
+    .{ .name = "save-on-error", .value = .bool_optional, .value_name = "BOOL", .description = "Save captured input if the input stream is interrupted", .default_value = "true" },
+};
+
+const ref_filter_flags = [_]cli.FlagSpec{
+    .{ .name = "attr", .short = 'a', .value = .string, .value_name = "FILTER", .description = "Attribute filter: name or name=value", .repeatable = true, .attached_short_value = true },
+    .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
+};
+
+const ref_filter_reverse_flags = [_]cli.FlagSpec{
+    .{ .name = "attr", .short = 'a', .value = .string, .value_name = "FILTER", .description = "Attribute filter: name or name=value", .repeatable = true, .attached_short_value = true },
+    .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
+    .{ .name = "reverse", .short = 'r', .description = "Print matching refs oldest first" },
+};
+
+const ls_flags = [_]cli.FlagSpec{
+    .{ .name = "after", .value = .string, .value_name = "REF", .description = "Show entries newer than the referenced entry" },
+    .{ .name = "attr", .short = 'a', .value = .string, .value_name = "ATTR", .description = "Filter or display attributes", .repeatable = true, .attached_short_value = true },
+    .{ .name = "attrs", .value = .string, .value_name = "MODE", .description = "Attribute display: none, list, count, or flag" },
+    .{ .name = "before", .value = .string, .value_name = "REF", .description = "Show entries older than the referenced entry" },
+    .{ .name = "bytes", .description = "Include raw byte-count column" },
+    .{ .name = "color", .value = .bool_required, .value_name = "BOOL", .description = "Color output", .default_value = "true" },
+    .{ .name = "date", .description = "Include date column using ls-style dates" },
+    .{ .name = "format", .value = .string, .value_name = "FMT", .description = "Print entries using a format string" },
+    .{ .name = "headers", .description = "Print a header row for tabular output" },
+    .{ .name = "id", .value = .string, .value_name = "MODE", .description = "ID display: short, full, or pos" },
+    .{ .name = "json", .description = "Output listing as rich JSON" },
+    .{ .name = "long", .short = 'l', .description = "Alias for --date --size --attrs=flag --preview" },
+    .{ .name = "name", .description = "Include filename attribute if available" },
+    .{ .name = "number", .short = 'n', .value = .int, .value_name = "N", .description = "Limit number of entries shown", .attached_short_value = true },
+    .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
+    .{ .name = "preview", .short = 'p', .description = "Append compact preview text" },
+    .{ .name = "reverse", .short = 'r', .description = "Show oldest first" },
+    .{ .name = "size", .description = "Include human-readable size column" },
+    .{ .name = "width", .short = 'w', .value = .int, .value_name = "N", .description = "Maximum output line width; 0 uses terminal width", .default_value = "0", .attached_short_value = true },
+};
+
+const attr_flags = [_]cli.FlagSpec{
+    .{ .name = "json", .description = "Print attributes as JSON" },
+    .{ .name = "preview", .short = 'p', .description = "Include the preview pseudo-attribute" },
+    .{ .name = "separator", .value = .string, .value_name = "SEP", .description = "Separator for text output", .default_value = "\\t" },
+    .{ .name = "unset", .value = .string, .value_name = "KEY", .description = "Remove a writable attribute", .repeatable = true },
+};
+
+const attrs_flags = [_]cli.FlagSpec{
+    .{ .name = "count", .description = "Print counts" },
+};
+
+const path_flags = [_]cli.FlagSpec{
+    .{ .name = "attr", .short = 'a', .description = "Print attr path instead of data path" },
+    .{ .name = "dir", .short = 'd', .description = "Print stash root directory" },
+};
+
+const rm_flags = [_]cli.FlagSpec{
+    .{ .name = "after", .value = .string, .value_name = "REF", .description = "Remove entries newer than the referenced entry" },
+    .{ .name = "attr", .short = 'a', .value = .string, .value_name = "FILTER", .description = "Attribute filter: name or name=value", .repeatable = true, .attached_short_value = true },
+    .{ .name = "before", .value = .string, .value_name = "REF", .description = "Remove entries older than the referenced entry" },
+    .{ .name = "force", .short = 'f', .description = "Skip confirmation prompts" },
+};
+
+const commands = [_]cli.CommandEntry{
+    .{ .name = "attr", .description = "Show or update entry attributes" },
+    .{ .name = "attrs", .description = "List attribute keys across the stash" },
+    .{ .name = "cat", .description = "Print an entry's raw data to stdout" },
+    .{ .name = "ls", .description = "List entries" },
+    .{ .name = "path", .description = "Print stash paths" },
+    .{ .name = "pop", .description = "Print the newest entry and remove it" },
+    .{ .name = "push", .description = "Store stdin and return the entry key" },
+    .{ .name = "rm", .description = "Remove entries" },
+    .{ .name = "tee", .description = "Store stdin and forward it to stdout" },
+};
 
 const LsCliOptions = struct {
     id: IdMode = .short,
@@ -41,8 +131,6 @@ const LsCliOptions = struct {
     color: bool = true,
 };
 
-var active_allocator: Allocator = undefined;
-
 pub fn errorMessage(err: anyerror) []const u8 {
     return switch (err) {
         error.InvalidArgument => "invalid argument",
@@ -60,20 +148,25 @@ pub fn errorMessage(err: anyerror) []const u8 {
 }
 
 pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:0]const u8) !u8 {
-    active_allocator = allocator;
+    _ = init;
     if (args.len <= 1) {
-        return runZli(init);
+        return cmdPush(allocator, &.{}, .auto);
     }
     const first = args[1];
     if (std.mem.eql(u8, first, "--help") or std.mem.eql(u8, first, "-h")) {
-        return runZli(init);
+        try printHelp(allocator, .root);
+        return 0;
     }
     if (std.mem.eql(u8, first, "--version") or std.mem.eql(u8, first, "-V")) {
         try runtime.stdoutWriter().print("stash {s}\n", .{version});
         return 0;
     }
     if (args.len > 2 and (std.mem.eql(u8, args[2], "--help") or std.mem.eql(u8, args[2], "-h"))) {
-        return runZli(init);
+        if (commandName(first)) |name| {
+            try printHelp(allocator, name);
+            return 0;
+        }
+        return error.InvalidArgument;
     }
     if (std.mem.startsWith(u8, first, "-")) {
         return cmdPush(allocator, args[1..], .auto);
@@ -91,240 +184,151 @@ pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:
     return cmdPush(allocator, args[1..], .auto);
 }
 
-fn zliRoot(ctx: zli.CommandContext) !void {
-    _ = ctx;
-    _ = try cmdPush(active_allocator, &.{}, .auto);
+fn commandName(value: []const u8) ?CommandName {
+    if (std.mem.eql(u8, value, "push")) return .push;
+    if (std.mem.eql(u8, value, "tee")) return .tee;
+    if (std.mem.eql(u8, value, "cat")) return .cat;
+    if (std.mem.eql(u8, value, "ls")) return .ls;
+    if (std.mem.eql(u8, value, "attr")) return .attr;
+    if (std.mem.eql(u8, value, "attrs")) return .attrs;
+    if (std.mem.eql(u8, value, "path")) return .path;
+    if (std.mem.eql(u8, value, "rm")) return .rm;
+    if (std.mem.eql(u8, value, "pop")) return .pop;
+    return null;
 }
 
-fn zliHelp(ctx: zli.CommandContext) !void {
-    try ctx.command.printHelp();
-}
-
-fn semanticVersion() ?std.SemanticVersion {
-    return std.SemanticVersion.parse(version) catch null;
-}
-
-fn addBoolFlag(cmd: *zli.Command, name: []const u8, shortcut: ?[]const u8, description: []const u8, default: bool) !void {
-    try cmd.addFlag(.{
-        .name = name,
-        .shortcut = shortcut,
-        .description = description,
-        .type = .Bool,
-        .default_value = .{ .Bool = default },
-    });
-}
-
-fn addStringFlag(cmd: *zli.Command, name: []const u8, shortcut: ?[]const u8, description: []const u8, default: []const u8) !void {
-    try cmd.addFlag(.{
-        .name = name,
-        .shortcut = shortcut,
-        .description = description,
-        .type = .String,
-        .default_value = .{ .String = default },
-    });
-}
-
-fn addIntFlag(cmd: *zli.Command, name: []const u8, shortcut: ?[]const u8, description: []const u8, default: i32) !void {
-    try cmd.addFlag(.{
-        .name = name,
-        .shortcut = shortcut,
-        .description = description,
-        .type = .Int,
-        .default_value = .{ .Int = default },
-    });
-}
-
-fn zliCommand(init_opts: zli.InitOptions, name: []const u8, description: []const u8) !*zli.Command {
-    return zli.Command.init(init_opts, .{
-        .name = name,
-        .description = description,
-    }, zliHelp);
-}
-
-fn buildZli(init_opts: zli.InitOptions) !*zli.Command {
-    const root = try zli.Command.init(init_opts, .{
-        .name = "stash",
-        .description = "A local store for piped output and files.",
-        .version = semanticVersion(),
-        .help = "More info: https://github.com/vrypan/stash",
-    }, zliRoot);
-    try addStringFlag(root, "attr", "a", "Set attribute key=value", "");
-    try addStringFlag(root, "pocket", null, "Alias for --attr pocket=VALUE", "");
-    try addStringFlag(root, "print", null, "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", "null");
-    try root.addPositionalArg(.{ .name = "FILE", .description = "Optional file to stash; reads stdin when omitted", .required = false });
-
-    const push = try zliCommand(init_opts, "push", "Store stdin and return the entry key");
-    try addStringFlag(push, "attr", "a", "Set attribute key=value", "");
-    try addStringFlag(push, "pocket", null, "Alias for --attr pocket=VALUE", "");
-    try addStringFlag(push, "print", null, "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", "null");
-    try push.addPositionalArg(.{ .name = "FILE", .description = "Optional file to stash; reads stdin when omitted", .required = false });
-
-    const tee = try zliCommand(init_opts, "tee", "Store stdin and forward it to stdout");
-    try addStringFlag(tee, "attr", "a", "Set attribute key=value", "");
-    try addStringFlag(tee, "pocket", null, "Alias for --attr pocket=VALUE", "");
-    try addStringFlag(tee, "print", null, "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", "null");
-    try addBoolFlag(tee, "save-on-error", null, "Save captured input if the input stream is interrupted", true);
-
-    const cat = try zliCommand(init_opts, "cat", "Print an entry's raw data to stdout");
-    try addStringFlag(cat, "attr", "a", "Attribute filter: name or name=value", "");
-    try addStringFlag(cat, "pocket", null, "Alias for --attr pocket=VALUE", "");
-    try addBoolFlag(cat, "reverse", "r", "Print matching refs oldest first", false);
-    try cat.addPositionalArg(.{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .required = false, .variadic = true });
-
-    const ls = try zliCommand(init_opts, "ls", "List entries");
-    try addStringFlag(ls, "after", null, "Show entries newer than the referenced entry", "");
-    try addStringFlag(ls, "attr", "a", "Filter or display attributes", "");
-    try addStringFlag(ls, "attrs", null, "Attribute display: list, count, or flag", "none");
-    try addStringFlag(ls, "before", null, "Show entries older than the referenced entry", "");
-    try addBoolFlag(ls, "bytes", null, "Use raw byte counts for the size column", false);
-    try addBoolFlag(ls, "color", null, "Color output", true);
-    try addBoolFlag(ls, "date", null, "Include date column using ls-style dates", false);
-    try addStringFlag(ls, "format", null, "Print entries using a format string", "");
-    try addBoolFlag(ls, "headers", null, "Print a header row for tabular output", false);
-    try addStringFlag(ls, "id", null, "ID display: short, full, or pos", "short");
-    try addBoolFlag(ls, "json", null, "Output listing as rich JSON", false);
-    try addBoolFlag(ls, "long", "l", "Alias for --date --size --attrs=flag --preview", false);
-    try addBoolFlag(ls, "name", null, "Include filename attribute if available", false);
-    try addIntFlag(ls, "number", "n", "Limit number of entries shown", 0);
-    try addStringFlag(ls, "pocket", null, "Alias for --attr pocket=VALUE", "");
-    try addBoolFlag(ls, "preview", "p", "Append compact preview text", false);
-    try addBoolFlag(ls, "reverse", "r", "Show oldest first", false);
-    try addBoolFlag(ls, "size", null, "Include human-readable size column", false);
-    try addIntFlag(ls, "width", "w", "Maximum output line width; 0 uses terminal width", 0);
-
-    const attr = try zliCommand(init_opts, "attr", "Show or update entry attributes");
-    try addBoolFlag(attr, "json", null, "Print attributes as JSON", false);
-    try addBoolFlag(attr, "preview", "p", "Include the preview pseudo-attribute", false);
-    try addStringFlag(attr, "separator", null, "Separator for text output", "\t");
-    try addStringFlag(attr, "unset", null, "Remove a writable attribute", "");
-    try attr.addPositionalArg(.{ .name = "ARG", .description = "Entry ref followed by attribute names or key=value assignments", .required = false, .variadic = true });
-
-    const attrs = try zliCommand(init_opts, "attrs", "List attribute keys across the stash");
-    try addBoolFlag(attrs, "count", null, "Print counts", false);
-    try attrs.addPositionalArg(.{ .name = "KEY", .description = "Attribute key to list distinct values for", .required = false });
-
-    const path = try zliCommand(init_opts, "path", "Print stash paths");
-    try addBoolFlag(path, "attr", "a", "Print attr path instead of data path", false);
-    try addBoolFlag(path, "dir", "d", "Print stash root directory", false);
-    try path.addPositionalArg(.{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .required = false });
-
-    const rm = try zliCommand(init_opts, "rm", "Remove entries");
-    try addBoolFlag(rm, "force", "f", "Skip confirmation prompts", false);
-    try addStringFlag(rm, "attr", "a", "Attribute filter: name or name=value", "");
-    try addStringFlag(rm, "before", null, "Remove entries older than the referenced entry", "");
-    try addStringFlag(rm, "after", null, "Remove entries newer than the referenced entry", "");
-    try rm.addPositionalArg(.{ .name = "REF", .description = "Entry ID, stack ref, or stack number", .required = false, .variadic = true });
-
-    const pop = try zliCommand(init_opts, "pop", "Print the newest entry and remove it");
-
-    try root.addCommands(&.{ push, tee, cat, ls, attr, attrs, path, rm, pop });
-    return root;
-}
-
-fn runZli(init: *const std.process.Init) !u8 {
-    var stdout_buf: [4096]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(runtime.process_io, &stdout_buf);
-    var stdin_buf: [4096]u8 = undefined;
-    var stdin_reader = std.Io.File.stdin().reader(runtime.process_io, &stdin_buf);
-
-    const init_opts = zli.InitOptions{
-        .io = runtime.process_io,
-        .writer = &stdout_writer.interface,
-        .reader = &stdin_reader.interface,
-        .allocator = active_allocator,
-    };
-    var root = try buildZli(init_opts);
-    defer root.deinit();
-    var args_iter = try init.minimal.args.iterateAllocator(active_allocator);
-    defer args_iter.deinit();
-    try root.execute(&args_iter, .{});
-    try stdout_writer.interface.flush();
-    return 0;
+fn printHelp(allocator: Allocator, name: CommandName) !void {
+    const out = runtime.stdoutWriter();
+    switch (name) {
+        .root => {
+            try out.print(
+                \\A local store for piped output and files.
+                \\v{s}
+                \\
+                \\More info: https://github.com/vrypan/stash
+                \\
+                \\Usage: stash [options] [FILE]
+                \\
+            , .{version});
+            try cli.printCommandList(out, &commands);
+            try cli.printOptions(allocator, out, &root_flags, true);
+        },
+        .push => try cli.printCommandHelp(allocator, out, .{
+            .name = "push",
+            .description = "Store stdin and return the entry key",
+            .usage = "stash push [options] [FILE]",
+            .flags = &push_flags,
+        }),
+        .tee => try cli.printCommandHelp(allocator, out, .{
+            .name = "tee",
+            .description = "Store stdin and forward it to stdout",
+            .usage = "stash tee [options]",
+            .flags = &tee_flags,
+        }),
+        .cat => try cli.printCommandHelp(allocator, out, .{
+            .name = "cat",
+            .description = "Print an entry's raw data to stdout",
+            .usage = "stash cat [options] [REF]...",
+            .flags = &ref_filter_reverse_flags,
+        }),
+        .ls => try cli.printCommandHelp(allocator, out, .{ .name = "ls", .description = "List entries", .usage = "stash ls [options]", .flags = &ls_flags, .extra =
+            \\Format tokens:
+            \\  %i       short ID
+            \\  %I       full ID
+            \\  %n       stack position
+            \\  %dt      raw timestamp
+            \\  %dh      ls-style date
+            \\  %di      ISO date
+            \\  %sh      human-readable size
+            \\  %sb      raw byte count
+            \\  %p       preview
+            \\  %a{key}  attribute value
+            \\  %Af      attribute flag
+            \\  %Al      attribute list
+            \\  %Ac      attribute count
+            \\  %%       literal %
+            \\  \n \r \t \\ escapes
+            \\
+        }),
+        .attr => try cli.printCommandHelp(allocator, out, .{
+            .name = "attr",
+            .description = "Show or update entry attributes",
+            .usage = "stash attr [options] REF [KEY|key=value]...",
+            .flags = &attr_flags,
+        }),
+        .attrs => try cli.printCommandHelp(allocator, out, .{
+            .name = "attrs",
+            .description = "List attribute keys across the stash",
+            .usage = "stash attrs [options] [KEY]",
+            .flags = &attrs_flags,
+        }),
+        .path => try cli.printCommandHelp(allocator, out, .{
+            .name = "path",
+            .description = "Print stash paths",
+            .usage = "stash path [options] [REF]",
+            .flags = &path_flags,
+        }),
+        .rm => try cli.printCommandHelp(allocator, out, .{
+            .name = "rm",
+            .description = "Remove entries",
+            .usage = "stash rm [options] [REF]...",
+            .flags = &rm_flags,
+        }),
+        .pop => try cli.printCommandHelp(allocator, out, .{
+            .name = "pop",
+            .description = "Print the newest entry and remove it",
+            .usage = "stash pop",
+        }),
+    }
 }
 
 fn cmdLs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var opts = LsCliOptions{};
-    var i: usize = 0;
-    while (i < raw_args.len) : (i += 1) {
-        const arg = raw_args[i];
-        if (std.mem.eql(u8, arg, "--id")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            opts.id = try parseIdMode(raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "--id=")) {
-            opts.id = try parseIdMode(arg["--id=".len..]);
-        } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--attr")) {
-            try appendConstSlice(allocator, &opts.attr, try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "-a") and arg.len > 2) {
-            try appendConstSlice(allocator, &opts.attr, arg[2..]);
-        } else if (std.mem.startsWith(u8, arg, "--attr=")) {
-            try appendConstSlice(allocator, &opts.attr, arg["--attr=".len..]);
-        } else if (std.mem.eql(u8, arg, "--pocket")) {
-            try appendConstSlice(allocator, &opts.pocket, try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "--pocket=")) {
-            try appendConstSlice(allocator, &opts.pocket, arg["--pocket=".len..]);
-        } else if (std.mem.eql(u8, arg, "--attrs")) {
-            opts.attrs = try parseAttrsMode(try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "--attrs=")) {
-            opts.attrs = try parseAttrsMode(arg["--attrs=".len..]);
-        } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--number")) {
-            opts.number = try parseUsize(try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "-n") and arg.len > 2) {
-            opts.number = try parseUsize(arg[2..]);
-        } else if (std.mem.startsWith(u8, arg, "--number=")) {
-            opts.number = try parseUsize(arg["--number=".len..]);
-        } else if (std.mem.eql(u8, arg, "--before")) {
-            opts.before = try allocator.dupe(u8, try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "--before=")) {
-            opts.before = try allocator.dupe(u8, arg["--before=".len..]);
-        } else if (std.mem.eql(u8, arg, "--after")) {
-            opts.after = try allocator.dupe(u8, try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "--after=")) {
-            opts.after = try allocator.dupe(u8, arg["--after=".len..]);
-        } else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--reverse")) {
-            opts.reverse = true;
-        } else if (std.mem.eql(u8, arg, "--json")) {
-            opts.json = true;
-        } else if (std.mem.eql(u8, arg, "--headers")) {
-            opts.headers = true;
-        } else if (std.mem.eql(u8, arg, "--date")) {
-            opts.date = true;
-        } else if (std.mem.eql(u8, arg, "--size")) {
-            opts.size = true;
-        } else if (std.mem.eql(u8, arg, "--bytes")) {
+    const parsed = try cli.parse(allocator, raw_args, &ls_flags);
+    if (parsed.positionals.items.len > 0) return error.InvalidArgument;
+    for (parsed.flags.items) |flag| {
+        if (std.mem.eql(u8, flag.name, "after")) {
+            opts.after = try allocator.dupe(u8, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "attr")) {
+            try appendConstSlice(allocator, &opts.attr, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "attrs")) {
+            opts.attrs = try parseAttrsMode(flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "before")) {
+            opts.before = try allocator.dupe(u8, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "bytes")) {
             opts.bytes = true;
-        } else if (std.mem.eql(u8, arg, "--name")) {
-            opts.name = true;
-        } else if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--preview")) {
-            opts.preview = true;
-        } else if (std.mem.eql(u8, arg, "--format")) {
-            opts.format = try allocator.dupe(u8, try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "--format=")) {
-            opts.format = try allocator.dupe(u8, arg["--format=".len..]);
-        } else if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--long")) {
+        } else if (std.mem.eql(u8, flag.name, "color")) {
+            opts.color = try parseBool(flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "date")) {
+            opts.date = true;
+        } else if (std.mem.eql(u8, flag.name, "format")) {
+            opts.format = try allocator.dupe(u8, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "headers")) {
+            opts.headers = true;
+        } else if (std.mem.eql(u8, flag.name, "id")) {
+            opts.id = try parseIdMode(flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "json")) {
+            opts.json = true;
+        } else if (std.mem.eql(u8, flag.name, "long")) {
             opts.long = true;
-        } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--width")) {
-            opts.width = try parseUsize(try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "-w") and arg.len > 2) {
-            opts.width = try parseUsize(arg[2..]);
-        } else if (std.mem.startsWith(u8, arg, "--width=")) {
-            opts.width = try parseUsize(arg["--width=".len..]);
-        } else if (std.mem.eql(u8, arg, "--color")) {
-            opts.color = try parseBool(try nextArgValue(raw_args, &i));
-        } else if (std.mem.startsWith(u8, arg, "--color=")) {
-            opts.color = try parseBool(arg["--color=".len..]);
-        } else {
-            return error.InvalidArgument;
+        } else if (std.mem.eql(u8, flag.name, "name")) {
+            opts.name = true;
+        } else if (std.mem.eql(u8, flag.name, "number")) {
+            opts.number = try parseUsize(flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "pocket")) {
+            try appendConstSlice(allocator, &opts.pocket, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "preview")) {
+            opts.preview = true;
+        } else if (std.mem.eql(u8, flag.name, "reverse")) {
+            opts.reverse = true;
+        } else if (std.mem.eql(u8, flag.name, "size")) {
+            opts.size = true;
+        } else if (std.mem.eql(u8, flag.name, "width")) {
+            opts.width = try parseUsize(flag.value.?);
         }
     }
     try cmdLsFromOptions(allocator, &opts);
     return 0;
-}
-
-fn nextArgValue(raw_args: []const [:0]const u8, index: *usize) ![]const u8 {
-    index.* += 1;
-    if (index.* >= raw_args.len) return error.InvalidArgument;
-    return raw_args[index.*];
 }
 
 fn appendConstSlice(allocator: Allocator, list: *[][]const u8, value: []const u8) !void {
@@ -366,42 +370,20 @@ fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, mode: PushMode)
     var file_arg: ?[]const u8 = null;
     var save_on_error = true;
 
-    var i: usize = 0;
-    while (i < raw_args.len) : (i += 1) {
-        const arg = raw_args[i];
-        if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--attr")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            try appendAttrFlag(allocator, &attrs, raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "-a") and arg.len > 2) {
-            try appendAttrFlag(allocator, &attrs, arg[2..]);
-        } else if (std.mem.startsWith(u8, arg, "--attr=")) {
-            try appendAttrFlag(allocator, &attrs, arg["--attr=".len..]);
-        } else if (std.mem.eql(u8, arg, "--pocket")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            try setAttrList(allocator, &attrs, types.pocket_attr, raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "--pocket=")) {
-            try setAttrList(allocator, &attrs, types.pocket_attr, arg["--pocket=".len..]);
-        } else if (std.mem.eql(u8, arg, "--print")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            print_target = try parsePrintTarget(raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "--print=")) {
-            print_target = try parsePrintTarget(arg["--print=".len..]);
-        } else if (std.mem.eql(u8, arg, "--save-on-error")) {
-            if (i + 1 < raw_args.len and !std.mem.startsWith(u8, raw_args[i + 1], "-")) {
-                i += 1;
-                save_on_error = try parseBool(raw_args[i]);
-            } else {
-                save_on_error = true;
-            }
-        } else if (std.mem.startsWith(u8, arg, "--save-on-error=")) {
-            save_on_error = try parseBool(arg["--save-on-error=".len..]);
-        } else if (mode != .tee and file_arg == null) {
-            file_arg = arg;
-        } else {
-            return error.InvalidArgument;
+    const parsed = try cli.parse(allocator, raw_args, &tee_flags);
+    if (parsed.positionals.items.len > 1) return error.InvalidArgument;
+    if (mode == .tee and parsed.positionals.items.len > 0) return error.InvalidArgument;
+    if (mode != .tee and parsed.positionals.items.len == 1) file_arg = parsed.positionals.items[0];
+
+    for (parsed.flags.items) |flag| {
+        if (std.mem.eql(u8, flag.name, "attr")) {
+            try appendAttrFlag(allocator, &attrs, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "pocket")) {
+            try setAttrList(allocator, &attrs, types.pocket_attr, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "print")) {
+            print_target = try parsePrintTarget(flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "save-on-error")) {
+            save_on_error = try parseBool(flag.value.?);
         }
     }
 
@@ -501,27 +483,18 @@ fn parseRefsAndFilters(
     reverse: *bool,
     allow_reverse: bool,
 ) !void {
-    var i: usize = 0;
-    while (i < raw_args.len) : (i += 1) {
-        const arg = raw_args[i];
-        if (allow_reverse and (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--reverse"))) {
+    const active_specs: []const cli.FlagSpec = if (allow_reverse) &ref_filter_reverse_flags else &ref_filter_flags;
+    const parsed = try cli.parse(allocator, raw_args, active_specs);
+    for (parsed.flags.items) |flag| {
+        if (std.mem.eql(u8, flag.name, "attr")) {
+            try appendFilter(allocator, filters, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "pocket")) {
+            try filters.append(allocator, .{ .key = types.pocket_attr, .value = flag.value.? });
+        } else if (std.mem.eql(u8, flag.name, "reverse")) {
             reverse.* = true;
-        } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--attr")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            try appendFilter(allocator, filters, raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "--attr=")) {
-            try appendFilter(allocator, filters, arg["--attr=".len..]);
-        } else if (std.mem.eql(u8, arg, "--pocket")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            try filters.append(allocator, .{ .key = types.pocket_attr, .value = raw_args[i] });
-        } else if (std.mem.startsWith(u8, arg, "--pocket=")) {
-            try filters.append(allocator, .{ .key = types.pocket_attr, .value = arg["--pocket=".len..] });
-        } else {
-            try refs.append(allocator, arg);
         }
     }
+    for (parsed.positionals.items) |ref| try refs.append(allocator, ref);
 }
 
 fn appendFilter(allocator: Allocator, filters: *std.ArrayList(AttrFilter), value: []const u8) !void {
@@ -547,9 +520,11 @@ fn cmdPath(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var want_attr = false;
     var want_dir = false;
     var ref: ?[]const u8 = null;
-    for (raw_args) |raw| {
-        const arg = raw;
-        if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--attr")) want_attr = true else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--dir")) want_dir = true else ref = arg;
+    const parsed = try cli.parse(allocator, raw_args, &path_flags);
+    if (parsed.positionals.items.len > 1) return error.InvalidArgument;
+    if (parsed.positionals.items.len == 1) ref = parsed.positionals.items[0];
+    for (parsed.flags.items) |flag| {
+        if (std.mem.eql(u8, flag.name, "attr")) want_attr = true else if (std.mem.eql(u8, flag.name, "dir")) want_dir = true;
     }
     const p = try store.basePaths(allocator);
     const out = runtime.stdoutWriter();
@@ -569,30 +544,26 @@ fn cmdPath(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
 }
 
 fn cmdAttr(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
-    if (raw_args.len == 0) return error.InvalidArgument;
-    const id = try store.resolve(allocator, raw_args[0]);
-    var meta = try store.getMeta(allocator, id);
     var json = false;
     var preview = false;
     var separator: []const u8 = "\t";
     var unset: std.ArrayList([]const u8) = .empty;
     var items: std.ArrayList([]const u8) = .empty;
 
-    var i: usize = 1;
-    while (i < raw_args.len) : (i += 1) {
-        const arg = raw_args[i];
-        if (std.mem.eql(u8, arg, "--json")) json = true else if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--preview")) preview = true else if (std.mem.eql(u8, arg, "--separator")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            separator = raw_args[i];
-        } else if (std.mem.startsWith(u8, arg, "--separator=")) {
-            separator = arg["--separator=".len..];
-        } else if (std.mem.eql(u8, arg, "--unset")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            try unset.append(allocator, raw_args[i]);
-        } else {
-            try items.append(allocator, arg);
+    const parsed = try cli.parse(allocator, raw_args, &attr_flags);
+    if (parsed.positionals.items.len == 0) return error.InvalidArgument;
+    const id = try store.resolve(allocator, parsed.positionals.items[0]);
+    var meta = try store.getMeta(allocator, id);
+    for (parsed.positionals.items[1..]) |item| try items.append(allocator, item);
+    for (parsed.flags.items) |flag| {
+        if (std.mem.eql(u8, flag.name, "json")) {
+            json = true;
+        } else if (std.mem.eql(u8, flag.name, "preview")) {
+            preview = true;
+        } else if (std.mem.eql(u8, flag.name, "separator")) {
+            separator = flag.value.?;
+        } else if (std.mem.eql(u8, flag.name, "unset")) {
+            try unset.append(allocator, flag.value.?);
         }
     }
 
@@ -663,10 +634,10 @@ fn cmdAttr(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
 fn cmdAttrs(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var key: ?[]const u8 = null;
     var count = false;
-    for (raw_args) |raw| {
-        const arg = raw;
-        if (std.mem.eql(u8, arg, "--count")) count = true else key = arg;
-    }
+    const parsed = try cli.parse(allocator, raw_args, &attrs_flags);
+    if (parsed.positionals.items.len > 1) return error.InvalidArgument;
+    if (parsed.positionals.items.len == 1) key = parsed.positionals.items[0];
+    count = parsed.present("count");
     const items = try store.visibleList(allocator);
     var counts = std.StringHashMap(usize).init(allocator);
     for (items.items) |*meta| {
@@ -792,31 +763,17 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var filters: std.ArrayList(AttrFilter) = .empty;
     var before_ref: ?[]const u8 = null;
     var after_ref: ?[]const u8 = null;
-    var i: usize = 0;
-    while (i < raw_args.len) : (i += 1) {
-        const arg = raw_args[i];
-        if (std.mem.eql(u8, arg, "-f") or std.mem.eql(u8, arg, "--force")) {
+    const parsed = try cli.parse(allocator, raw_args, &rm_flags);
+    for (parsed.positionals.items) |ref| try refs.append(allocator, ref);
+    for (parsed.flags.items) |flag| {
+        if (std.mem.eql(u8, flag.name, "after")) {
+            after_ref = flag.value.?;
+        } else if (std.mem.eql(u8, flag.name, "attr")) {
+            try appendFilter(allocator, &filters, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "before")) {
+            before_ref = flag.value.?;
+        } else if (std.mem.eql(u8, flag.name, "force")) {
             // Confirmation prompts are not implemented yet; accept the flag.
-        } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--attr")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            try appendFilter(allocator, &filters, raw_args[i]);
-        } else if (std.mem.startsWith(u8, arg, "--attr=")) {
-            try appendFilter(allocator, &filters, arg["--attr=".len..]);
-        } else if (std.mem.eql(u8, arg, "--before")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            before_ref = raw_args[i];
-        } else if (std.mem.startsWith(u8, arg, "--before=")) {
-            before_ref = arg["--before=".len..];
-        } else if (std.mem.eql(u8, arg, "--after")) {
-            i += 1;
-            if (i >= raw_args.len) return error.InvalidArgument;
-            after_ref = raw_args[i];
-        } else if (std.mem.startsWith(u8, arg, "--after=")) {
-            after_ref = arg["--after=".len..];
-        } else {
-            try refs.append(allocator, arg);
         }
     }
     if (before_ref != null and after_ref != null) return error.InvalidArgument;

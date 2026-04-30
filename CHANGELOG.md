@@ -6,7 +6,9 @@ All notable changes to `stash` are documented in this file.
 
 This is a **major** update: `stash` has been ported to Zig.
 
-- Migrate the Zig CLI help/command metadata from `zig-cli` to `zli`.
+- Replace external CLI metadata dependencies with the built-in Zig parser.
+- Generate command help option rows from the same parameter descriptions used
+  by the parser.
 - Restore smart bare `stash` behavior:
   - in a pipeline, `stash` forwards input like `stash tee`
   - otherwise, `stash` stores input like `stash push`

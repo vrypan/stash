@@ -1,12 +1,7 @@
 .{
     .name = .stash,
     .version = "0.10.0",
-    .dependencies = .{
-        .zli = .{
-            .url = "git+https://github.com/xcaeser/zli#e8a6b9d2c8d7432aea552a24a9a94c0f552c34ce",
-            .hash = "zli-5.0.0-LeUjptjnAABe9O89P9qIBXz37dzFVpcoG2Pw6G4RfM_5",
-        },
-    },
+    .dependencies = .{},
     .minimum_zig_version = "0.16.0",
     .paths = .{
         "build.zig",
