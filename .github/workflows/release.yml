@@ -72,6 +72,7 @@ jobs:
 
             mkdir -p "$package_dir"
             cp "$install_dir/bin/stash" "$package_dir/stash"
+            cp "$install_dir/bin/stash-completion" "$package_dir/stash-completion"
             cp LICENSE README.md CHANGELOG.md "$package_dir/"
             cp -R scripts "$package_dir/scripts"
 
