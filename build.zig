@@ -20,6 +20,16 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    const completion_exe = b.addExecutable(.{
+        .name = "stash-completion",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/completion_main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    b.installArtifact(completion_exe);
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {

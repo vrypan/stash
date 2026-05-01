@@ -115,17 +115,28 @@ fn parseInternal(allocator: Allocator, args: []const [:0]const u8, specs: []cons
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        if (std.mem.eql(u8, arg, "--")) {
-            i += 1;
-            while (i < args.len) : (i += 1) try parsed.positionals.append(allocator, args[i]);
-            break;
-        }
-        if (std.mem.startsWith(u8, arg, "--")) {
-            try parseLong(allocator, args, &i, specs, &parsed, diagnostic);
-        } else if (std.mem.startsWith(u8, arg, "-") and arg.len > 1) {
-            try parseShort(allocator, args, &i, specs, &parsed, diagnostic);
-        } else {
+        if (arg.len == 0) {
             try parsed.positionals.append(allocator, arg);
+            continue;
+        }
+        if (arg[0] != '-') {
+            try parsed.positionals.append(allocator, arg);
+            continue;
+        }
+        if (arg.len == 1) {
+            try parsed.positionals.append(allocator, arg);
+            continue;
+        }
+        if (arg[1] == '-') {
+            if (arg.len == 2) {
+                // "--" separator
+                i += 1;
+                while (i < args.len) : (i += 1) try parsed.positionals.append(allocator, args[i]);
+                break;
+            }
+            try parseLong(allocator, args, &i, specs, &parsed, diagnostic);
+        } else {
+            try parseShort(allocator, args, &i, specs, &parsed, diagnostic);
         }
     }
     return parsed;
@@ -141,7 +152,7 @@ fn parseLong(allocator: Allocator, args: []const [:0]const u8, index: *usize, sp
         setDiagnostic(diagnostic, .{ .issue = .unknown_option, .token = arg });
         return error.InvalidArgument;
     };
-    const value = try consumeValue(allocator, args, index, spec, inline_value, arg, diagnostic);
+    const value = try consumeValue(args, index, spec, inline_value, arg, diagnostic);
     try appendFlag(allocator, parsed, spec, value);
 }
 
@@ -164,12 +175,11 @@ fn parseShort(allocator: Allocator, args: []const [:0]const u8, index: *usize, s
         }
         break :blk body[1..];
     } else null;
-    const value = try consumeValue(allocator, args, index, spec, inline_value, arg, diagnostic);
+    const value = try consumeValue(args, index, spec, inline_value, arg, diagnostic);
     try appendFlag(allocator, parsed, spec, value);
 }
 
-fn consumeValue(allocator: Allocator, args: []const [:0]const u8, index: *usize, spec: FlagSpec, inline_value: ?[]const u8, token: []const u8, diagnostic: ?*ParseDiagnostic) !?[]const u8 {
-    _ = allocator;
+fn consumeValue(args: []const [:0]const u8, index: *usize, spec: FlagSpec, inline_value: ?[]const u8, token: []const u8, diagnostic: ?*ParseDiagnostic) !?[]const u8 {
     switch (spec.value) {
         .none => {
             if (inline_value != null) {
@@ -199,9 +209,12 @@ fn consumeValue(allocator: Allocator, args: []const [:0]const u8, index: *usize,
         },
         .bool_optional => {
             const raw = inline_value orelse blk: {
-                if (index.* + 1 < args.len and !std.mem.startsWith(u8, args[index.* + 1], "-")) {
-                    index.* += 1;
-                    break :blk args[index.*];
+                if (index.* + 1 < args.len) {
+                    const next = args[index.* + 1];
+                    if (next.len == 0 or next[0] != '-') {
+                        index.* += 1;
+                        break :blk next;
+                    }
                 }
                 return "true";
             };
@@ -216,10 +229,10 @@ fn consumeValue(allocator: Allocator, args: []const [:0]const u8, index: *usize,
 
 fn appendFlag(allocator: Allocator, parsed: *Parsed, spec: FlagSpec, value: ?[]const u8) !void {
     if (!spec.repeatable) {
-        var i: usize = 0;
-        while (i < parsed.flags.items.len) : (i += 1) {
-            if (std.mem.eql(u8, parsed.flags.items[i].name, spec.name)) {
-                parsed.flags.items[i].value = value;
+        const items = parsed.flags.items;
+        for (items) |*item| {
+            if (std.mem.eql(u8, item.name, spec.name)) {
+                item.value = value;
                 return;
             }
         }
@@ -228,12 +241,14 @@ fn appendFlag(allocator: Allocator, parsed: *Parsed, spec: FlagSpec, value: ?[]c
 }
 
 fn findLong(specs: []const FlagSpec, name: []const u8) ?FlagSpec {
-    for (specs) |spec| if (std.mem.eql(u8, spec.name, name)) return spec;
+    for (specs) |spec| {
+        if (spec.name.len == name.len and std.mem.eql(u8, spec.name, name)) return spec;
+    }
     return null;
 }
 
 fn findShort(specs: []const FlagSpec, short: u8) ?FlagSpec {
-    for (specs) |spec| if (spec.short != null and spec.short.? == short) return spec;
+    for (specs) |spec| if (spec.short == short) return spec;
     return null;
 }
 
@@ -271,8 +286,16 @@ fn setDiagnostic(diagnostic: ?*ParseDiagnostic, value: ParseDiagnostic) void {
 }
 
 pub fn parseBool(value: []const u8) !bool {
-    if (std.ascii.eqlIgnoreCase(value, "true") or std.mem.eql(u8, value, "1") or std.ascii.eqlIgnoreCase(value, "yes")) return true;
-    if (std.ascii.eqlIgnoreCase(value, "false") or std.mem.eql(u8, value, "0") or std.ascii.eqlIgnoreCase(value, "no")) return false;
+    if (value.len == 0) return error.InvalidArgument;
+    switch (value[0]) {
+        't', 'T' => if (std.ascii.eqlIgnoreCase(value, "true")) return true,
+        'f', 'F' => if (std.ascii.eqlIgnoreCase(value, "false")) return false,
+        'y', 'Y' => if (std.ascii.eqlIgnoreCase(value, "yes")) return true,
+        'n', 'N' => if (std.ascii.eqlIgnoreCase(value, "no")) return false,
+        '1' => if (value.len == 1) return true,
+        '0' => if (value.len == 1) return false,
+        else => {},
+    }
     return error.InvalidArgument;
 }
 
@@ -331,11 +354,7 @@ pub fn printOptions(allocator: Allocator, writer: anytype, flags: []const FlagSp
     try writer.writeAll("\nOptions:\n");
 
     var max_label_len: usize = 0;
-    for (flags) |flag| {
-        const label = try flagLabel(allocator, flag);
-        defer allocator.free(label);
-        max_label_len = @max(max_label_len, label.len);
-    }
+    for (flags) |flag| max_label_len = @max(max_label_len, flagLabelLen(flag));
     if (include_help) max_label_len = @max(max_label_len, "  -h, --help".len);
 
     for (flags) |flag| {
@@ -416,6 +435,18 @@ fn printWrapped(writer: anytype, text: []const u8, indent: usize, initial_line_l
     return line_len;
 }
 
+fn flagLabelLen(spec: FlagSpec) usize {
+    const vname = valueName(spec);
+    const short_prefix: usize = if (spec.short != null) 6 else 6; // "  -x, " or "      "
+    const name_len = 2 + spec.name.len; // "--name"
+    const value_suffix: usize = switch (spec.value) {
+        .none => 0,
+        .string, .int, .bool_required => 3 + vname.len, // " <VALUE>"
+        .bool_optional => 3 + vname.len, // "[=VALUE]"
+    };
+    return short_prefix + name_len + value_suffix;
+}
+
 fn flagLabel(allocator: Allocator, spec: FlagSpec) ![]const u8 {
     if (spec.short) |short| {
         return switch (spec.value) {
@@ -458,6 +489,11 @@ fn writeArgumentLabel(writer: anytype, argument: ArgumentSpec) !void {
 }
 
 fn writeSpaces(writer: anytype, count: usize) !void {
-    var i: usize = 0;
-    while (i < count) : (i += 1) try writer.writeByte(' ');
+    const spaces = "                                                                                                                        ";
+    var remaining = count;
+    while (remaining > 0) {
+        const chunk = @min(remaining, spaces.len);
+        try writer.writeAll(spaces[0..chunk]);
+        remaining -= chunk;
+    }
 }

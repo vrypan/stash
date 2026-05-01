@@ -99,7 +99,7 @@ const rm_flags = [_]cli.FlagSpec{
     .{ .name = "force", .short = 'f', .description = "Skip confirmation prompts" },
 };
 
-const commands = [_]cli.CommandEntry{
+pub const commands = [_]cli.CommandEntry{
     .{ .name = "attr", .description = "Show or update entry attributes" },
     .{ .name = "attrs", .description = "List attribute keys across the stash" },
     .{ .name = "cat", .description = "Print an entry's raw data to stdout" },
@@ -131,11 +131,11 @@ const path_arguments = [_]cli.ArgumentSpec{
     .{ .name = "REF", .description = "Entry ID, stack ref, or stack number" },
 };
 
-const root_spec = cli.CommandSpec{ .name = "stash", .description = "A local store for piped output and files.", .usage = "stash [options] [FILE]", .flags = &root_flags, .arguments = &file_argument };
-const push_spec = cli.CommandSpec{ .name = "push", .description = "Store stdin and return the entry key", .usage = "stash push [options] [FILE]", .flags = &push_flags, .arguments = &file_argument };
-const tee_spec = cli.CommandSpec{ .name = "tee", .description = "Store stdin and forward it to stdout", .usage = "stash tee [options]", .flags = &tee_flags };
-const cat_spec = cli.CommandSpec{ .name = "cat", .description = "Print an entry's raw data to stdout", .usage = "stash cat [options] [REF]...", .flags = &ref_filter_reverse_flags, .arguments = &ref_arguments };
-const ls_spec = cli.CommandSpec{ .name = "ls", .description = "List entries", .usage = "stash ls [options]", .flags = &ls_flags, .extra_help =
+pub const root_spec = cli.CommandSpec{ .name = "stash", .description = "A local store for piped output and files.", .usage = "stash [options] [FILE]", .flags = &root_flags, .arguments = &file_argument };
+pub const push_spec = cli.CommandSpec{ .name = "push", .description = "Store stdin and return the entry key", .usage = "stash push [options] [FILE]", .flags = &push_flags, .arguments = &file_argument };
+pub const tee_spec = cli.CommandSpec{ .name = "tee", .description = "Store stdin and forward it to stdout", .usage = "stash tee [options]", .flags = &tee_flags };
+pub const cat_spec = cli.CommandSpec{ .name = "cat", .description = "Print an entry's raw data to stdout", .usage = "stash cat [options] [REF]...", .flags = &ref_filter_reverse_flags, .arguments = &ref_arguments };
+pub const ls_spec = cli.CommandSpec{ .name = "ls", .description = "List entries", .usage = "stash ls [options]", .flags = &ls_flags, .extra_help =
     \\Format tokens:
     \\  %i       short ID
     \\  %I       full ID
@@ -154,10 +154,10 @@ const ls_spec = cli.CommandSpec{ .name = "ls", .description = "List entries", .u
     \\  \n \r \t \\ escapes
     \\
 };
-const attr_spec = cli.CommandSpec{ .name = "attr", .description = "Show or update entry attributes", .usage = "stash attr [options] REF [KEY|key=value]...", .flags = &attr_flags, .arguments = &attr_arguments };
-const attrs_spec = cli.CommandSpec{ .name = "attrs", .description = "List attribute keys across the stash", .usage = "stash attrs [options] [KEY]", .flags = &attrs_flags, .arguments = &attrs_arguments };
-const path_spec = cli.CommandSpec{ .name = "path", .description = "Print stash paths", .usage = "stash path [options] [REF]", .flags = &path_flags, .arguments = &path_arguments };
-const rm_spec = cli.CommandSpec{ .name = "rm", .description = "Remove entries", .usage = "stash rm [options] [REF]...", .flags = &rm_flags, .arguments = &ref_arguments };
+pub const attr_spec = cli.CommandSpec{ .name = "attr", .description = "Show or update entry attributes", .usage = "stash attr [options] REF [KEY|key=value]...", .flags = &attr_flags, .arguments = &attr_arguments };
+pub const attrs_spec = cli.CommandSpec{ .name = "attrs", .description = "List attribute keys across the stash", .usage = "stash attrs [options] [KEY]", .flags = &attrs_flags, .arguments = &attrs_arguments };
+pub const path_spec = cli.CommandSpec{ .name = "path", .description = "Print stash paths", .usage = "stash path [options] [REF]", .flags = &path_flags, .arguments = &path_arguments };
+pub const rm_spec = cli.CommandSpec{ .name = "rm", .description = "Remove entries", .usage = "stash rm [options] [REF]...", .flags = &rm_flags, .arguments = &ref_arguments };
 
 const LsCliOptions = struct {
     id: IdMode = .short,
