@@ -8,6 +8,15 @@ pub fn build(b: *std.Build) void {
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "version", version);
 
+    const cli_mod = b.createModule(.{
+        .root_source_file = b.path("lib/cli/cli.zig"),
+    });
+
+    const completion_lib_mod = b.createModule(.{
+        .root_source_file = b.path("lib/cli/completion.zig"),
+    });
+    completion_lib_mod.addImport("cli", cli_mod);
+
     const exe = b.addExecutable(.{
         .name = "stash",
         .root_module = b.createModule(.{
@@ -17,6 +26,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     exe.root_module.addOptions("build_options", build_options);
+    exe.root_module.addImport("cli", cli_mod);
 
     b.installArtifact(exe);
 
@@ -28,6 +38,8 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    completion_exe.root_module.addImport("cli", cli_mod);
+    completion_exe.root_module.addImport("completion", completion_lib_mod);
     b.installArtifact(completion_exe);
 
     const run_cmd = b.addRunArtifact(exe);
