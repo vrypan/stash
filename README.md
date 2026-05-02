@@ -109,6 +109,14 @@ brew install vrypan/tap/stash
 
 For shell-specific helper scripts, check [scripts/](scripts/).
 
+### Radicle
+
+To clone this repository on Radicle, simply run:
+
+```
+rad clone rad://z85T45pTjMh8gfQ8PPbTuNem8mPC
+```
+
 ## ~{@
 
 In case you wonder, `~{@` is an ASCII-art acorn
