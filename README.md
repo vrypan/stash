@@ -105,6 +105,10 @@ Available under [releases](https://github.com/vrypan/stash/releases).
 brew install vrypan/tap/stash
 ```
 
+### Shell completion
+
+See [docs/completion.md](docs/completion.md) for bash, zsh, and fish setup instructions.
+
 ### Shell support
 
 For shell-specific helper scripts, check [scripts/](scripts/).

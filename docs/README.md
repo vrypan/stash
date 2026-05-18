@@ -8,6 +8,8 @@ This directory contains the main `stash` documentation.
   Practical usage patterns, stack refs, and everyday workflows.
 - [reference.md](reference.md)
   Command and option reference for the current CLI.
+- [completion.md](completion.md)
+  Set up command completion for bash, zsh and fish.
 
 ## Examples And Comparisons
 

@@ -12,6 +12,7 @@ usage:
   bookmark <url>
   bookmark add <url>
   bookmark ls
+  bookmark open <ref>
   bookmark grep <pattern> [rg args...]
   bookmark find <pattern> [rg args...]
 EOF
@@ -57,6 +58,26 @@ bookmark_add() {
 
 bookmark_ls() {
   stash ls --date -a +title -a +url -a pocket=bookmarks
+}
+
+bookmark_open() {
+  local ref="$1"
+  local url
+  url="$(stash attr "$ref" url 2>/dev/null)" || true
+
+  if [[ -z "$url" ]]; then
+    echo "error: no url attribute found for '$ref'" >&2
+    exit 1
+  fi
+
+  if command -v open >/dev/null 2>&1; then
+    open "$url"
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url"
+  else
+    echo "error: cannot open URL: neither 'open' nor 'xdg-open' found" >&2
+    exit 1
+  fi
 }
 
 bookmark_grep() {
@@ -280,6 +301,11 @@ case "$1" in
     shift
     [[ $# -eq 1 ]] || usage
     bookmark_add "$1"
+    ;;
+  open)
+    shift
+    [[ $# -eq 1 ]] || usage
+    bookmark_open "$1"
     ;;
   grep)
     shift
