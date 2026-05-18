@@ -41,8 +41,6 @@ fn initStore(allocator: Allocator) !Paths {
 }
 
 fn invalidateCacheWithPaths(allocator: Allocator, p: *const Paths) void {
-    const rust_cache_path = std.fs.path.join(allocator, &.{ p.cache, "list.cache" }) catch return;
-    runtime.cwd().deleteFile(runtime.process_io, rust_cache_path) catch {};
     const zig_cache_path = std.fs.path.join(allocator, &.{ p.cache, list_cache_name }) catch return;
     runtime.cwd().deleteFile(runtime.process_io, zig_cache_path) catch {};
 }
@@ -230,6 +228,7 @@ fn listCachePath(allocator: Allocator, p: *const Paths) ![]u8 {
 fn readListCache(allocator: Allocator, p: *const Paths) !std.ArrayList(Meta) {
     const path = try listCachePath(allocator, p);
     const data = try runtime.cwd().readFileAlloc(runtime.process_io, path, allocator, .limited(64 * 1024 * 1024));
+    const cache_stat = try runtime.cwd().statFile(runtime.process_io, path, .{});
     var reader = CacheReader{ .data = data };
     try reader.expect(list_cache_magic);
     var out: std.ArrayList(Meta) = .empty;
@@ -254,7 +253,20 @@ fn readListCache(allocator: Allocator, p: *const Paths) !std.ArrayList(Meta) {
         try out.append(allocator, meta);
     }
     if (reader.pos != reader.data.len) return error.InvalidCache;
+    if (!try listCacheIsFresh(p, cache_stat, out.items.len)) return error.StaleCache;
     return out;
+}
+
+fn listCacheIsFresh(p: *const Paths, cache_stat: std.Io.File.Stat, item_count: usize) !bool {
+    const attr_dir_stat = runtime.cwd().statFile(runtime.process_io, p.attr, .{}) catch |err| switch (err) {
+        error.FileNotFound => return item_count == 0,
+        else => |e| return e,
+    };
+    return !statNewerThan(attr_dir_stat, cache_stat);
+}
+
+fn statNewerThan(a: std.Io.File.Stat, b: std.Io.File.Stat) bool {
+    return a.mtime.nanoseconds > b.mtime.nanoseconds or a.ctime.nanoseconds > b.ctime.nanoseconds;
 }
 
 fn writeListCache(allocator: Allocator, p: *const Paths, items: []const Meta) !void {
