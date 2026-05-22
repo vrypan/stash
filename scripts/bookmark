@@ -306,6 +306,12 @@ bookmark_find() {
   fi
 
   local path id_short summary date title url
+  local dim=""
+  local reset=""
+  if [[ -t 1 ]]; then
+    dim=$'\033[2m'
+    reset=$'\033[0m'
+  fi
   while IFS= read -r path; do
     id="${path##*/}"
     id_short="${id: -8}"
@@ -314,7 +320,9 @@ bookmark_find() {
     summary="${summary#*	}"
     title="${summary%%	*}"
     url="${summary#*	}"
-    printf '%s\t%s\t%s\t%s\n' "$id_short" "$date" "$title" "$url"
+    printf '%s%s%s %s\n' "$dim" "$date" "$reset" "$title"
+    printf '%s>>%s %s%s\n\n' "$dim" "$id_short" "$url" "$reset"
+
   done < <(
     if (( ${#rg_args[@]} == 0 )); then
       rg -l --color=never -- "$pattern" "${data_paths[@]}" || true
