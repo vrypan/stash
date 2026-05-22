@@ -1,6 +1,6 @@
 .{
     .name = .stash,
-    .version = "0.10.1",
+    .version = "0.10.2",
     .dependencies = .{},
     .minimum_zig_version = "0.16.0",
     .paths = .{
