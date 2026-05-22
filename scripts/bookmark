@@ -13,6 +13,7 @@ usage:
   bookmark add <url>
   bookmark ls
   bookmark open <ref>
+  bookmark title <ref> <title>
   bookmark grep <pattern> [rg args...]
   bookmark find <pattern> [rg args...]
 EOF
@@ -32,15 +33,30 @@ bookmark_add() {
     exit 1
   fi
 
-  local text
-  text="$(
-    curl -fsSL "$url" \
-      | html2text -width 1000
-  )"
+  local html
+  html="$(curl -fsSL "$url")"
 
   local title
   title="$(
-    printf '%s\n' "$text" \
+    printf '%s\n' "$html" \
+      | awk '
+          { html = html $0 "\n" }
+          END {
+            lower = tolower(html)
+            if (!match(lower, /<title([[:space:]][^>]*)?>/)) {
+              exit
+            }
+
+            title = substr(html, RSTART + RLENGTH)
+            lower_title = substr(lower, RSTART + RLENGTH)
+            if (!match(lower_title, /<\/title[[:space:]]*>/)) {
+              exit
+            }
+
+            print substr(title, 1, RSTART - 1)
+          }
+        ' \
+      | html2text -width 1000 \
       | sed -e 's/\r$//' \
       | awk 'NF { print; exit }'
   )"
@@ -49,11 +65,16 @@ bookmark_add() {
     title="$url"
   fi
 
+  local text
+  text="$(printf '%s\n' "$html" | html2text -width 1000)"
+
   printf '%s\n' "$text" \
     | stash push \
         --attr "url=$url" \
         --attr "title=$title" \
         --attr "pocket=bookmarks"
+
+  printf 'URL: %s\nTitle: %s\n' "$url" "$title"
 }
 
 bookmark_ls() {
@@ -78,6 +99,22 @@ bookmark_open() {
     echo "error: cannot open URL: neither 'open' nor 'xdg-open' found" >&2
     exit 1
   fi
+}
+
+bookmark_title() {
+  local ref="$1"
+  shift
+  local title="$*"
+
+  local pocket
+  pocket="$(stash attr "$ref" pocket 2>/dev/null)" || true
+
+  if [[ "$pocket" != "bookmarks" ]]; then
+    echo "error: '$ref' is not a bookmark" >&2
+    exit 1
+  fi
+
+  stash attr "$ref" "title=$title"
 }
 
 bookmark_grep() {
@@ -306,6 +343,11 @@ case "$1" in
     shift
     [[ $# -eq 1 ]] || usage
     bookmark_open "$1"
+    ;;
+  title)
+    shift
+    [[ $# -ge 2 ]] || usage
+    bookmark_title "$@"
     ;;
   grep)
     shift
