@@ -454,13 +454,9 @@ fn terminalWidth() ?usize {
     const is_tty = stdoutIsTerminal();
     if (is_tty) {
         var ws: std.posix.winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
-        const rc = (runtime.process_io.operate(.{ .device_io_control = .{
-            .file = .stdout(),
-            .code = @intCast(std.posix.T.IOCGWINSZ),
-            .arg = &ws,
-        } }) catch null);
-        if (rc) |result| {
-            if (result.device_io_control == 0 and ws.col > 0) return ws.col;
+        switch (std.posix.errno(std.posix.system.ioctl(std.Io.File.stdout().handle, std.posix.T.IOCGWINSZ, @intFromPtr(&ws)))) {
+            .SUCCESS => if (ws.col > 0) return ws.col,
+            else => {},
         }
     }
     if (std.process.Environ.getPosix(runtime.process_env, "COLUMNS")) |value| {
