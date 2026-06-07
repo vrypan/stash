@@ -16,6 +16,7 @@ usage:
   bookmark title <ref> <title>
   bookmark grep <pattern> [rg args...]
   bookmark find <pattern> [rg args...]
+  bookmark findx <pattern> [rg args...]
 EOF
   exit 1
 }
@@ -305,31 +306,190 @@ bookmark_find() {
     exit 0
   fi
 
-  local path id_short summary date title url
+  local path id
   local dim=""
   local reset=""
   if [[ -t 1 ]]; then
     dim=$'\033[2m'
     reset=$'\033[0m'
   fi
-  while IFS= read -r path; do
-    id="${path##*/}"
+
+  strip_ansi() {
+    printf '%s' "$1" | sed -E $'s/\x1B\\[[0-9;]*m//g'
+  }
+
+  print_find_result() {
+    local id="$1"
+    local id_short summary date title url
+
     id_short="${id: -8}"
-    summary="$(bookmark_summary "$id")" || continue
+    summary="$(bookmark_summary "$id")" || return 1
     date="${summary%%	*}"
     summary="${summary#*	}"
     title="${summary%%	*}"
     url="${summary#*	}"
     printf '%s%s%s %s\n' "$dim" "$date" "$reset" "$title"
-    printf '%s>>%s %s%s\n\n' "$dim" "$id_short" "$url" "$reset"
+    printf '%s>>%s %s%s\n' "$dim" "$id_short" "$url" "$reset"
+  }
+
+  while IFS= read -r path; do
+    path="$(strip_ansi "$path")"
+    id="${path##*/}"
+    print_find_result "$id" || continue
+    printf '\n'
+  done < <(
+    if (( ${#rg_args[@]} == 0 )); then
+      rg -i -l --color=never -- "$pattern" "${data_paths[@]}" || true
+    else
+      rg -i -l --color=never "${rg_args[@]}" -- "$pattern" "${data_paths[@]}" || true
+    fi
+  )
+}
+
+bookmark_findx() {
+  if [[ $# -lt 1 ]]; then
+    usage
+  fi
+
+  if ! command -v rg >/dev/null 2>&1; then
+    echo "error: rg is required" >&2
+    exit 1
+  fi
+
+  local pattern="$1"
+  shift
+  local rg_args=("$@")
+
+  local stash_dir="${STASH_DIR:-$HOME/.stash}"
+  local attr_dir="$stash_dir/attr"
+  local data_dir="$stash_dir/data"
+
+  if [[ ! -d "$attr_dir" || ! -d "$data_dir" ]]; then
+    echo "error: stash directories not found under $stash_dir" >&2
+    exit 1
+  fi
+
+  bookmark_summary() {
+    local id="$1"
+    local attr_file="$attr_dir/$id"
+    local pocket=""
+    local ts=""
+    local title=""
+    local url=""
+    local line key value
+
+    [[ -f "$attr_file" ]] || return 1
+
+    while IFS= read -r line; do
+      [[ "$line" == *=* ]] || continue
+      key="${line%%=*}"
+      value="${line#*=}"
+      case "$key" in
+        pocket) pocket="$value" ;;
+        ts) ts="$value" ;;
+        title) title="$value" ;;
+        url) url="$value" ;;
+      esac
+    done < "$attr_file"
+
+    [[ "$pocket" == "bookmarks" ]] || return 1
+    printf '%s\t%s\t%s\n' "${ts%%T*}" "$title" "$url"
+  }
+
+  local -a data_paths=()
+  local attr_file id pocket line key value
+
+  shopt -s nullglob
+  for attr_file in "$attr_dir"/*; do
+    [[ -f "$attr_file" ]] || continue
+    id="${attr_file##*/}"
+    pocket=""
+    while IFS= read -r line; do
+      [[ "$line" == *=* ]] || continue
+      key="${line%%=*}"
+      value="${line#*=}"
+      if [[ "$key" == "pocket" ]]; then
+        pocket="$value"
+        break
+      fi
+    done < "$attr_file"
+
+    if [[ "$pocket" == "bookmarks" && -f "$data_dir/$id" ]]; then
+      data_paths+=("$data_dir/$id")
+    fi
+  done
+  shopt -u nullglob
+
+  if [[ ${#data_paths[@]} -eq 0 ]]; then
+    exit 0
+  fi
+
+  local path rest line_no match id_short summary date title url
+  local current_id=""
+  local printed_any=0
+  local dim=""
+  local reset=""
+  local rg_color="never"
+  if [[ -t 1 ]]; then
+    dim=$'\033[2m'
+    reset=$'\033[0m'
+    rg_color="always"
+  fi
+
+  strip_ansi() {
+    printf '%s' "$1" | sed -E $'s/\x1B\\[[0-9;]*m//g'
+  }
+
+  print_find_result() {
+    local id="$1"
+    local id_short summary date title url
+
+    id_short="${id: -8}"
+    summary="$(bookmark_summary "$id")" || return 1
+    date="${summary%%	*}"
+    summary="${summary#*	}"
+    title="${summary%%	*}"
+    url="${summary#*	}"
+    printf '%s%s%s %s\n' "$dim" "$date" "$reset" "$title"
+    printf '%s>>%s %s%s\n' "$dim" "$id_short" "$url" "$reset"
+  }
+
+  while IFS= read -r line; do
+    path="${line%%:*}"
+    rest="${line#*:}"
+    line_no="${rest%%:*}"
+    match="${rest#*:}"
+    path="$(strip_ansi "$path")"
+    line_no="$(strip_ansi "$line_no")"
+    id="${path##*/}"
+    if [[ "$id" != "$current_id" ]]; then
+      if (( printed_any )); then
+        printf '\n'
+      fi
+      print_find_result "$id" || continue
+      current_id="$id"
+      printed_any=1
+    fi
+    printf '  %s%s:%s %s\n' "$dim" "$line_no" "$reset" "$match"
 
   done < <(
     if (( ${#rg_args[@]} == 0 )); then
-      rg -l --color=never -- "$pattern" "${data_paths[@]}" || true
+      rg -i -n -H --color="$rg_color" \
+        --colors 'path:none' \
+        --colors 'line:none' \
+        --colors 'column:none' \
+        -- "$pattern" "${data_paths[@]}" || true
     else
-      rg -l --color=never "${rg_args[@]}" -- "$pattern" "${data_paths[@]}" || true
+      rg -i -n -H --color="$rg_color" \
+        --colors 'path:none' \
+        --colors 'line:none' \
+        --colors 'column:none' \
+        "${rg_args[@]}" -- "$pattern" "${data_paths[@]}" || true
     fi
   )
+  if (( printed_any )); then
+    printf '\n'
+  fi
 }
 
 if [[ $# -eq 0 ]]; then
@@ -364,6 +524,10 @@ case "$1" in
   find)
     shift
     bookmark_find "$@"
+    ;;
+  findx)
+    shift
+    bookmark_findx "$@"
     ;;
   -*)
     usage
