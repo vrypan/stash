@@ -16,7 +16,6 @@ usage:
   bookmark title <ref> <title>
   bookmark grep <pattern> [rg args...]
   bookmark find <pattern> [rg args...]
-  bookmark findx <pattern> [rg args...]
 EOF
   exit 1
 }
@@ -129,116 +128,6 @@ bookmark_title() {
   fi
 
   stash attr "$ref" "title=$title"
-}
-
-bookmark_grep() {
-  if [[ $# -lt 1 ]]; then
-    usage
-  fi
-
-  if ! command -v rg >/dev/null 2>&1; then
-    echo "error: rg is required" >&2
-    exit 1
-  fi
-
-  local pattern="$1"
-  shift
-  local rg_args=("$@")
-
-  local stash_dir="${STASH_DIR:-$HOME/.stash}"
-  local attr_dir="$stash_dir/attr"
-  local data_dir="$stash_dir/data"
-
-  if [[ ! -d "$attr_dir" || ! -d "$data_dir" ]]; then
-    echo "error: stash directories not found under $stash_dir" >&2
-    exit 1
-  fi
-
-  local -a data_paths=()
-  local attr_file id pocket line key value
-
-  shopt -s nullglob
-  for attr_file in "$attr_dir"/*; do
-    [[ -f "$attr_file" ]] || continue
-    id="${attr_file##*/}"
-    pocket=""
-    while IFS= read -r line; do
-      [[ "$line" == *=* ]] || continue
-      key="${line%%=*}"
-      value="${line#*=}"
-      if [[ "$key" == "pocket" ]]; then
-        pocket="$value"
-        break
-      fi
-    done < "$attr_file"
-
-    if [[ "$pocket" == "bookmarks" && -f "$data_dir/$id" ]]; then
-      data_paths+=("$data_dir/$id")
-    fi
-  done
-  shopt -u nullglob
-
-  if [[ ${#data_paths[@]} -eq 0 ]]; then
-    exit 0
-  fi
-
-  strip_ansi() {
-    printf '%s' "$1" | sed -E $'s/\x1B\\[[0-9;]*m//g'
-  }
-
-  bookmark_meta() {
-    local id="$1"
-    local attr_file="$attr_dir/$id"
-    local ts=""
-    local url=""
-    local line key value
-
-    [[ -f "$attr_file" ]] || return 1
-
-    while IFS= read -r line; do
-      [[ "$line" == *=* ]] || continue
-      key="${line%%=*}"
-      value="${line#*=}"
-      case "$key" in
-        ts) ts="$value" ;;
-        url) url="$value" ;;
-      esac
-    done < "$attr_file"
-
-    printf '%s\t%s\n' "${ts%%T*}" "$url"
-  }
-
-  local path rest match id id_short meta date url
-  while IFS= read -r line; do
-    path="${line%%:*}"
-    rest="${line#*:}"
-    match="${rest#*:}"
-    path="$(strip_ansi "$path")"
-    id="${path##*/}"
-    id_short="${id: -8}"
-    meta="$(bookmark_meta "$id")" || continue
-    date="${meta%%	*}"
-    url="${meta#*	}"
-    printf '%s\t%s\t%s\t%b\n' \
-      "$id_short" \
-      "$date" \
-      "$url" \
-      "$match"
-  done < <(
-    if (( ${#rg_args[@]} == 0 )); then
-      rg -n -H --color=always \
-        --colors 'path:none' \
-        --colors 'line:none' \
-        --colors 'column:none' \
-        -- "$pattern" "${data_paths[@]}" || true
-    else
-      rg -n -H --color=always \
-        --colors 'path:none' \
-        --colors 'line:none' \
-        --colors 'column:none' \
-        "${rg_args[@]}" -- "$pattern" "${data_paths[@]}" || true
-    fi
-  )
 }
 
 bookmark_find() {
@@ -359,7 +248,7 @@ bookmark_find() {
   )
 }
 
-bookmark_findx() {
+bookmark_grep() {
   if [[ $# -lt 1 ]]; then
     usage
   fi
@@ -443,10 +332,11 @@ bookmark_findx() {
   local dim=""
   local reset=""
   local rg_color="never"
+  local rg_replace=""
   if [[ -t 1 ]]; then
     dim=$'\033[2m'
     reset=$'\033[0m'
-    rg_color="always"
+    rg_replace="${reset}\$0${dim}"
   fi
 
   strip_ansi() {
@@ -463,7 +353,7 @@ bookmark_findx() {
     summary="${summary#*	}"
     title="${summary%%	*}"
     url="${summary#*	}"
-    printf '%s%s%s %s\n' "$dim" "$date" "$reset" "$title"
+    printf '%s %s\n' "$date" "$title"
     printf '%s>>%s %s%s\n' "$dim" "$id_short" "$url" "$reset"
   }
 
@@ -483,10 +373,24 @@ bookmark_findx() {
       current_id="$id"
       printed_any=1
     fi
-    printf '  %s%s:%s %s\n' "$dim" "$line_no" "$reset" "$match"
+    printf '%s%s: %s%s\n' "$dim" "$line_no" "$match" "$reset"
 
   done < <(
-    if (( ${#rg_args[@]} == 0 )); then
+    if [[ -n "$rg_replace" && ${#rg_args[@]} -eq 0 ]]; then
+      rg -i -n -H --color="$rg_color" \
+        --replace "$rg_replace" \
+        --colors 'path:none' \
+        --colors 'line:none' \
+        --colors 'column:none' \
+        -- "$pattern" "${data_paths[@]}" || true
+    elif [[ -n "$rg_replace" ]]; then
+      rg -i -n -H --color="$rg_color" \
+        --replace "$rg_replace" \
+        --colors 'path:none' \
+        --colors 'line:none' \
+        --colors 'column:none' \
+        "${rg_args[@]}" -- "$pattern" "${data_paths[@]}" || true
+    elif (( ${#rg_args[@]} == 0 )); then
       rg -i -n -H --color="$rg_color" \
         --colors 'path:none' \
         --colors 'line:none' \
@@ -537,10 +441,6 @@ case "$1" in
   find)
     shift
     bookmark_find "$@"
-    ;;
-  findx)
-    shift
-    bookmark_findx "$@"
     ;;
   -*)
     usage
