@@ -79,7 +79,20 @@ bookmark_add() {
 }
 
 bookmark_ls() {
-  stash ls --date -a +title -a +url -a pocket=bookmarks
+  local dim=""
+  local reset=""
+  if [[ -t 1 ]]; then
+    dim=$'\033[2m'
+    reset=$'\033[0m'
+  fi
+
+  local id_short ts title url date
+  stash ls --format '%i\t%dt\t%a{title}\t%a{url}\n' -a pocket=bookmarks \
+    | while IFS=$'\t' read -r id_short ts title url; do
+        date="${ts%%T*}"
+        printf '%s%s%s %s\n' "$dim" "$date" "$reset" "$title"
+        printf '%s>>%s %s%s\n\n' "$dim" "$id_short" "$url" "$reset"
+      done
 }
 
 bookmark_open() {
