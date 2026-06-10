@@ -1,6 +1,6 @@
 const std = @import("std");
 const cmd = @import("cmd.zig");
-const runtime = @import("runtime.zig");
+const runtime = @import("stash").runtime;
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();

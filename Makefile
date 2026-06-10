@@ -27,6 +27,7 @@ clean:
 install: release
 	install -d "$(PREFIX)/bin"
 	install -m 755 zig-out/bin/stash "$(PREFIX)/bin/stash"
+	install -m 755 zig-out/bin/stash-bookmark "$(PREFIX)/bin/stash-bookmark"
 
 ## size        Show Zig stash binary size
 size: release

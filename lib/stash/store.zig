@@ -15,8 +15,70 @@ pub const PushResult = struct {
     interrupted: bool = false,
 };
 
-pub fn basePaths(allocator: Allocator) !Paths {
-    const base = if (runtime.envOwned(allocator, "STASH_DIR")) |dir|
+pub const StoreOptions = struct {
+    stash_dir: ?[]const u8 = null,
+};
+
+pub const ListOptions = struct {
+    pocket: ?[]const u8 = null,
+};
+
+pub const Store = struct {
+    paths: Paths,
+
+    pub fn open(allocator: Allocator, options: StoreOptions) !Store {
+        return .{ .paths = try pathsFromOptions(allocator, options) };
+    }
+
+    pub fn dataPath(self: *const Store, allocator: Allocator, id: []const u8) ![]u8 {
+        return std.fs.path.join(allocator, &.{ self.paths.data, id });
+    }
+
+    pub fn attrPath(self: *const Store, allocator: Allocator, id: []const u8) ![]u8 {
+        return std.fs.path.join(allocator, &.{ self.paths.attr, id });
+    }
+
+    pub fn list(self: *const Store, allocator: Allocator, options: ListOptions) !std.ArrayList(Meta) {
+        return listWithPaths(allocator, &self.paths, options.pocket);
+    }
+
+    pub fn resolve(self: *const Store, allocator: Allocator, input: []const u8, options: ListOptions) ![]u8 {
+        return resolveWithListOptions(allocator, self, input, options);
+    }
+
+    pub fn getMeta(self: *const Store, allocator: Allocator, id: []const u8) !Meta {
+        const path = try self.attrPath(allocator, id);
+        const data = try runtime.cwd().readFileAlloc(runtime.process_io, path, allocator, .limited(16 * 1024 * 1024));
+        return parseAttrFile(allocator, data);
+    }
+
+    pub fn writeMeta(self: *const Store, allocator: Allocator, id: []const u8, meta: *const Meta) !void {
+        try writeMetaFile(allocator, try std.fs.path.join(allocator, &.{ self.paths.attr, id }), meta);
+        invalidateCacheWithPaths(allocator, &self.paths);
+    }
+
+    pub fn setAttr(self: *const Store, allocator: Allocator, id: []const u8, key: []const u8, value: []const u8) !void {
+        var meta = try self.getMeta(allocator, id);
+        try meta.setAttr(allocator, key, value);
+        try self.writeMeta(allocator, id, &meta);
+    }
+
+    pub fn catId(self: *const Store, allocator: Allocator, id: []const u8, writer: anytype) !void {
+        var file = try runtime.cwd().openFile(runtime.process_io, try self.dataPath(allocator, id), .{});
+        defer file.close(runtime.process_io);
+        var buf: [65536]u8 = undefined;
+        while (true) {
+            const n = try runtime.fileRead(file, &buf);
+            if (n == 0) break;
+            try writer.writeAll(buf[0..n]);
+        }
+    }
+};
+
+fn pathsFromOptions(allocator: Allocator, options: StoreOptions) !Paths {
+    const base = if (options.stash_dir) |dir|
+        try allocator.dupe(u8, dir)
+    else if (runtime.envOwned(allocator, "STASH_DIR")) |dir|
         dir
     else blk: {
         const home = runtime.envOwned(allocator, "HOME") orelse return error.InvalidArgument;
@@ -29,6 +91,10 @@ pub fn basePaths(allocator: Allocator) !Paths {
         .tmp = try std.fs.path.join(allocator, &.{ base, "tmp" }),
         .cache = try std.fs.path.join(allocator, &.{ base, "cache" }),
     };
+}
+
+pub fn basePaths(allocator: Allocator) !Paths {
+    return pathsFromOptions(allocator, .{});
 }
 
 fn initStore(allocator: Allocator) !Paths {
@@ -159,14 +225,8 @@ pub fn pushInput(allocator: Allocator, file_arg: ?[]const u8, attrs: []const Att
 }
 
 pub fn catId(allocator: Allocator, id: []const u8, writer: anytype) !void {
-    var file = try runtime.cwd().openFile(runtime.process_io, try dataPath(allocator, id), .{});
-    defer file.close(runtime.process_io);
-    var buf: [65536]u8 = undefined;
-    while (true) {
-        const n = try runtime.fileRead(file, &buf);
-        if (n == 0) break;
-        try writer.writeAll(buf[0..n]);
-    }
+    const s = try Store.open(allocator, .{});
+    try s.catId(allocator, id, writer);
 }
 
 pub fn removeId(allocator: Allocator, id: []const u8) !void {
@@ -187,11 +247,15 @@ pub fn removeIds(allocator: Allocator, ids: []const []const u8) !void {
 }
 
 pub fn visibleList(allocator: Allocator) !std.ArrayList(Meta) {
-    const p = try basePaths(allocator);
     const pocket = activePocket(allocator);
-    const items = readListCache(allocator, &p) catch blk: {
-        const rebuilt = try listAll(allocator, &p);
-        writeListCache(allocator, &p, rebuilt.items) catch {};
+    const s = try Store.open(allocator, .{});
+    return s.list(allocator, .{ .pocket = pocket });
+}
+
+fn listWithPaths(allocator: Allocator, p: *const Paths, pocket: ?[]const u8) !std.ArrayList(Meta) {
+    const items = readListCache(allocator, p) catch blk: {
+        const rebuilt = try listAll(allocator, p);
+        writeListCache(allocator, p, rebuilt.items) catch {};
         break :blk rebuilt;
     };
     if (pocket == null) return items;
@@ -351,23 +415,28 @@ fn writeCacheBytes(writer: anytype, value: []const u8) !void {
 }
 
 pub fn resolve(allocator: Allocator, input: []const u8) ![]u8 {
+    const s = try Store.open(allocator, .{});
+    return s.resolve(allocator, input, .{ .pocket = activePocket(allocator) });
+}
+
+fn resolveWithListOptions(allocator: Allocator, s: *const Store, input: []const u8, options: ListOptions) ![]u8 {
     const raw = std.mem.trim(u8, input, " \t\r\n");
     if (raw.len == 0) {
-        const items = try visibleList(allocator);
+        const items = try s.list(allocator, options);
         if (items.items.len == 0) return error.StashEmpty;
         return items.items[0].id;
     }
     if (raw[0] == '@') {
         const n = try std.fmt.parseInt(usize, raw[1..], 10);
-        return nthNewest(allocator, n);
+        return nthNewest(allocator, s, n, options);
     }
     if (allDigits(raw)) {
         const n = try std.fmt.parseInt(usize, raw, 10);
-        return nthNewest(allocator, n);
+        return nthNewest(allocator, s, n, options);
     }
     const lower = try asciiLower(allocator, raw);
     if (lower.len < types.min_id_len) return error.IdTooShort;
-    const items = try visibleList(allocator);
+    const items = try s.list(allocator, options);
     var prefix: ?[]u8 = null;
     var suffix: ?[]u8 = null;
     var prefix_ambig = false;
@@ -392,23 +461,21 @@ pub fn resolve(allocator: Allocator, input: []const u8) ![]u8 {
     return error.NotFound;
 }
 
-fn nthNewest(allocator: Allocator, n: usize) ![]u8 {
+fn nthNewest(allocator: Allocator, s: *const Store, n: usize, options: ListOptions) ![]u8 {
     if (n == 0) return error.InvalidRef;
-    const items = try visibleList(allocator);
+    const items = try s.list(allocator, options);
     if (n > items.items.len) return error.NotFound;
     return items.items[n - 1].id;
 }
 
 pub fn getMeta(allocator: Allocator, id: []const u8) !Meta {
-    const path = try attrPath(allocator, id);
-    const data = try runtime.cwd().readFileAlloc(runtime.process_io, path, allocator, .limited(16 * 1024 * 1024));
-    return parseAttrFile(allocator, data);
+    const s = try Store.open(allocator, .{});
+    return s.getMeta(allocator, id);
 }
 
 pub fn writeMeta(allocator: Allocator, id: []const u8, meta: *const Meta) !void {
-    const p = try basePaths(allocator);
-    try writeMetaFile(allocator, try std.fs.path.join(allocator, &.{ p.attr, id }), meta);
-    invalidateCacheWithPaths(allocator, &p);
+    const s = try Store.open(allocator, .{});
+    try s.writeMeta(allocator, id, meta);
 }
 
 fn writeMetaFile(allocator: Allocator, path: []const u8, meta: *const Meta) !void {

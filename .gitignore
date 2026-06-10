@@ -1,4 +1,4 @@
-stash
+/stash
 dist/
 gitignore/
 .DS_Store

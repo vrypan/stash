@@ -1,10 +1,11 @@
 const std = @import("std");
 const build_options = @import("build_options");
 const cli = @import("cli");
-const display = @import("display.zig");
-const runtime = @import("runtime.zig");
-const store = @import("store.zig");
-const types = @import("types.zig");
+const stash = @import("stash");
+const display = stash.display;
+const runtime = stash.runtime;
+const store = stash.store;
+const types = stash.types;
 
 const Allocator = std.mem.Allocator;
 const Attr = types.Attr;

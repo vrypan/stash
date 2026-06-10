@@ -17,6 +17,10 @@ pub fn build(b: *std.Build) void {
     });
     completion_lib_mod.addImport("cli", cli_mod);
 
+    const stash_mod = b.createModule(.{
+        .root_source_file = b.path("lib/stash/stash.zig"),
+    });
+
     const exe = b.addExecutable(.{
         .name = "stash",
         .root_module = b.createModule(.{
@@ -27,6 +31,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addOptions("build_options", build_options);
     exe.root_module.addImport("cli", cli_mod);
+    exe.root_module.addImport("stash", stash_mod);
 
     b.installArtifact(exe);
 
@@ -40,7 +45,19 @@ pub fn build(b: *std.Build) void {
     });
     completion_exe.root_module.addImport("cli", cli_mod);
     completion_exe.root_module.addImport("completion", completion_lib_mod);
+    completion_exe.root_module.addImport("stash", stash_mod);
     b.installArtifact(completion_exe);
+
+    const bookmark_exe = b.addExecutable(.{
+        .name = "stash-bookmark",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/bookmark_main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    bookmark_exe.root_module.addImport("stash", stash_mod);
+    b.installArtifact(bookmark_exe);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
