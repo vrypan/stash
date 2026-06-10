@@ -114,7 +114,7 @@ bookmark_ls() {
 
   local id_short ts title url date
   render_ls() {
-    stash ls --format '%i\t%dt\t%a{title}\t%a{url}\n' -a pocket=bookmarks \
+    STASH_POCKET=bookmarks stash ls --format '%i\t%dt\t%a{title}\t%a{url}\n' -a pocket=bookmarks \
       | while IFS=$'\t' read -r id_short ts title url; do
           date="${ts%%T*}"
           printf '%s%s%s %s\n' "$dim" "$date" "$reset" "$title"
