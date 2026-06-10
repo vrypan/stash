@@ -78,7 +78,7 @@ fn usage() u8 {
 }
 
 fn cmdAdd(allocator: Allocator, url: []const u8) !u8 {
-    const html = runCapture(allocator, &.{ "curl", "-fsSL", url }) catch |err| switch (err) {
+    const html = runCaptureReportError(allocator, &.{ "curl", "-fsSL", url }) catch |err| switch (err) {
         error.FileNotFound => return error.CurlRequired,
         else => |e| return e,
     };
@@ -89,7 +89,7 @@ fn cmdAdd(allocator: Allocator, url: []const u8) !u8 {
     const html_path = try writeTempFile(allocator, "html", html);
     defer stash.runtime.cwd().deleteFile(stash.runtime.process_io, html_path) catch {};
 
-    const text = runCapture(allocator, &.{ "html2text", "-width", "1000", html_path }) catch |err| switch (err) {
+    const text = runCaptureReportError(allocator, &.{ "html2text", "-width", "1000", html_path }) catch |err| switch (err) {
         error.FileNotFound => return error.Html2TextRequired,
         else => |e| return e,
     };
@@ -217,16 +217,35 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
 }
 
 fn runCapture(allocator: Allocator, argv: []const []const u8) ![]u8 {
-    const result = try std.process.run(allocator, stash.runtime.process_io, .{
-        .argv = argv,
-        .stdout_limit = .limited(64 * 1024 * 1024),
-        .stderr_limit = .limited(1024 * 1024),
-    });
+    const result = try runProcess(allocator, argv);
     switch (result.term) {
         .exited => |code| if (code == 0) return result.stdout,
         else => {},
     }
     return error.ExternalCommandFailed;
+}
+
+fn runCaptureReportError(allocator: Allocator, argv: []const []const u8) ![]u8 {
+    const result = try runProcess(allocator, argv);
+    switch (result.term) {
+        .exited => |code| if (code == 0) return result.stdout,
+        else => {},
+    }
+    const stderr = stash.runtime.stderrWriter();
+    const message = std.mem.trim(u8, result.stderr, " \t\r\n");
+    if (message.len > 0) {
+        try stderr.print("{s}\n", .{message});
+    }
+    return error.ExternalCommandFailed;
+}
+
+fn runProcess(allocator: Allocator, argv: []const []const u8) !std.process.RunResult {
+    const result = try std.process.run(allocator, stash.runtime.process_io, .{
+        .argv = argv,
+        .stdout_limit = .limited(64 * 1024 * 1024),
+        .stderr_limit = .limited(1024 * 1024),
+    });
+    return result;
 }
 
 fn writeTempFile(allocator: Allocator, suffix: []const u8, data: []const u8) ![]u8 {
