@@ -10,7 +10,7 @@ pub const Style = struct {
     reset: []const u8 = "",
 
     pub fn init(enabled: bool) Style {
-        if (!enabled) return .{};
+        if (!colorEnabled(enabled)) return .{};
         return .{
             .dim = "\x1b[2m",
             .id = "\x1b[1;33m",
@@ -22,6 +22,14 @@ pub const Style = struct {
 
 pub fn stdoutIsTerminal() bool {
     return runtime.stdoutIsTty();
+}
+
+pub fn colorEnabled(enabled: bool) bool {
+    if (!enabled or !stdoutIsTerminal()) return false;
+    if (env("NO_COLOR")) |value| {
+        if (value.len > 0) return false;
+    }
+    return true;
 }
 
 pub const PageOptions = struct {

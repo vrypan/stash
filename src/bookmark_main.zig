@@ -64,7 +64,7 @@ fn usage() u8 {
 fn cmdLs(allocator: Allocator) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
-    const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
+    const style = stash.term.Style.init(true);
     var out = try stash.term.Output.init(allocator, .{ .disable_env = "BOOKMARK_NO_PAGER" });
     errdefer out.deinit() catch {};
 
@@ -79,7 +79,7 @@ fn cmdLs(allocator: Allocator) !u8 {
 fn cmdFind(allocator: Allocator, pattern: []const u8) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
-    const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
+    const style = stash.term.Style.init(true);
     var out = try stash.term.Output.init(allocator, .{ .disable_env = "BOOKMARK_NO_PAGER" });
     errdefer out.deinit() catch {};
 
@@ -96,7 +96,7 @@ fn cmdFind(allocator: Allocator, pattern: []const u8) !u8 {
 fn cmdGrep(allocator: Allocator, pattern: []const u8) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
-    const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
+    const style = stash.term.Style.init(true);
     var out = try stash.term.Output.init(allocator, .{ .disable_env = "BOOKMARK_NO_PAGER" });
     errdefer out.deinit() catch {};
     var printed_any = false;

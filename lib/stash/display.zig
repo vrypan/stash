@@ -1,6 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const runtime = @import("runtime.zig");
+const term = @import("term.zig");
 
 const Allocator = std.mem.Allocator;
 const Meta = types.Meta;
@@ -443,11 +444,11 @@ fn displayIdAlloc(allocator: Allocator, meta: *const Meta, idx: usize, mode: IdM
 }
 
 fn stdoutIsTerminal() bool {
-    return std.Io.File.stdout().isTty(runtime.process_io) catch false;
+    return term.stdoutIsTerminal();
 }
 
 fn colorEnabled(value: bool) bool {
-    return value and stdoutIsTerminal();
+    return term.colorEnabled(value);
 }
 
 fn terminalWidth() ?usize {
