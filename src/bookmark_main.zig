@@ -65,13 +65,14 @@ fn cmdLs(allocator: Allocator) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
     const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
-    var out: std.ArrayList(u8) = .empty;
+    var out = try stash.term.Output.init(allocator, .{ .disable_env = "BOOKMARK_NO_PAGER" });
+    errdefer out.deinit() catch {};
 
     for (items.items) |*meta| {
-        try appendBookmark(allocator, &out, meta, style, .date_dim);
-        try out.append(allocator, '\n');
+        try printBookmark(&out, meta, style, .date_dim);
+        try out.writeByte('\n');
     }
-    try writeOutput(allocator, out.items);
+    try out.deinit();
     return 0;
 }
 
@@ -79,15 +80,16 @@ fn cmdFind(allocator: Allocator, pattern: []const u8) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
     const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
-    var out: std.ArrayList(u8) = .empty;
+    var out = try stash.term.Output.init(allocator, .{ .disable_env = "BOOKMARK_NO_PAGER" });
+    errdefer out.deinit() catch {};
 
     for (items.items) |*meta| {
         if (try bookmarkContains(allocator, &s, meta, pattern)) {
-            try appendBookmark(allocator, &out, meta, style, .date_dim);
-            try out.append(allocator, '\n');
+            try printBookmark(&out, meta, style, .date_dim);
+            try out.writeByte('\n');
         }
     }
-    try writeOutput(allocator, out.items);
+    try out.deinit();
     return 0;
 }
 
@@ -95,29 +97,22 @@ fn cmdGrep(allocator: Allocator, pattern: []const u8) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
     const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
-    var out: std.ArrayList(u8) = .empty;
+    var out = try stash.term.Output.init(allocator, .{ .disable_env = "BOOKMARK_NO_PAGER" });
+    errdefer out.deinit() catch {};
     var printed_any = false;
 
     for (items.items) |*meta| {
-        const path = try s.dataPath(allocator, meta.id);
-        const data = stash.runtime.cwd().readFileAlloc(stash.runtime.process_io, path, allocator, .limited(64 * 1024 * 1024)) catch continue;
-        var lines = std.mem.splitScalar(u8, data, '\n');
-        var line_no: usize = 1;
-        var printed_header = false;
-        while (lines.next()) |raw_line| : (line_no += 1) {
-            const line = std.mem.trim(u8, raw_line, "\r");
-            if (indexOfIgnoreCase(line, pattern) == null) continue;
-            if (!printed_header) {
-                if (printed_any) try out.append(allocator, '\n');
-                try appendBookmark(allocator, &out, meta, style, .normal_header);
-                printed_header = true;
-                printed_any = true;
-            }
-            try appendGrepLine(allocator, &out, line_no, line, pattern, style);
-        }
-        if (printed_header) try out.append(allocator, '\n');
+        var context = GrepContext{
+            .meta = meta,
+            .out = &out,
+            .style = style,
+            .pattern = pattern,
+            .printed_any = &printed_any,
+        };
+        s.scanDataLines(allocator, meta.id, &context, grepLine) catch continue;
+        if (context.printed_header) try out.writeByte('\n');
     }
-    try writeOutput(allocator, out.items);
+    try out.deinit();
     return 0;
 }
 
@@ -135,19 +130,14 @@ fn cmdTitle(allocator: Allocator, ref: []const u8, parts: []const [:0]const u8) 
 
 const BookmarkHeader = enum { date_dim, normal_header };
 
-fn appendBookmark(allocator: Allocator, out: *std.ArrayList(u8), meta: *const Meta, style: stash.term.Style, header: BookmarkHeader) !void {
+fn printBookmark(out: anytype, meta: *const Meta, style: stash.term.Style, header: BookmarkHeader) !void {
     const title = attrOrEmpty(meta, "title");
     const url = attrOrEmpty(meta, "url");
     switch (header) {
-        .date_dim => try appendFmt(allocator, out, "{s}{s}{s} {s}\n", .{ style.dim, bookmarkDate(meta.ts), style.reset, title }),
-        .normal_header => try appendFmt(allocator, out, "{s} {s}\n", .{ bookmarkDate(meta.ts), title }),
+        .date_dim => try out.print("{s}{s}{s} {s}\n", .{ style.dim, stash.format.dateOnly(meta.ts), style.reset, title }),
+        .normal_header => try out.print("{s} {s}\n", .{ stash.format.dateOnly(meta.ts), title }),
     }
-    try appendFmt(allocator, out, "{s}>>{s} {s}{s}\n", .{ style.dim, meta.shortId(), url, style.reset });
-}
-
-fn bookmarkDate(ts: []const u8) []const u8 {
-    if (std.mem.indexOfScalar(u8, ts, 'T')) |pos| return ts[0..pos];
-    return ts;
+    try out.print("{s}>>{s} {s}{s}\n", .{ style.dim, meta.shortId(), url, style.reset });
 }
 
 fn attrOrEmpty(meta: *const Meta, key: []const u8) []const u8 {
@@ -155,56 +145,62 @@ fn attrOrEmpty(meta: *const Meta, key: []const u8) []const u8 {
 }
 
 fn bookmarkContains(allocator: Allocator, s: *const Store, meta: *const Meta, pattern: []const u8) !bool {
-    const path = try s.dataPath(allocator, meta.id);
-    const data = stash.runtime.cwd().readFileAlloc(stash.runtime.process_io, path, allocator, .limited(64 * 1024 * 1024)) catch return false;
-    return indexOfIgnoreCase(data, pattern) != null;
+    var context = FindContext{ .pattern = pattern };
+    try s.scanDataLines(allocator, meta.id, &context, findLine);
+    return context.found;
 }
 
-fn appendGrepLine(allocator: Allocator, out: *std.ArrayList(u8), line_no: usize, line: []const u8, pattern: []const u8, style: stash.term.Style) !void {
-    try appendFmt(allocator, out, "{s}{}: ", .{ style.dim, line_no });
+fn printGrepLine(out: anytype, line_no: usize, line: []const u8, pattern: []const u8, style: stash.term.Style) !void {
+    try out.print("{s}{}: ", .{ style.dim, line_no });
     if (pattern.len == 0) {
-        try appendFmt(allocator, out, "{s}{s}\n", .{ line, style.reset });
+        try out.print("{s}{s}\n", .{ line, style.reset });
         return;
     }
 
     var rest = line;
-    while (indexOfIgnoreCase(rest, pattern)) |pos| {
-        try out.appendSlice(allocator, rest[0..pos]);
+    while (stash.format.indexOfIgnoreCaseAscii(rest, pattern)) |pos| {
+        try out.writeAll(rest[0..pos]);
         const end = pos + pattern.len;
-        try appendFmt(allocator, out, "{s}{s}{s}", .{ style.reset, rest[pos..end], style.dim });
+        try out.print("{s}{s}{s}", .{ style.reset, rest[pos..end], style.dim });
         rest = rest[end..];
     }
 
-    try out.appendSlice(allocator, rest);
-    try appendFmt(allocator, out, "{s}\n", .{style.reset});
+    try out.writeAll(rest);
+    try out.print("{s}\n", .{style.reset});
 }
 
-fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
-    if (needle.len == 0) return 0;
-    if (needle.len > haystack.len) return null;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        var j: usize = 0;
-        while (j < needle.len) : (j += 1) {
-            if (std.ascii.toLower(haystack[i + j]) != std.ascii.toLower(needle[j])) break;
-        } else {
-            return i;
-        }
+const FindContext = struct {
+    pattern: []const u8,
+    found: bool = false,
+};
+
+fn findLine(context: *FindContext, _: usize, line: []const u8) !bool {
+    if (stash.format.indexOfIgnoreCaseAscii(line, context.pattern) != null) {
+        context.found = true;
+        return false;
     }
-    return null;
+    return true;
 }
 
-fn appendFmt(allocator: Allocator, out: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
-    const text = try std.fmt.allocPrint(allocator, fmt, args);
-    try out.appendSlice(allocator, text);
-}
+const GrepContext = struct {
+    meta: *const Meta,
+    out: *stash.term.Output,
+    style: stash.term.Style,
+    pattern: []const u8,
+    printed_any: *bool,
+    printed_header: bool = false,
+};
 
-fn writeOutput(allocator: Allocator, content: []const u8) !void {
-    if (stash.term.shouldPage()) {
-        try stash.term.page(allocator, content);
-    } else {
-        try stash.runtime.stdoutWriter().writeAll(content);
+fn grepLine(context: *GrepContext, line_no: usize, line: []const u8) !bool {
+    if (stash.format.indexOfIgnoreCaseAscii(line, context.pattern) == null) return true;
+    if (!context.printed_header) {
+        if (context.printed_any.*) try context.out.writeByte('\n');
+        try printBookmark(context.out, context.meta, context.style, .normal_header);
+        context.printed_header = true;
+        context.printed_any.* = true;
     }
+    try printGrepLine(context.out, line_no, line, context.pattern, context.style);
+    return true;
 }
 
 fn errorMessage(err: anyerror) []const u8 {

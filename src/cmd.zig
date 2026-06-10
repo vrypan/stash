@@ -676,21 +676,15 @@ fn cmdLsFromOptions(allocator: Allocator, opts: *const LsCliOptions) !void {
     for (opts.pocket) |value| {
         try selection.filter_values.append(allocator, .{ .key = types.pocket_attr, .value = value });
     }
-    const before_ref = opts.before;
-    const after_ref = opts.after;
-    if (before_ref != null and after_ref != null) return error.InvalidArgument;
-
-    var items = try store.visibleList(allocator);
-    if (before_ref) |reference| {
-        const id = try store.resolve(allocator, reference);
-        keepOlderThan(&items, id);
-    } else if (after_ref) |reference| {
-        const id = try store.resolve(allocator, reference);
-        keepNewerThan(&items, id);
-    }
-    filterItems(&items, &selection);
-    if (opts.reverse) std.mem.reverse(Meta, items.items);
-    if (opts.number > 0 and items.items.len > opts.number) items.items.len = opts.number;
+    const s = try store.Store.open(allocator, .{});
+    const items = try s.query(allocator, .{
+        .list = .{ .pocket = store.activePocket(allocator) },
+        .before = opts.before,
+        .after = opts.after,
+        .reverse = opts.reverse,
+        .number = opts.number,
+        .selection = &selection,
+    });
 
     if (opts.json and opts.format != null) return error.InvalidArgument;
 
@@ -701,48 +695,6 @@ fn cmdLsFromOptions(allocator: Allocator, opts: *const LsCliOptions) !void {
     } else {
         try display.printLsTable(allocator, runtime.stdoutWriter(), items.items, id_mode, date_mode, show_size, show_bytes, attrs_mode, opts.name, show_preview, opts.headers, opts.width, opts.color, &selection);
     }
-}
-
-fn filterItems(items: *std.ArrayList(Meta), selection: *const MetaSelection) void {
-    var write: usize = 0;
-    for (items.items) |item| {
-        if (matchesMetaSelection(&item, selection)) {
-            items.items[write] = item;
-            write += 1;
-        }
-    }
-    items.items.len = write;
-}
-
-fn keepOlderThan(items: *std.ArrayList(Meta), id: []const u8) void {
-    for (items.items, 0..) |item, idx| {
-        if (std.mem.eql(u8, item.id, id)) {
-            const older = items.items[idx + 1 ..];
-            std.mem.copyForwards(Meta, items.items[0..older.len], older);
-            items.items.len = older.len;
-            return;
-        }
-    }
-    items.items.len = 0;
-}
-
-fn keepNewerThan(items: *std.ArrayList(Meta), id: []const u8) void {
-    for (items.items, 0..) |item, idx| {
-        if (std.mem.eql(u8, item.id, id)) {
-            items.items.len = idx;
-            return;
-        }
-    }
-    items.items.len = 0;
-}
-
-fn matchesMetaSelection(meta: *const Meta, selection: *const MetaSelection) bool {
-    for (selection.filter_tags.items) |key| if (meta.attr(key) == null) return false;
-    for (selection.filter_values.items) |filter| {
-        const value = meta.attr(filter.key) orelse return false;
-        if (!std.mem.eql(u8, value, filter.value.?)) return false;
-    }
-    return true;
 }
 
 fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
@@ -774,9 +726,11 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     }
     if (before_ref) |reference| {
         if (refs.items.len > 0) return error.InvalidArgument;
-        const id = try store.resolve(allocator, reference);
-        var items = try store.visibleList(allocator);
-        keepOlderThan(&items, id);
+        const s = try store.Store.open(allocator, .{});
+        const items = try s.query(allocator, .{
+            .list = .{ .pocket = store.activePocket(allocator) },
+            .before = reference,
+        });
         var to_remove: std.ArrayList([]const u8) = .empty;
         for (items.items) |meta| try to_remove.append(allocator, meta.id);
         try store.removeIds(allocator, to_remove.items);
@@ -784,9 +738,11 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     }
     if (after_ref) |reference| {
         if (refs.items.len > 0) return error.InvalidArgument;
-        const id = try store.resolve(allocator, reference);
-        var items = try store.visibleList(allocator);
-        keepNewerThan(&items, id);
+        const s = try store.Store.open(allocator, .{});
+        const items = try s.query(allocator, .{
+            .list = .{ .pocket = store.activePocket(allocator) },
+            .after = reference,
+        });
         var to_remove: std.ArrayList([]const u8) = .empty;
         for (items.items) |meta| try to_remove.append(allocator, meta.id);
         try store.removeIds(allocator, to_remove.items);

@@ -23,6 +23,15 @@ pub const ListOptions = struct {
     pocket: ?[]const u8 = null,
 };
 
+pub const QueryOptions = struct {
+    list: ListOptions = .{},
+    before: ?[]const u8 = null,
+    after: ?[]const u8 = null,
+    reverse: bool = false,
+    number: usize = 0,
+    selection: ?*const types.MetaSelection = null,
+};
+
 pub const Store = struct {
     paths: Paths,
 
@@ -40,6 +49,23 @@ pub const Store = struct {
 
     pub fn list(self: *const Store, allocator: Allocator, options: ListOptions) !std.ArrayList(Meta) {
         return listWithPaths(allocator, &self.paths, options.pocket);
+    }
+
+    pub fn query(self: *const Store, allocator: Allocator, options: QueryOptions) !std.ArrayList(Meta) {
+        if (options.before != null and options.after != null) return error.InvalidArgument;
+
+        var items = try self.list(allocator, options.list);
+        if (options.before) |reference| {
+            const id = try self.resolve(allocator, reference, options.list);
+            keepOlderThan(&items, id);
+        } else if (options.after) |reference| {
+            const id = try self.resolve(allocator, reference, options.list);
+            keepNewerThan(&items, id);
+        }
+        if (options.selection) |selection| filterItems(&items, selection);
+        if (options.reverse) std.mem.reverse(Meta, items.items);
+        if (options.number > 0 and items.items.len > options.number) items.items.len = options.number;
+        return items;
     }
 
     pub fn resolve(self: *const Store, allocator: Allocator, input: []const u8, options: ListOptions) ![]u8 {
@@ -71,6 +97,47 @@ pub const Store = struct {
             const n = try runtime.fileRead(file, &buf);
             if (n == 0) break;
             try writer.writeAll(buf[0..n]);
+        }
+    }
+
+    pub fn scanDataLines(
+        self: *const Store,
+        allocator: Allocator,
+        id: []const u8,
+        context: anytype,
+        comptime onLine: fn (@TypeOf(context), usize, []const u8) anyerror!bool,
+    ) !void {
+        var file = try runtime.cwd().openFile(runtime.process_io, try self.dataPath(allocator, id), .{});
+        defer file.close(runtime.process_io);
+
+        var line_buf: std.ArrayList(u8) = .empty;
+        var read_buf: [65536]u8 = undefined;
+        var line_no: usize = 1;
+        while (true) {
+            const n = try runtime.fileRead(file, &read_buf);
+            if (n == 0) break;
+            const data = read_buf[0..n];
+            var start: usize = 0;
+            while (std.mem.indexOfScalarPos(u8, data, start, '\n')) |end| {
+                const part = data[start..end];
+                const line = if (line_buf.items.len > 0) blk: {
+                    try line_buf.appendSlice(allocator, part);
+                    const value = std.mem.trim(u8, line_buf.items, "\r");
+                    break :blk value;
+                } else std.mem.trim(u8, part, "\r");
+
+                const keep_going = try onLine(context, line_no, line);
+                line_buf.clearRetainingCapacity();
+                line_no += 1;
+                if (!keep_going) return;
+                start = end + 1;
+            }
+            if (start < data.len) try line_buf.appendSlice(allocator, data[start..]);
+        }
+
+        if (line_buf.items.len > 0) {
+            const line = std.mem.trim(u8, line_buf.items, "\r");
+            _ = try onLine(context, line_no, line);
         }
     }
 };
@@ -131,6 +198,48 @@ pub fn activePocket(allocator: Allocator) ?[]u8 {
 fn visible(meta: *const Meta, pocket: ?[]const u8) bool {
     if (pocket) |pocket_value| {
         return if (meta.attr(types.pocket_attr)) |value| std.mem.eql(u8, value, pocket_value) else false;
+    }
+    return true;
+}
+
+fn filterItems(items: *std.ArrayList(Meta), selection: *const types.MetaSelection) void {
+    var write: usize = 0;
+    for (items.items) |item| {
+        if (matchesMetaSelection(&item, selection)) {
+            items.items[write] = item;
+            write += 1;
+        }
+    }
+    items.items.len = write;
+}
+
+fn keepOlderThan(items: *std.ArrayList(Meta), id: []const u8) void {
+    for (items.items, 0..) |item, idx| {
+        if (std.mem.eql(u8, item.id, id)) {
+            const older = items.items[idx + 1 ..];
+            std.mem.copyForwards(Meta, items.items[0..older.len], older);
+            items.items.len = older.len;
+            return;
+        }
+    }
+    items.items.len = 0;
+}
+
+fn keepNewerThan(items: *std.ArrayList(Meta), id: []const u8) void {
+    for (items.items, 0..) |item, idx| {
+        if (std.mem.eql(u8, item.id, id)) {
+            items.items.len = idx;
+            return;
+        }
+    }
+    items.items.len = 0;
+}
+
+fn matchesMetaSelection(meta: *const Meta, selection: *const types.MetaSelection) bool {
+    for (selection.filter_tags.items) |key| if (meta.attr(key) == null) return false;
+    for (selection.filter_values.items) |filter| {
+        const value = meta.attr(filter.key) orelse return false;
+        if (!std.mem.eql(u8, value, filter.value.?)) return false;
     }
     return true;
 }
