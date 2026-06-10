@@ -5,12 +5,16 @@ const Allocator = std.mem.Allocator;
 
 pub const Style = struct {
     dim: []const u8 = "",
+    id: []const u8 = "",
+    attr: []const u8 = "",
     reset: []const u8 = "",
 
     pub fn init(enabled: bool) Style {
         if (!enabled) return .{};
         return .{
             .dim = "\x1b[2m",
+            .id = "\x1b[1;33m",
+            .attr = "\x1b[36m",
             .reset = "\x1b[0m",
         };
     }

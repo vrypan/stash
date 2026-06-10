@@ -69,7 +69,7 @@ fn cmdLs(allocator: Allocator) !u8 {
     errdefer out.deinit() catch {};
 
     for (items.items) |*meta| {
-        try printBookmark(&out, meta, style, .date_dim);
+        try printBookmark(&out, meta, style);
         try out.writeByte('\n');
     }
     try out.deinit();
@@ -85,7 +85,7 @@ fn cmdFind(allocator: Allocator, pattern: []const u8) !u8 {
 
     for (items.items) |*meta| {
         if (try bookmarkContains(allocator, &s, meta, pattern)) {
-            try printBookmark(&out, meta, style, .date_dim);
+            try printBookmark(&out, meta, style);
             try out.writeByte('\n');
         }
     }
@@ -128,16 +128,11 @@ fn cmdTitle(allocator: Allocator, ref: []const u8, parts: []const [:0]const u8) 
     return 0;
 }
 
-const BookmarkHeader = enum { date_dim, normal_header };
-
-fn printBookmark(out: anytype, meta: *const Meta, style: stash.term.Style, header: BookmarkHeader) !void {
+fn printBookmark(out: anytype, meta: *const Meta, style: stash.term.Style) !void {
     const title = attrOrEmpty(meta, "title");
     const url = attrOrEmpty(meta, "url");
-    switch (header) {
-        .date_dim => try out.print("{s}{s}{s} {s}\n", .{ style.dim, stash.format.dateOnly(meta.ts), style.reset, title }),
-        .normal_header => try out.print("{s} {s}\n", .{ stash.format.dateOnly(meta.ts), title }),
-    }
-    try out.print("{s}>>{s} {s}{s}\n", .{ style.dim, meta.shortId(), url, style.reset });
+    try out.print("{s}{s}{s} > {s}{s}{s}\n", .{ style.id, meta.shortId(), style.reset, style.attr, title, style.reset });
+    try out.print("{s} {s}\n", .{ stash.format.dateOnly(meta.ts), url });
 }
 
 fn attrOrEmpty(meta: *const Meta, key: []const u8) []const u8 {
@@ -195,7 +190,7 @@ fn grepLine(context: *GrepContext, line_no: usize, line: []const u8) !bool {
     if (stash.format.indexOfIgnoreCaseAscii(line, context.pattern) == null) return true;
     if (!context.printed_header) {
         if (context.printed_any.*) try context.out.writeByte('\n');
-        try printBookmark(context.out, context.meta, context.style, .normal_header);
+        try printBookmark(context.out, context.meta, context.style);
         context.printed_header = true;
         context.printed_any.* = true;
     }
