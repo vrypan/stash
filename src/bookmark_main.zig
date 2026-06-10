@@ -109,6 +109,12 @@ fn cmdGrep(allocator: Allocator, pattern: []const u8) !u8 {
             .pattern = pattern,
             .printed_any = &printed_any,
         };
+        if (bookmarkMetadataContains(meta, pattern)) {
+            if (printed_any) try out.writeByte('\n');
+            try printBookmark(&out, meta, style);
+            context.printed_header = true;
+            printed_any = true;
+        }
         s.scanDataLines(allocator, meta.id, &context, grepLine) catch continue;
         if (context.printed_header) try out.writeByte('\n');
     }
@@ -140,9 +146,27 @@ fn attrOrEmpty(meta: *const Meta, key: []const u8) []const u8 {
 }
 
 fn bookmarkContains(allocator: Allocator, s: *const Store, meta: *const Meta, pattern: []const u8) !bool {
+    if (bookmarkMetadataContains(meta, pattern)) return true;
+
     var context = FindContext{ .pattern = pattern };
     try s.scanDataLines(allocator, meta.id, &context, findLine);
     return context.found;
+}
+
+fn bookmarkMetadataContains(meta: *const Meta, pattern: []const u8) bool {
+    if (containsIgnoreCase(meta.id, pattern)) return true;
+    if (containsIgnoreCase(meta.shortId(), pattern)) return true;
+    if (containsIgnoreCase(meta.ts, pattern)) return true;
+    if (containsIgnoreCase(stash.format.dateOnly(meta.ts), pattern)) return true;
+    if (containsIgnoreCase(meta.preview, pattern)) return true;
+    for (meta.attrs.items) |attr| {
+        if (containsIgnoreCase(attr.value, pattern)) return true;
+    }
+    return false;
+}
+
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    return stash.format.indexOfIgnoreCaseAscii(haystack, needle) != null;
 }
 
 fn printGrepLine(out: anytype, line_no: usize, line: []const u8, pattern: []const u8, style: stash.term.Style) !void {
