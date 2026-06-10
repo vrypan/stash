@@ -56,6 +56,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    bookmark_exe.root_module.addOptions("build_options", build_options);
     bookmark_exe.root_module.addImport("stash", stash_mod);
     b.installArtifact(bookmark_exe);
 
