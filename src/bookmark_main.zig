@@ -64,33 +64,38 @@ fn usage() u8 {
 fn cmdLs(allocator: Allocator) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
-    const out = stash.runtime.stdoutWriter();
+    const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
+    var out: std.ArrayList(u8) = .empty;
 
     for (items.items) |*meta| {
-        try printBookmark(out, meta);
-        try out.writeByte('\n');
+        try appendBookmark(allocator, &out, meta, style, .date_dim);
+        try out.append(allocator, '\n');
     }
+    try writeOutput(allocator, out.items);
     return 0;
 }
 
 fn cmdFind(allocator: Allocator, pattern: []const u8) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
-    const out = stash.runtime.stdoutWriter();
+    const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
+    var out: std.ArrayList(u8) = .empty;
 
     for (items.items) |*meta| {
         if (try bookmarkContains(allocator, &s, meta, pattern)) {
-            try printBookmark(out, meta);
-            try out.writeByte('\n');
+            try appendBookmark(allocator, &out, meta, style, .date_dim);
+            try out.append(allocator, '\n');
         }
     }
+    try writeOutput(allocator, out.items);
     return 0;
 }
 
 fn cmdGrep(allocator: Allocator, pattern: []const u8) !u8 {
     const s = try Store.open(allocator, .{});
     const items = try s.list(allocator, .{ .pocket = bookmark_pocket });
-    const out = stash.runtime.stdoutWriter();
+    const style = stash.term.Style.init(stash.term.stdoutIsTerminal());
+    var out: std.ArrayList(u8) = .empty;
     var printed_any = false;
 
     for (items.items) |*meta| {
@@ -103,15 +108,16 @@ fn cmdGrep(allocator: Allocator, pattern: []const u8) !u8 {
             const line = std.mem.trim(u8, raw_line, "\r");
             if (indexOfIgnoreCase(line, pattern) == null) continue;
             if (!printed_header) {
-                if (printed_any) try out.writeByte('\n');
-                try printBookmark(out, meta);
+                if (printed_any) try out.append(allocator, '\n');
+                try appendBookmark(allocator, &out, meta, style, .normal_header);
                 printed_header = true;
                 printed_any = true;
             }
-            try out.print("{}: {s}\n", .{ line_no, line });
+            try appendGrepLine(allocator, &out, line_no, line, pattern, style);
         }
-        if (printed_header) try out.writeByte('\n');
+        if (printed_header) try out.append(allocator, '\n');
     }
+    try writeOutput(allocator, out.items);
     return 0;
 }
 
@@ -127,11 +133,16 @@ fn cmdTitle(allocator: Allocator, ref: []const u8, parts: []const [:0]const u8) 
     return 0;
 }
 
-fn printBookmark(out: anytype, meta: *const Meta) !void {
+const BookmarkHeader = enum { date_dim, normal_header };
+
+fn appendBookmark(allocator: Allocator, out: *std.ArrayList(u8), meta: *const Meta, style: stash.term.Style, header: BookmarkHeader) !void {
     const title = attrOrEmpty(meta, "title");
     const url = attrOrEmpty(meta, "url");
-    try out.print("{s} {s}\n", .{ bookmarkDate(meta.ts), title });
-    try out.print(">>{s} {s}\n", .{ meta.shortId(), url });
+    switch (header) {
+        .date_dim => try appendFmt(allocator, out, "{s}{s}{s} {s}\n", .{ style.dim, bookmarkDate(meta.ts), style.reset, title }),
+        .normal_header => try appendFmt(allocator, out, "{s} {s}\n", .{ bookmarkDate(meta.ts), title }),
+    }
+    try appendFmt(allocator, out, "{s}>>{s} {s}{s}\n", .{ style.dim, meta.shortId(), url, style.reset });
 }
 
 fn bookmarkDate(ts: []const u8) []const u8 {
@@ -149,6 +160,25 @@ fn bookmarkContains(allocator: Allocator, s: *const Store, meta: *const Meta, pa
     return indexOfIgnoreCase(data, pattern) != null;
 }
 
+fn appendGrepLine(allocator: Allocator, out: *std.ArrayList(u8), line_no: usize, line: []const u8, pattern: []const u8, style: stash.term.Style) !void {
+    try appendFmt(allocator, out, "{s}{}: ", .{ style.dim, line_no });
+    if (pattern.len == 0) {
+        try appendFmt(allocator, out, "{s}{s}\n", .{ line, style.reset });
+        return;
+    }
+
+    var rest = line;
+    while (indexOfIgnoreCase(rest, pattern)) |pos| {
+        try out.appendSlice(allocator, rest[0..pos]);
+        const end = pos + pattern.len;
+        try appendFmt(allocator, out, "{s}{s}{s}", .{ style.reset, rest[pos..end], style.dim });
+        rest = rest[end..];
+    }
+
+    try out.appendSlice(allocator, rest);
+    try appendFmt(allocator, out, "{s}\n", .{style.reset});
+}
+
 fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
     if (needle.len == 0) return 0;
     if (needle.len > haystack.len) return null;
@@ -162,6 +192,19 @@ fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
         }
     }
     return null;
+}
+
+fn appendFmt(allocator: Allocator, out: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
+    const text = try std.fmt.allocPrint(allocator, fmt, args);
+    try out.appendSlice(allocator, text);
+}
+
+fn writeOutput(allocator: Allocator, content: []const u8) !void {
+    if (stash.term.shouldPage()) {
+        try stash.term.page(allocator, content);
+    } else {
+        try stash.runtime.stdoutWriter().writeAll(content);
+    }
 }
 
 fn errorMessage(err: anyerror) []const u8 {
