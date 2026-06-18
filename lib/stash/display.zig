@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const runtime = @import("runtime.zig");
 const term = @import("term.zig");
+const date_format = @import("format.zig");
 
 const Allocator = std.mem.Allocator;
 const Meta = types.Meta;
@@ -592,20 +593,20 @@ fn formatDate(allocator: Allocator, ts: []const u8, mode: DateMode) ![]u8 {
     if (mode == .iso) return allocator.dupe(u8, ts);
     const parts = parseTsParts(ts) orelse return allocator.dupe(u8, ts);
     if (mode == .ls) {
-        const now = civilFromUnix(@intCast(@divFloor(nowNs(), std.time.ns_per_s)));
+        const now = date_format.civilFromUnix(@intCast(@divFloor(date_format.nowNs(), std.time.ns_per_s)));
         const mons = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
         if (parts.year == now.year) return std.fmt.allocPrint(allocator, "{s} {d: >2} {d:0>2}:{d:0>2}", .{ mons[parts.month - 1], parts.day, parts.hour, parts.min });
         return std.fmt.allocPrint(allocator, "{s} {d: >2}  {d}", .{ mons[parts.month - 1], parts.day, parts.year });
     }
     const then = unixFromParts(parts);
-    const delta = @max(@as(i64, 0), @as(i64, @intCast(@divFloor(nowNs(), std.time.ns_per_s))) - then);
+    const delta = @max(@as(i64, 0), @as(i64, @intCast(@divFloor(date_format.nowNs(), std.time.ns_per_s))) - then);
     if (delta < 60) return std.fmt.allocPrint(allocator, "{}s ago", .{delta});
     if (delta < 3600) return std.fmt.allocPrint(allocator, "{}m ago", .{@divFloor(delta, 60)});
     if (delta < 86400) return std.fmt.allocPrint(allocator, "{}h ago", .{@divFloor(delta, 3600)});
     return std.fmt.allocPrint(allocator, "{}d ago", .{@divFloor(delta, 86400)});
 }
 
-const DateParts = struct { year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32 };
+const DateParts = date_format.DateParts;
 
 fn parseTsParts(ts: []const u8) ?DateParts {
     if (ts.len < 19) return null;
@@ -619,33 +620,6 @@ fn parseTsParts(ts: []const u8) ?DateParts {
     };
 }
 
-fn civilFromUnix(secs: i64) DateParts {
-    const days = @divFloor(secs, 86400);
-    const rem = @mod(secs, 86400);
-    const ymd = civilFromDays(days);
-    return .{
-        .year = ymd.year,
-        .month = ymd.month,
-        .day = ymd.day,
-        .hour = @intCast(@divFloor(rem, 3600)),
-        .min = @intCast(@divFloor(@mod(rem, 3600), 60)),
-        .sec = @intCast(@mod(rem, 60)),
-    };
-}
-
-fn civilFromDays(days: i64) struct { year: i32, month: u32, day: u32 } {
-    const z = days + 719468;
-    const era = @divFloor(if (z >= 0) z else z - 146096, 146097);
-    const doe = z - era * 146097;
-    const yoe = @divFloor(doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) - @divFloor(doe, 146096), 365);
-    const y = yoe + era * 400;
-    const doy = doe - (365 * yoe + @divFloor(yoe, 4) - @divFloor(yoe, 100));
-    const mp = @divFloor(5 * doy + 2, 153);
-    const d = doy - @divFloor(153 * mp + 2, 5) + 1;
-    const m = mp + if (mp < 10) @as(i64, 3) else @as(i64, -9);
-    return .{ .year = @intCast(y + if (m <= 2) @as(i64, 1) else @as(i64, 0)), .month = @intCast(m), .day = @intCast(d) };
-}
-
 fn unixFromParts(p: DateParts) i64 {
     var y: i64 = p.year;
     const m: i64 = p.month;
@@ -655,10 +629,6 @@ fn unixFromParts(p: DateParts) i64 {
     const doy = @divFloor(153 * (m + if (m > 2) @as(i64, -3) else @as(i64, 9)) + 2, 5) + p.day - 1;
     const doe = yoe * 365 + @divFloor(yoe, 4) - @divFloor(yoe, 100) + doy;
     return (era * 146097 + doe - 719468) * 86400 + p.hour * 3600 + p.min * 60 + p.sec;
-}
-
-fn nowNs() i128 {
-    return std.Io.Clock.real.now(runtime.process_io).toNanoseconds();
 }
 
 fn humanSize(allocator: Allocator, n: i64) ![]u8 {
