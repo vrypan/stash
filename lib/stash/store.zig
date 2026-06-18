@@ -1,6 +1,7 @@
 const std = @import("std");
 const runtime = @import("runtime.zig");
 const types = @import("types.zig");
+const format = @import("format.zig");
 
 const Allocator = std.mem.Allocator;
 const Attr = types.Attr;
@@ -668,13 +669,9 @@ fn unescapeAttr(allocator: Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-fn nowNs() i128 {
-    return std.Io.Clock.real.now(runtime.process_io).toNanoseconds();
-}
-
 fn newUlid(allocator: Allocator) ![]u8 {
     var bytes: [16]u8 = undefined;
-    const millis: u64 = @intCast(@divFloor(nowNs(), std.time.ns_per_ms));
+    const millis: u64 = @intCast(@divFloor(format.nowNs(), std.time.ns_per_ms));
     for (0..6) |i| bytes[i] = @intCast((millis >> @intCast(8 * (5 - i))) & 0xff);
     runtime.process_io.randomSecure(bytes[6..]) catch runtime.process_io.random(bytes[6..]);
     var value: u128 = 0;
@@ -691,10 +688,10 @@ fn newUlid(allocator: Allocator) ![]u8 {
 }
 
 fn nowString(allocator: Allocator) ![]u8 {
-    const ns = nowNs();
+    const ns = format.nowNs();
     const secs = @divFloor(ns, std.time.ns_per_s);
     const nanos = @mod(ns, std.time.ns_per_s);
-    const dt = civilFromUnix(@intCast(secs));
+    const dt = format.civilFromUnix(@intCast(secs));
     return std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.{d:0>9}Z", .{
         @as(u32, @intCast(dt.year)),
         dt.month,
@@ -704,35 +701,6 @@ fn nowString(allocator: Allocator) ![]u8 {
         dt.sec,
         @as(u32, @intCast(nanos)),
     });
-}
-
-const DateParts = struct { year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32 };
-
-fn civilFromUnix(secs: i64) DateParts {
-    const days = @divFloor(secs, 86400);
-    const rem = @mod(secs, 86400);
-    const ymd = civilFromDays(days);
-    return .{
-        .year = ymd.year,
-        .month = ymd.month,
-        .day = ymd.day,
-        .hour = @intCast(@divFloor(rem, 3600)),
-        .min = @intCast(@divFloor(@mod(rem, 3600), 60)),
-        .sec = @intCast(@mod(rem, 60)),
-    };
-}
-
-fn civilFromDays(days: i64) struct { year: i32, month: u32, day: u32 } {
-    const z = days + 719468;
-    const era = @divFloor(if (z >= 0) z else z - 146096, 146097);
-    const doe = z - era * 146097;
-    const yoe = @divFloor(doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) - @divFloor(doe, 146096), 365);
-    const y = yoe + era * 400;
-    const doy = doe - (365 * yoe + @divFloor(yoe, 4) - @divFloor(yoe, 100));
-    const mp = @divFloor(5 * doy + 2, 153);
-    const d = doy - @divFloor(153 * mp + 2, 5) + 1;
-    const m = mp + if (mp < 10) @as(i64, 3) else @as(i64, -9);
-    return .{ .year = @intCast(y + if (m <= 2) @as(i64, 1) else @as(i64, 0)), .month = @intCast(m), .day = @intCast(d) };
 }
 
 fn buildPreview(allocator: Allocator, buf: []const u8, limit: usize) ![]u8 {
