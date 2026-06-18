@@ -15,9 +15,9 @@ release:
 check:
 	$(ZIG) build
 
-## test        Run tests (currently build-only)
+## test        Run unit tests
 test:
-	$(ZIG) build
+	$(ZIG) build test
 
 ## clean       Remove Zig build artifacts
 clean:
