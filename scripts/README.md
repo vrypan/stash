@@ -79,6 +79,36 @@ size    299145
 filename        words.gif
 type    image/gif
 ```
+## `stash-bookmark`
+
+This used to be a shell script, but I'm using it extensively and the script
+was becoming too complex and error-prone. I rewrote it as a binary to make it
+easier to use and maintain.
+
+`stash-bookmark` is a bookmark managger that uses stash to store bookmarks.
+It is built and installed alongside `stash` and stores pages under the
+`bookmarks` pocket, with `url` and `title` attributes. The content of the page
+is stored as the entry's text content, which lets you search for bookmarks by
+content too.
+
+> [!NOTE]
+> brew installs it in `$(brew --prefix)/bin/stash-bookmark`
+>
+> Add `alias bookmark=$(brew --prefix)/bin/stash-bookmark` to your shell config to make 
+> it easier to use.
+
+```bash
+stash-bookmark <url>             # same as: stash-bookmark add <url>
+stash-bookmark add <url>
+stash-bookmark ls
+stash-bookmark find <pattern>    # match against attributes and contents
+stash-bookmark grep <pattern>    # like find, but also prints matching lines
+stash-bookmark title <ref> <title>
+```
+
+`add` requires `curl` and `html2text` on `PATH` to fetch the page and derive
+its title and text content.
+
 ## `stash-rg`
 
 Searches both attribute output and entry contents across the whole stash using
