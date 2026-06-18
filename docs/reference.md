@@ -264,6 +264,7 @@ Notes:
 - `--after <ref>` removes entries newer than the referenced entry
 - multiple `-a/--attr` filters use AND semantics
 - `stash rm -a ...` shows the matching entries and asks for confirmation unless `-f` is used
+- outside an interactive terminal (e.g. in a script), `stash` cannot prompt and will refuse with an error unless `-f` is given
 
 ## Storage
 

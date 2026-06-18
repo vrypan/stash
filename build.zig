@@ -86,9 +86,22 @@ pub fn build(b: *std.Build) void {
     });
     const run_stash_test = b.addRunArtifact(stash_test);
 
+    const cmd_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/cmd.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    cmd_test.root_module.addOptions("build_options", build_options);
+    cmd_test.root_module.addImport("cli", cli_mod);
+    cmd_test.root_module.addImport("stash", stash_mod);
+    const run_cmd_test = b.addRunArtifact(cmd_test);
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_cli_test.step);
     test_step.dependOn(&run_stash_test.step);
+    test_step.dependOn(&run_cmd_test.step);
 }
 
 fn packageVersion(b: *std.Build) []const u8 {
