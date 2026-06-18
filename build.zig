@@ -67,6 +67,28 @@ pub fn build(b: *std.Build) void {
     }
     const run_step = b.step("run", "Run the Zig stash binary");
     run_step.dependOn(&run_cmd.step);
+
+    const cli_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("lib/cli/cli.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_cli_test = b.addRunArtifact(cli_test);
+
+    const stash_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("lib/stash/stash.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_stash_test = b.addRunArtifact(stash_test);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_cli_test.step);
+    test_step.dependOn(&run_stash_test.step);
 }
 
 fn packageVersion(b: *std.Build) []const u8 {
