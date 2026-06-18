@@ -506,6 +506,29 @@ fn matchesFilters(meta: *const Meta, filters: []const AttrFilter) bool {
     return true;
 }
 
+fn confirmationAnswer(input: []const u8) bool {
+    const trimmed = std.mem.trim(u8, input, " \t\r\n");
+    return trimmed.len > 0 and (trimmed[0] == 'y' or trimmed[0] == 'Y');
+}
+
+fn confirmRemoval(allocator: Allocator, items: []const Meta) !bool {
+    if (items.len == 0) return false;
+    const out = runtime.stderrWriter();
+    const selection = MetaSelection{};
+    try display.printLsTable(allocator, out, items, .short, .ls, false, false, .none, false, true, false, 0, true, &selection);
+    try out.print("Remove {d} {s}? [y/N] ", .{ items.len, if (items.len == 1) "entry" else "entries" });
+    var buf: [16]u8 = undefined;
+    const n = try runtime.fileRead(std.Io.File.stdin(), &buf);
+    return confirmationAnswer(buf[0..n]);
+}
+
+fn requireConfirmation(allocator: Allocator, items: []const Meta, force: bool) !bool {
+    if (items.len == 0) return false;
+    if (force) return true;
+    if (!runtime.stdinIsTty()) return error.ConfirmationRequired;
+    return confirmRemoval(allocator, items);
+}
+
 fn cmdPath(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var want_attr = false;
     var want_dir = false;
@@ -702,6 +725,7 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
     var filters: std.ArrayList(AttrFilter) = .empty;
     var before_ref: ?[]const u8 = null;
     var after_ref: ?[]const u8 = null;
+    var force = false;
     const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, rm_spec);
     for (parsed.positionals.items) |ref| try refs.append(allocator, ref);
     for (parsed.flags.items) |flag| {
@@ -712,15 +736,18 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
         } else if (std.mem.eql(u8, flag.name, "before")) {
             before_ref = flag.value.?;
         } else if (std.mem.eql(u8, flag.name, "force")) {
-            // Confirmation prompts are not implemented yet; accept the flag.
+            force = true;
         }
     }
     if (before_ref != null and after_ref != null) return error.InvalidArgument;
     if (filters.items.len > 0) {
         if (refs.items.len > 0 or before_ref != null or after_ref != null) return error.InvalidArgument;
         const items = try store.visibleList(allocator);
+        var matched: std.ArrayList(Meta) = .empty;
+        for (items.items) |meta| if (matchesFilters(&meta, filters.items)) try matched.append(allocator, meta);
+        if (!try requireConfirmation(allocator, matched.items, force)) return 0;
         var to_remove: std.ArrayList([]const u8) = .empty;
-        for (items.items) |*meta| if (matchesFilters(meta, filters.items)) try to_remove.append(allocator, meta.id);
+        for (matched.items) |meta| try to_remove.append(allocator, meta.id);
         try store.removeIds(allocator, to_remove.items);
         return 0;
     }
@@ -731,6 +758,7 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
             .list = .{ .pocket = store.activePocket(allocator) },
             .before = reference,
         });
+        if (!try requireConfirmation(allocator, items.items, force)) return 0;
         var to_remove: std.ArrayList([]const u8) = .empty;
         for (items.items) |meta| try to_remove.append(allocator, meta.id);
         try store.removeIds(allocator, to_remove.items);
@@ -743,6 +771,7 @@ fn cmdRm(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
             .list = .{ .pocket = store.activePocket(allocator) },
             .after = reference,
         });
+        if (!try requireConfirmation(allocator, items.items, force)) return 0;
         var to_remove: std.ArrayList([]const u8) = .empty;
         for (items.items) |meta| try to_remove.append(allocator, meta.id);
         try store.removeIds(allocator, to_remove.items);
