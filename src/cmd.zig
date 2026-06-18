@@ -805,3 +805,15 @@ fn parseMetaSelectionArg(allocator: Allocator, sel: *MetaSelection, value: []con
 fn ascSlices(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.lessThan(u8, a, b);
 }
+
+const testing = std.testing;
+
+test "confirmationAnswer accepts only y/Y as confirmation" {
+    try testing.expect(confirmationAnswer("y"));
+    try testing.expect(confirmationAnswer("Y\n"));
+    try testing.expect(confirmationAnswer("yes"));
+    try testing.expect(!confirmationAnswer("n"));
+    try testing.expect(!confirmationAnswer(""));
+    try testing.expect(!confirmationAnswer("\n"));
+    try testing.expect(!confirmationAnswer("no"));
+}
