@@ -194,6 +194,7 @@ pub fn errorMessage(err: anyerror) []const u8 {
         error.ReadOnlyAttr => "only user-defined attributes are writable",
         error.InputInterrupted => "input interrupted",
         error.InputInterruptedSaved => "input interrupted; saved partial entry",
+        error.ConfirmationRequired => "refusing to remove without confirmation outside a terminal; pass -f to skip the prompt",
         else => @errorName(err),
     };
 }

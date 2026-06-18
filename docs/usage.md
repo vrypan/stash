@@ -79,6 +79,9 @@ confirmation; use `-f` to skip the prompt.
 When attribute filters are used, `stash` shows the matching entries and asks
 for confirmation unless `-f` is set.
 
+Outside an interactive terminal (e.g. in a script), `stash` cannot prompt
+and will refuse with an error unless `-f` is given.
+
 ## File-Oriented Use
 
 You can also use `stash` like a small flat file store:
