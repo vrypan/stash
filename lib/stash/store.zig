@@ -792,3 +792,55 @@ fn allDigits(value: []const u8) bool {
 fn descMeta(_: void, a: Meta, b: Meta) bool {
     return std.mem.lessThan(u8, b.id, a.id);
 }
+
+const testing = std.testing;
+
+test "civilFromDays converts the Unix epoch correctly" {
+    const parts = civilFromDays(0);
+    try testing.expectEqual(@as(i32, 1970), parts.year);
+    try testing.expectEqual(@as(u32, 1), parts.month);
+    try testing.expectEqual(@as(u32, 1), parts.day);
+}
+
+test "civilFromUnix converts a known timestamp" {
+    // 2024-01-15T12:10:45Z
+    const parts = civilFromUnix(1705320645);
+    try testing.expectEqual(@as(i32, 2024), parts.year);
+    try testing.expectEqual(@as(u32, 1), parts.month);
+    try testing.expectEqual(@as(u32, 15), parts.day);
+    try testing.expectEqual(@as(u32, 12), parts.hour);
+    try testing.expectEqual(@as(u32, 10), parts.min);
+    try testing.expectEqual(@as(u32, 45), parts.sec);
+}
+
+test "splitAttrLine finds the unescaped equals sign" {
+    try testing.expectEqual(@as(?usize, 3), splitAttrLine("key=value"));
+    try testing.expectEqual(@as(?usize, null), splitAttrLine("novalue"));
+}
+
+test "writeEscapedAttr and unescapeAttr round-trip special characters" {
+    const allocator = testing.allocator;
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(allocator);
+    const writer = struct {
+        list: *std.ArrayList(u8),
+        alloc: std.mem.Allocator,
+        pub fn writeAll(self: @This(), data: []const u8) !void {
+            try self.list.appendSlice(self.alloc, data);
+        }
+        pub fn writeByte(self: @This(), b: u8) !void {
+            try self.list.append(self.alloc, b);
+        }
+    }{ .list = &buf, .alloc = allocator };
+    const original = "a=b\\c\nd\te";
+    try writeEscapedAttr(writer, original);
+    const round_tripped = try unescapeAttr(allocator, buf.items);
+    defer allocator.free(round_tripped);
+    try testing.expectEqualStrings(original, round_tripped);
+}
+
+test "allDigits rejects empty and non-numeric input" {
+    try testing.expect(allDigits("12345"));
+    try testing.expect(!allDigits(""));
+    try testing.expect(!allDigits("12a45"));
+}
