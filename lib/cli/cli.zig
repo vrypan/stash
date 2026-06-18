@@ -497,3 +497,53 @@ fn writeSpaces(writer: anytype, count: usize) !void {
         remaining -= chunk;
     }
 }
+
+const testing = std.testing;
+
+test "parseBool accepts true/false/yes/no/1/0 case-insensitively" {
+    try testing.expectEqual(true, try parseBool("true"));
+    try testing.expectEqual(true, try parseBool("YES"));
+    try testing.expectEqual(true, try parseBool("1"));
+    try testing.expectEqual(false, try parseBool("false"));
+    try testing.expectEqual(false, try parseBool("No"));
+    try testing.expectEqual(false, try parseBool("0"));
+}
+
+test "parseBool rejects unrecognized values" {
+    try testing.expectError(error.InvalidArgument, parseBool("maybe"));
+    try testing.expectError(error.InvalidArgument, parseBool(""));
+}
+
+test "parse reads a long flag with an inline value" {
+    const allocator = testing.allocator;
+    const specs = [_]FlagSpec{
+        .{ .name = "attr", .short = 'a', .value = .string, .repeatable = true, .attached_short_value = true },
+    };
+    const args = [_][:0]const u8{"--attr=pocket=work"};
+    var parsed = try parse(allocator, &args, &specs);
+    defer parsed.flags.deinit(allocator);
+    defer parsed.positionals.deinit(allocator);
+    try testing.expectEqual(@as(usize, 1), parsed.flags.items.len);
+    try testing.expectEqualStrings("attr", parsed.flags.items[0].name);
+    try testing.expectEqualStrings("pocket=work", parsed.flags.items[0].value.?);
+}
+
+test "parse collects positionals after the -- separator" {
+    const allocator = testing.allocator;
+    const specs = [_]FlagSpec{};
+    const args = [_][:0]const u8{ "--", "-not-a-flag", "plain" };
+    var parsed = try parse(allocator, &args, &specs);
+    defer parsed.flags.deinit(allocator);
+    defer parsed.positionals.deinit(allocator);
+    try testing.expectEqual(@as(usize, 0), parsed.flags.items.len);
+    try testing.expectEqual(@as(usize, 2), parsed.positionals.items.len);
+    try testing.expectEqualStrings("-not-a-flag", parsed.positionals.items[0]);
+    try testing.expectEqualStrings("plain", parsed.positionals.items[1]);
+}
+
+test "validateArguments rejects missing required argument" {
+    var diagnostic = ParseDiagnostic{};
+    const arguments = [_]ArgumentSpec{.{ .name = "REF", .required = true }};
+    try testing.expectError(error.InvalidArgument, validateArguments(&.{}, &arguments, &diagnostic));
+    try testing.expectEqual(ParseIssue.too_few_arguments, diagnostic.issue);
+}
