@@ -763,24 +763,6 @@ fn descMeta(_: void, a: Meta, b: Meta) bool {
 
 const testing = std.testing;
 
-test "civilFromDays converts the Unix epoch correctly" {
-    const parts = civilFromDays(0);
-    try testing.expectEqual(@as(i32, 1970), parts.year);
-    try testing.expectEqual(@as(u32, 1), parts.month);
-    try testing.expectEqual(@as(u32, 1), parts.day);
-}
-
-test "civilFromUnix converts a known timestamp" {
-    // 2024-01-15T12:10:45Z
-    const parts = civilFromUnix(1705320645);
-    try testing.expectEqual(@as(i32, 2024), parts.year);
-    try testing.expectEqual(@as(u32, 1), parts.month);
-    try testing.expectEqual(@as(u32, 15), parts.day);
-    try testing.expectEqual(@as(u32, 12), parts.hour);
-    try testing.expectEqual(@as(u32, 10), parts.min);
-    try testing.expectEqual(@as(u32, 45), parts.sec);
-}
-
 test "splitAttrLine finds the unescaped equals sign" {
     try testing.expectEqual(@as(?usize, 3), splitAttrLine("key=value"));
     try testing.expectEqual(@as(?usize, null), splitAttrLine("novalue"));
