@@ -2,7 +2,7 @@
 
 All notable changes to `stash` are documented in this file.
 
-## Unreleased
+## 0.11.0
 
 - Add `stash push --replace <REF>` (also `stash --replace` and
   `stash tee --replace`): store the input as a new entry, inherit the
@@ -15,6 +15,46 @@ All notable changes to `stash` are documented in this file.
   insensitive), `-a`/`--pocket` attribute filters, `-l` (ids only), `-n`
   (limit matching entries), `--id=short|full`, and `--json`. Binary entries
   are skipped; exit status is `0` on any match, `1` on none.
+- Restore confirmation prompts for bulk `stash rm` (`-a`, `--before`,
+  `--after`): matching entries are shown and confirmed unless `-f` is
+  given. Outside an interactive terminal, `stash` refuses with an error
+  instead of prompting.
+- Add a working `zig build test` step with unit tests for the CLI parser,
+  the store, and the command layer; `make test` runs it.
+- Add an experimental Claude Code skill (`stash-memory/`): a `SKILL.md`
+  teaching agents to use stash as a persistent memory store, and a
+  `stash-mem` wrapper that scopes it to a dedicated `STASH_DIR` with a
+  per-repo pocket.
+
+## 0.10.4
+
+- Replace the `scripts/bookmark` shell script with a `stash-bookmark`
+  binary (`add`, `ls`, `find`, `grep`, `title`), with styled output and
+  metadata search, packaged in release archives. Reusable stash internals
+  moved into `lib/stash/` to support it.
+- Respect `NO_COLOR` for colored output.
+
+## 0.10.3
+
+- Fix terminal width detection.
+
+## 0.10.2
+
+- Improve `scripts/bookmark` title handling.
+- Dim the metadata portion of `scripts/bookmark find` output.
+
+## 0.10.1
+
+- Add a `stash-completion` binary that generates bash, zsh, and fish
+  completions; ship completions in release packages and the Homebrew
+  formula.
+- Extract the CLI parser and completion generator into a reusable
+  `lib/cli/` module.
+- Refresh the entry list cache when the attribute directory changes, so
+  listings no longer go stale after attribute edits.
+- Add `scripts/release.sh` for local release builds.
+- Add an `open` subcommand to `scripts/bookmark`.
+- Document cloning the repository with Radicle.
 
 ## 0.10.0
 
