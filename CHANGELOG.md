@@ -2,6 +2,20 @@
 
 All notable changes to `stash` are documented in this file.
 
+## Unreleased
+
+- Add `stash push --replace <REF>` (also `stash --replace` and
+  `stash tee --replace`): store the input as a new entry, inherit the
+  referenced entry's attributes, then remove the referenced entry. Explicit
+  `-a`/`--pocket` flags and the automatic `filename` attribute override
+  inherited values; `partial` is never inherited. The referenced entry is
+  kept if the input is interrupted and only a partial entry is saved.
+- Add `stash grep <pattern>`: search entry data for a literal substring,
+  streaming each entry without loading it whole. Supports `-i` (case
+  insensitive), `-a`/`--pocket` attribute filters, `-l` (ids only), `-n`
+  (limit matching entries), `--id=short|full`, and `--json`. Binary entries
+  are skipped; exit status is `0` on any match, `1` on none.
+
 ## 0.10.0
 
 This is a **major** update: `stash` has been ported to Zig.

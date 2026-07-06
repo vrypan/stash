@@ -6,6 +6,7 @@ const display = stash.display;
 const runtime = stash.runtime;
 const store = stash.store;
 const types = stash.types;
+const stash_format = stash.format;
 
 const Allocator = std.mem.Allocator;
 const Attr = types.Attr;
@@ -20,12 +21,13 @@ const version = build_options.version;
 
 const PushMode = enum { push, tee, auto };
 
-const CommandName = enum { root, push, tee, cat, ls, attr, attrs, path, rm };
+const CommandName = enum { root, push, tee, cat, grep, ls, attr, attrs, path, rm };
 
 const root_flags = [_]cli.FlagSpec{
     .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
     .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
     .{ .name = "print", .value = .string, .value_name = "TARGET", .description = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", .default_value = "null" },
+    .{ .name = "replace", .value = .string, .value_name = "REF", .description = "Store input as a new entry, inherit REF's attributes, then remove REF" },
     .{ .name = "save-on-error", .value = .bool_optional, .value_name = "BOOL", .description = "Save captured input if the input stream is interrupted", .default_value = "true" },
     .{ .name = "version", .short = 'V', .description = "Print version" },
 };
@@ -34,6 +36,7 @@ const push_flags = [_]cli.FlagSpec{
     .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
     .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
     .{ .name = "print", .value = .string, .value_name = "TARGET", .description = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", .default_value = "null" },
+    .{ .name = "replace", .value = .string, .value_name = "REF", .description = "Store input as a new entry, inherit REF's attributes, then remove REF" },
     .{ .name = "save-on-error", .value = .bool_optional, .value_name = "BOOL", .description = "Save captured input if the input stream is interrupted", .default_value = "true" },
 };
 
@@ -41,6 +44,7 @@ const tee_flags = [_]cli.FlagSpec{
     .{ .name = "attr", .short = 'a', .value = .string, .value_name = "key=value", .description = "Set attribute key=value", .repeatable = true, .attached_short_value = true },
     .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
     .{ .name = "print", .value = .string, .value_name = "TARGET", .description = "Where to print the generated entry ID: stdout, stderr, null, 1, 2, or 0", .default_value = "null" },
+    .{ .name = "replace", .value = .string, .value_name = "REF", .description = "Store input as a new entry, inherit REF's attributes, then remove REF" },
     .{ .name = "save-on-error", .value = .bool_optional, .value_name = "BOOL", .description = "Save captured input if the input stream is interrupted", .default_value = "true" },
 };
 
@@ -100,10 +104,25 @@ const rm_flags = [_]cli.FlagSpec{
     .{ .name = "force", .short = 'f', .description = "Skip confirmation prompts" },
 };
 
+const grep_flags = [_]cli.FlagSpec{
+    .{ .name = "attr", .short = 'a', .value = .string, .value_name = "FILTER", .description = "Attribute filter: name or name=value", .repeatable = true, .attached_short_value = true },
+    .{ .name = "id", .value = .string, .value_name = "MODE", .description = "ID display: short or full" },
+    .{ .name = "ids", .short = 'l', .description = "Print only IDs of entries with matches" },
+    .{ .name = "ignore-case", .short = 'i', .description = "Case-insensitive matching (ASCII)" },
+    .{ .name = "json", .description = "Output matches as JSON" },
+    .{ .name = "number", .short = 'n', .value = .int, .value_name = "N", .description = "Stop after N matching entries", .attached_short_value = true },
+    .{ .name = "pocket", .value = .string, .value_name = "VALUE", .description = "Alias for --attr pocket=VALUE", .repeatable = true },
+};
+
+const grep_arguments = [_]cli.ArgumentSpec{
+    .{ .name = "PATTERN", .description = "Substring to search for in entry data", .required = true },
+};
+
 pub const commands = [_]cli.CommandEntry{
     .{ .name = "attr", .description = "Show or update entry attributes" },
     .{ .name = "attrs", .description = "List attribute keys across the stash" },
     .{ .name = "cat", .description = "Print an entry's raw data to stdout" },
+    .{ .name = "grep", .description = "Search entry data for a substring" },
     .{ .name = "ls", .description = "List entries" },
     .{ .name = "path", .description = "Print stash paths" },
     .{ .name = "push", .description = "Store stdin and return the entry key" },
@@ -159,6 +178,7 @@ pub const attr_spec = cli.CommandSpec{ .name = "attr", .description = "Show or u
 pub const attrs_spec = cli.CommandSpec{ .name = "attrs", .description = "List attribute keys across the stash", .usage = "stash attrs [options] [KEY]", .flags = &attrs_flags, .arguments = &attrs_arguments };
 pub const path_spec = cli.CommandSpec{ .name = "path", .description = "Print stash paths", .usage = "stash path [options] [REF]", .flags = &path_flags, .arguments = &path_arguments };
 pub const rm_spec = cli.CommandSpec{ .name = "rm", .description = "Remove entries", .usage = "stash rm [options] [REF]...", .flags = &rm_flags, .arguments = &ref_arguments };
+pub const grep_spec = cli.CommandSpec{ .name = "grep", .description = "Search entry data for a substring", .usage = "stash grep [options] PATTERN", .flags = &grep_flags, .arguments = &grep_arguments };
 
 const LsCliOptions = struct {
     id: IdMode = .short,
@@ -226,6 +246,7 @@ pub fn run(init: *const std.process.Init, allocator: Allocator, args: []const [:
     if (std.mem.eql(u8, first, "push")) return cmdPush(allocator, args[2..], .push);
     if (std.mem.eql(u8, first, "tee")) return cmdTee(allocator, args[2..]);
     if (std.mem.eql(u8, first, "cat")) return cmdCat(allocator, args[2..]);
+    if (std.mem.eql(u8, first, "grep")) return cmdGrep(allocator, args[2..]);
     if (std.mem.eql(u8, first, "path")) return cmdPath(allocator, args[2..]);
     if (std.mem.eql(u8, first, "attr")) return cmdAttr(allocator, args[2..]);
     if (std.mem.eql(u8, first, "attrs")) return cmdAttrs(allocator, args[2..]);
@@ -239,6 +260,7 @@ fn commandName(value: []const u8) ?CommandName {
     if (std.mem.eql(u8, value, "push")) return .push;
     if (std.mem.eql(u8, value, "tee")) return .tee;
     if (std.mem.eql(u8, value, "cat")) return .cat;
+    if (std.mem.eql(u8, value, "grep")) return .grep;
     if (std.mem.eql(u8, value, "ls")) return .ls;
     if (std.mem.eql(u8, value, "attr")) return .attr;
     if (std.mem.eql(u8, value, "attrs")) return .attrs;
@@ -267,6 +289,7 @@ fn printHelp(allocator: Allocator, name: CommandName) !void {
         .push => try cli.printCommandHelp(allocator, out, push_spec),
         .tee => try cli.printCommandHelp(allocator, out, tee_spec),
         .cat => try cli.printCommandHelp(allocator, out, cat_spec),
+        .grep => try cli.printCommandHelp(allocator, out, grep_spec),
         .ls => try cli.printCommandHelp(allocator, out, ls_spec),
         .attr => try cli.printCommandHelp(allocator, out, attr_spec),
         .attrs => try cli.printCommandHelp(allocator, out, attrs_spec),
@@ -361,20 +384,40 @@ fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, mode: PushMode)
     var print_target: PrintTarget = .none;
     var file_arg: ?[]const u8 = null;
     var save_on_error = true;
+    var replace_ref: ?[]const u8 = null;
 
     const spec = if (mode == .tee) tee_spec else push_spec;
     const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, spec);
     if (mode != .tee and parsed.positionals.items.len == 1) file_arg = parsed.positionals.items[0];
 
+    // Pass 1: everything except attr/pocket, so we know the replace ref
+    // before seeding inherited attributes.
+    for (parsed.flags.items) |flag| {
+        if (std.mem.eql(u8, flag.name, "print")) {
+            print_target = try parsePrintTarget(flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "save-on-error")) {
+            save_on_error = try parseBool(flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "replace")) {
+            replace_ref = flag.value.?;
+        }
+    }
+
+    // Resolve the replaced entry up front (before consuming input) and seed
+    // its user attributes at the lowest precedence.
+    var original_id: ?[]const u8 = null;
+    if (replace_ref) |r| {
+        const id = try store.resolve(allocator, r);
+        const original = try store.getMeta(allocator, id);
+        try inheritAttrs(allocator, &attrs, &original);
+        original_id = id;
+    }
+
+    // Pass 2: CLI attrs overwrite inherited ones (flag order preserved).
     for (parsed.flags.items) |flag| {
         if (std.mem.eql(u8, flag.name, "attr")) {
             try appendAttrFlag(allocator, &attrs, flag.value.?);
         } else if (std.mem.eql(u8, flag.name, "pocket")) {
             try setAttrList(allocator, &attrs, types.pocket_attr, flag.value.?);
-        } else if (std.mem.eql(u8, flag.name, "print")) {
-            print_target = try parsePrintTarget(flag.value.?);
-        } else if (std.mem.eql(u8, flag.name, "save-on-error")) {
-            save_on_error = try parseBool(flag.value.?);
         }
     }
 
@@ -388,6 +431,11 @@ fn cmdPush(allocator: Allocator, raw_args: []const [:0]const u8, mode: PushMode)
 
     const tee_mode = mode == .tee or (mode == .auto and file_arg == null and rootShouldTee());
     const result = try store.pushInput(allocator, file_arg, attrs.items, tee_mode, save_on_error);
+    // Remove the replaced entry only after a clean (non-interrupted) push, so
+    // an interrupted save never costs the original data.
+    if (original_id) |id| {
+        if (!result.interrupted) try store.removeId(allocator, id);
+    }
     try emitId(print_target, result.id);
     if (result.interrupted) return error.InputInterruptedSaved;
     return 0;
@@ -420,6 +468,13 @@ fn setAttrList(allocator: Allocator, attrs: *std.ArrayList(Attr), key: []const u
 fn hasAttr(attrs: []const Attr, key: []const u8) bool {
     for (attrs) |item| if (std.mem.eql(u8, item.key, key)) return true;
     return false;
+}
+
+fn inheritAttrs(allocator: Allocator, attrs: *std.ArrayList(Attr), original: *const Meta) !void {
+    for (original.attrs.items) |item| {
+        if (std.mem.eql(u8, item.key, "partial")) continue;
+        try setAttrList(allocator, attrs, item.key, item.value);
+    }
 }
 
 fn parsePrintTarget(value: []const u8) !PrintTarget {
@@ -505,6 +560,169 @@ fn matchesFilters(meta: *const Meta, filters: []const AttrFilter) bool {
         }
     }
     return true;
+}
+
+fn lineMatches(line: []const u8, pattern: []const u8, ignore_case: bool) bool {
+    if (ignore_case) return stash_format.indexOfIgnoreCaseAscii(line, pattern) != null;
+    return std.mem.indexOf(u8, line, pattern) != null;
+}
+
+fn looksBinary(block: []const u8) bool {
+    return std.mem.indexOfScalar(u8, block, 0) != null;
+}
+
+// Sniff the first data block for NUL bytes without loading the whole file.
+fn entryLooksBinary(allocator: Allocator, id: []const u8) !bool {
+    var file = try runtime.cwd().openFile(runtime.process_io, try store.dataPath(allocator, id), .{});
+    defer file.close(runtime.process_io);
+    var buf: [4096]u8 = undefined;
+    const n = try runtime.fileRead(file, &buf);
+    return looksBinary(buf[0..n]);
+}
+
+const GrepContext = struct {
+    pattern: []const u8,
+    ignore_case: bool,
+    ids_only: bool,
+    json: bool,
+    id_mode: IdMode,
+    meta: *const Meta,
+    out: runtime.FileWriter,
+    json_first: *bool,
+    matched: bool = false,
+};
+
+fn grepJsonSep(out: runtime.FileWriter, first: *bool) !void {
+    if (first.*) {
+        try out.writeAll("\n  ");
+        first.* = false;
+    } else {
+        try out.writeAll(",\n  ");
+    }
+}
+
+fn grepEmitId(ctx: *GrepContext) !void {
+    if (ctx.json) {
+        try grepJsonSep(ctx.out, ctx.json_first);
+        try ctx.out.writeAll("{");
+        try display.printJsonString(ctx.out, "id");
+        try ctx.out.writeAll(": ");
+        try display.printJsonString(ctx.out, ctx.meta.id);
+        try ctx.out.writeAll(", ");
+        try display.printJsonString(ctx.out, "short_id");
+        try ctx.out.writeAll(": ");
+        try display.printJsonString(ctx.out, ctx.meta.shortId());
+        try ctx.out.writeAll("}");
+    } else {
+        const id_str = if (ctx.id_mode == .full) ctx.meta.id else ctx.meta.shortId();
+        try ctx.out.print("{s}\n", .{id_str});
+    }
+}
+
+fn grepEmitLine(ctx: *GrepContext, line_no: usize, line: []const u8) !void {
+    if (ctx.json) {
+        try grepJsonSep(ctx.out, ctx.json_first);
+        try ctx.out.writeAll("{");
+        try display.printJsonString(ctx.out, "id");
+        try ctx.out.writeAll(": ");
+        try display.printJsonString(ctx.out, ctx.meta.id);
+        try ctx.out.writeAll(", ");
+        try display.printJsonString(ctx.out, "short_id");
+        try ctx.out.writeAll(": ");
+        try display.printJsonString(ctx.out, ctx.meta.shortId());
+        try ctx.out.print(", \"line_no\": {d}, ", .{line_no});
+        try display.printJsonString(ctx.out, "line");
+        try ctx.out.writeAll(": ");
+        try display.printJsonString(ctx.out, line);
+        try ctx.out.writeAll("}");
+    } else {
+        const id_str = if (ctx.id_mode == .full) ctx.meta.id else ctx.meta.shortId();
+        try ctx.out.print("{s}:{d}:", .{ id_str, line_no });
+        try ctx.out.writeAll(line);
+        try ctx.out.writeByte('\n');
+    }
+}
+
+fn grepScanLine(ctx: *GrepContext, line_no: usize, line: []const u8) !bool {
+    if (!lineMatches(line, ctx.pattern, ctx.ignore_case)) return true;
+    if (ctx.ids_only) {
+        if (!ctx.matched) {
+            ctx.matched = true;
+            try grepEmitId(ctx);
+        }
+        return false; // one match is enough to report the id
+    }
+    ctx.matched = true;
+    try grepEmitLine(ctx, line_no, line);
+    return true;
+}
+
+fn cmdGrep(allocator: Allocator, raw_args: []const [:0]const u8) !u8 {
+    var filters: std.ArrayList(AttrFilter) = .empty;
+    var ignore_case = false;
+    var ids_only = false;
+    var json = false;
+    var id_mode: IdMode = .short;
+    var number: usize = 0;
+
+    const parsed = try cli.parseCommand(allocator, runtime.stderrWriter(), raw_args, grep_spec);
+    const pattern = parsed.positionals.items[0];
+    for (parsed.flags.items) |flag| {
+        if (std.mem.eql(u8, flag.name, "attr")) {
+            try appendFilter(allocator, &filters, flag.value.?);
+        } else if (std.mem.eql(u8, flag.name, "pocket")) {
+            try filters.append(allocator, .{ .key = types.pocket_attr, .value = flag.value.? });
+        } else if (std.mem.eql(u8, flag.name, "id")) {
+            const m = try parseIdMode(flag.value.?);
+            if (m == .pos) return error.InvalidArgument;
+            id_mode = m;
+        } else if (std.mem.eql(u8, flag.name, "ids")) {
+            ids_only = true;
+        } else if (std.mem.eql(u8, flag.name, "ignore-case")) {
+            ignore_case = true;
+        } else if (std.mem.eql(u8, flag.name, "json")) {
+            json = true;
+        } else if (std.mem.eql(u8, flag.name, "number")) {
+            number = try parseUsize(flag.value.?);
+        }
+    }
+
+    const items = try store.visibleList(allocator);
+    const s = try store.Store.open(allocator, .{});
+    const out = runtime.stdoutWriter();
+
+    var any_match = false;
+    var matched_entries: usize = 0;
+    var json_first = true;
+    if (json) try out.writeAll("[");
+
+    for (items.items) |*meta| {
+        if (number > 0 and matched_entries >= number) break;
+        if (!matchesFilters(meta, filters.items)) continue;
+        if (entryLooksBinary(allocator, meta.id) catch continue) continue;
+
+        var ctx = GrepContext{
+            .pattern = pattern,
+            .ignore_case = ignore_case,
+            .ids_only = ids_only,
+            .json = json,
+            .id_mode = id_mode,
+            .meta = meta,
+            .out = out,
+            .json_first = &json_first,
+        };
+        s.scanDataLines(allocator, meta.id, &ctx, grepScanLine) catch continue;
+        if (ctx.matched) {
+            any_match = true;
+            matched_entries += 1;
+        }
+    }
+
+    if (json) {
+        if (!json_first) try out.writeAll("\n");
+        try out.writeAll("]\n");
+    }
+    return if (any_match) 0 else 1;
 }
 
 fn confirmationAnswer(input: []const u8) bool {
@@ -816,4 +1034,43 @@ test "confirmationAnswer accepts only y/Y as confirmation" {
     try testing.expect(!confirmationAnswer(""));
     try testing.expect(!confirmationAnswer("\n"));
     try testing.expect(!confirmationAnswer("no"));
+}
+
+test "inheritAttrs copies user attrs, skips partial, and is overridable" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const allocator = arena_state.allocator();
+
+    var original = Meta.init();
+    try original.setAttr(allocator, "name", "prefs");
+    try original.setAttr(allocator, "partial", "true");
+    try original.setAttr(allocator, "pocket", "memory");
+
+    var attrs: std.ArrayList(Attr) = .empty;
+    try inheritAttrs(allocator, &attrs, &original);
+    try testing.expectEqual(@as(usize, 2), attrs.items.len);
+    try testing.expect(hasAttr(attrs.items, "name"));
+    try testing.expect(hasAttr(attrs.items, "pocket"));
+    try testing.expect(!hasAttr(attrs.items, "partial"));
+
+    // CLI flags applied after inheritance overwrite inherited values.
+    try setAttrList(allocator, &attrs, "name", "prefs2");
+    try testing.expectEqual(@as(usize, 2), attrs.items.len);
+    for (attrs.items) |item| {
+        if (std.mem.eql(u8, item.key, "name")) try testing.expectEqualStrings("prefs2", item.value);
+    }
+}
+
+test "lineMatches respects case sensitivity flag" {
+    try testing.expect(lineMatches("BETA needle here", "needle", false));
+    try testing.expect(!lineMatches("BETA NEEDLE here", "needle", false));
+    try testing.expect(lineMatches("BETA NEEDLE here", "needle", true));
+    try testing.expect(lineMatches("anything", "", false));
+    try testing.expect(!lineMatches("", "x", false));
+}
+
+test "looksBinary detects NUL bytes" {
+    try testing.expect(looksBinary("ab\x00cd"));
+    try testing.expect(!looksBinary("plain text\n"));
+    try testing.expect(!looksBinary(""));
 }

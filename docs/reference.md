@@ -5,11 +5,13 @@
 ```text
 stash [file]
 stash push [file]
+stash push --replace <id|n|@n> [file]
 stash tee
 stash path [id|n|@n]
 stash attr <id|n|@n>
 stash attrs [--count]
 stash cat [id|n|@n]
+stash grep <pattern>
 stash ls
 stash rm <id|n|@n>...
 stash rm --before <id|@n>
@@ -51,6 +53,23 @@ Notes:
 - downstream broken pipes are treated as normal exits
 - when a broken pipe happens after input was captured, `stash tee` keeps the
   saved entry
+
+`--replace <REF>` stores the input as a new entry, copies the referenced
+entry's user attributes onto it (explicit `-a`/`--pocket` flags and the
+automatic `filename` attribute take precedence), and then removes the
+referenced entry:
+
+```bash
+echo '{"theme":"dark"}' | stash push --replace @1
+stash push --replace wve1pgsd updated.json
+```
+
+Notes:
+- the new entry gets a fresh `id`, `ts`, `size`, and `preview`
+- `partial` is never inherited
+- the referenced entry is removed only after the new entry is fully stored
+- if input is interrupted and a partial entry is saved, the referenced entry
+  is **kept** alongside the partial one
 
 ## Attr
 
@@ -118,6 +137,41 @@ Notes:
 - this command lists user-defined attribute keys stored in entry attrs
 - use `stash ls -a key` to see matching entries
 - use `stash attr <ref>` to inspect the attributes of one specific entry
+
+## Grep
+
+Search entry data for a literal substring:
+
+```bash
+stash grep needle
+stash grep needle -i
+stash grep needle -a kind=memory
+stash grep needle -l
+stash grep needle -n 1
+stash grep needle --id=full
+stash grep needle --json
+```
+
+Notes:
+- matching is a plain literal substring, not a regular expression or glob;
+  for regex search use the `stash-rg` script in `scripts/`
+- `-i/--ignore-case` matches case-insensitively (ASCII)
+- `-a name` / `-a name=value` narrow the searched entries by attribute
+  (repeatable, AND semantics); `--pocket VALUE` is shorthand for
+  `-a pocket=VALUE`. Filtered-out entries are never opened, so tagging
+  entries keeps searches fast without an index.
+- default output is one line per match: `<id>:<line_no>:<line>`, entries
+  newest-first
+- `-l/--ids` prints only the IDs of entries that have at least one match
+- `--id=short|full` controls the ID column (default `short`; `pos` is not
+  supported)
+- `-n N` stops after N matching entries (newest first)
+- `--json` emits a JSON array of `{id, short_id, line_no, line}` objects
+  (with `-l`, `{id, short_id}` objects)
+- entries whose first data block contains a NUL byte are treated as binary
+  and skipped
+- exit status is `0` when there is at least one match, `1` when there are
+  none (like `grep`)
 
 ## ls
 

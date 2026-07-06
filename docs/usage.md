@@ -82,6 +82,19 @@ for confirmation unless `-f` is set.
 Outside an interactive terminal (e.g. in a script), `stash` cannot prompt
 and will refuse with an error unless `-f` is given.
 
+Replace an entry:
+
+```bash
+echo v2 | stash push --replace @1
+echo v2 | stash push --replace @1 -a note=updated
+stash push --replace wpc43xd3 newfile.txt
+```
+
+`stash push --replace <ref>` stores the input as a new entry, carries the
+referenced entry's attributes forward (explicit `-a`/`--pocket` flags win
+over inherited ones), then removes the referenced entry. The new entry gets
+a fresh id, timestamp, size, and preview.
+
 ## File-Oriented Use
 
 You can also use `stash` like a small flat file store:

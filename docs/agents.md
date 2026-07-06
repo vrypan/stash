@@ -118,6 +118,39 @@ stash ls --attrs=list
 stash attrs --count
 ```
 
+## Recall by content
+
+When you don't remember which entry holds something, search the data with
+`stash grep`. Attribute filters narrow the search first, so tagged entries
+stay cheap to scan:
+
+```bash
+stash grep -i "connection timeout" -a kind=test-output
+stash grep -l "TODO" | while read id; do stash attr "$id"; done
+```
+
+`stash grep` does literal substring matching and exits non-zero when there
+are no matches, so it composes cleanly in scripts.
+
+## Supersede a labeled entry
+
+When you keep a single "current" entry under a stable label and want to
+update it, `stash push --replace` writes the new content and drops the old
+entry in one step, carrying the label forward:
+
+```bash
+# first write
+echo "prefers tabs" | stash -a name=user-prefs -a kind=memory
+
+# later update: same labels, new content, old entry removed
+echo "prefers tabs; 4-wide" | stash push --replace @1
+```
+
+The replacement inherits the referenced entry's attributes, so the label
+survives without repeating `-a name=user-prefs`. Any `-a` you pass overrides
+the inherited value. This keeps "latest wins per label" from accumulating
+stale entries that attribute filters can't tell apart.
+
 ## When to use a real file instead
 
 Prefer a normal file when:

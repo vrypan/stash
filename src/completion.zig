@@ -5,6 +5,7 @@ const subcommands = [_]@import("cli").CommandSpec{
     cmd.push_spec,
     cmd.tee_spec,
     cmd.cat_spec,
+    cmd.grep_spec,
     cmd.ls_spec,
     cmd.attr_spec,
     cmd.attrs_spec,

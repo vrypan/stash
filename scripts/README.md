@@ -115,6 +115,11 @@ Searches both attribute output and entry contents across the whole stash using
 `rg`.
 
 > [!NOTE]
+> The built-in `stash grep` covers literal substring search with attribute
+> filters and needs no external tools. Reach for `stash-rg` when you want
+> regular expressions or `rg`'s output features.
+
+> [!NOTE]
 > brew installs it in `$(brew --prefix)/share/stash/scripts/stash-rg`
 
 ```bash
