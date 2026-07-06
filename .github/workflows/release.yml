@@ -43,6 +43,11 @@ jobs:
             exit 1
           fi
 
+          if ! grep -qx "## ${version}" CHANGELOG.md; then
+            echo "CHANGELOG.md has no '## ${version}' section; add it before releasing" >&2
+            exit 1
+          fi
+
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
@@ -109,12 +114,22 @@ jobs:
           set -euo pipefail
 
           tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
           notes_file="$RUNNER_TEMP/release-notes.md"
+
+          # Extract this version's section from CHANGELOG.md (between its
+          # "## <version>" heading and the next "## " heading).
+          awk -v version="$version" '
+            $0 == "## " version { found = 1; next }
+            /^## / && found { exit }
+            found { print }
+          ' CHANGELOG.md > "$notes_file"
+
           {
-            echo "Release ${tag}"
             echo
+            echo "---"
             echo "Built from Zig source with Zig ${ZIG_VERSION}."
-          } > "$notes_file"
+          } >> "$notes_file"
 
           gh release create "$tag" \
             --target "$GITHUB_SHA" \
