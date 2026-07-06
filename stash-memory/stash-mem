@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# stash-mem — run `stash` against the dedicated agent-memory store.
+#
+# - STASH_DIR is forced to the memory store (override the location with
+#   STASH_MEMORY_DIR; default: ~/.claude/stash-memory).
+# - STASH_POCKET defaults to the current git repo's name, so all reads and
+#   writes are scoped per project automatically. Outside a repo it defaults
+#   to "global".
+# - An explicitly set STASH_POCKET is respected:
+#     STASH_POCKET=global stash-mem ls        # cross-project facts
+#     STASH_POCKET= stash-mem ls -a ++pocket  # empty = all pockets (admin)
+set -euo pipefail
+
+dir="${STASH_MEMORY_DIR:-$HOME/.claude/stash-memory}"
+
+if [ -z "${STASH_POCKET+x}" ]; then
+  if top="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+    STASH_POCKET="$(basename "$top")"
+  else
+    STASH_POCKET="global"
+  fi
+fi
+
+exec env STASH_DIR="$dir" STASH_POCKET="$STASH_POCKET" stash "$@"
